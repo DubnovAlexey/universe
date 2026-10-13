@@ -1,0 +1,14 @@
+{
+  "name": "universe",
+  "version": "1.0.0",
+  "description": "5-dimensional digital installation: Illusion vs Truth",
+  "private": true,
+  "author": "Alexey Dubnov",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:wasm": "cd physics_engine && cargo build --target wasm32-unknown-unknown"
+  }
+}
