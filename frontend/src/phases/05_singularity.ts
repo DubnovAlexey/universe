@@ -1,69 +1,91 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/05_singularity.ts
-// НАЗНАЧЕНИЕ: Астрофизическая модель Фазы 05 — «СИНГУЛЯРНОСТЬ (ABSOLUTE SINGULARITY)»
+// НАЗНАЧЕНИЕ: Образ 05 — «ЧЕРНАЯ ДЫРА ГАРГАНТЮА -> МАНДАЛА LOGIC -> СХЛОПЫВАНИЕ В НОЛЬ»
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Формирует Горизонт событий сверхмассивной черной дыры в центре экрана.
-// 2. Разгоняет материю в раскаленном аккреционном диске до релятивистских скоростей.
-// 3. Выбрасывает частицы, достигшие критического сжатия, в вертикальные джеты (квазар).
-// 4. Сводит мир Иллюзии и мир Истины в единую математическую точку бесконечной плотности.
+// 1. В Акте A строит наклонный многослойный аккреционный диск Черной дыры и 2 полярных джета.
+// 2. В первой половине Акта B (LOGIC) выстраивает кристаллическую геодезическую мандалу
+//    слияния Космоса, Мозга и Кода во весь экран 16:9.
+// 3. Во второй половине Акта B плавно стягивает всю панораму по спирали в Точку Нуля.
 // ============================================================================
 
-import type { QuantumParticle } from './01_void';
+import type { MorphTargetPoint, QuantumParticle } from './01_void';
+import { universeStore } from '../store/universeState';
 
-// ----------------------------------------------------------------------------
-// 1. ПАРАМЕТРЫ ГОРИЗОНТА СОБЫТИЙ И РЕЛЯТИВИСТСКИХ ДЖЕТОВ
-// ----------------------------------------------------------------------------
-const EVENT_HORIZON_RADIUS = 38; // Радиус Шварцшильда (горизонт событий в пикселях)
-const ACCRETION_DISK_RADIUS = 240;
-
-// ----------------------------------------------------------------------------
-// 2. РАСЧЕТ ГРАВИТАЦИОННОГО КОЛЛАПСА И АККРЕЦИИ ФАЗЫ 05
-// ----------------------------------------------------------------------------
-export function applySingularityPhysics(
+export function computeSingularityTarget(
     p: QuantumParticle,
     centerX: number,
     centerY: number,
-    dt: number,
-    simTimeSec: number,
-    effectiveGravity: number
-): void {
-    const dx = centerX - p.x;
-    const dy = centerY - p.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) + 0.5;
+    width: number,
+    height: number,
+    simTimeSec: number
+): MorphTargetPoint {
+    const uState = universeStore.getState();
+    const act = uState.singularityAct;
+    const actProgress = uState.singularityActProgress;
 
-    // 1. Если частица пересекла Горизонт событий — выбрасываем её в полярный джет квазара!
-    if (dist < EVENT_HORIZON_RADIUS) {
-        const jetDirection = p.id % 2 === 0 ? -1 : 1; // Верхний или нижний релятивистский луч
-        const spread = (Math.random() - 0.5) * 35;
+    // 1. АКТ A: Аккреционный диск Гаргантюа + гравитационная дуга линзирования + полярные джеты
+    if (act === 'ACT_A_ACCRETION' || act === 'NONE') {
+        // 8% узлов образуют 2 узких вертикальных релятивистских джета из полюсов черной дыры
+        if (p.id % 14 === 0) {
+            const jetSign = p.id % 28 === 0 ? -1 : 1;
+            const jetFlow = ((simTimeSec * 1.4 + (p.id % 11) / 11) % 1.0);
+            const jetDistY = (36 + jetFlow * (height * 0.44)) * jetSign;
+            const jetWidth = (4 + jetFlow * 26) * Math.sin(p.id * 2.3 + simTimeSec * 6.0);
+            return {
+                x: centerX + jetWidth,
+                y: centerY + jetDistY,
+                energy: 1.0 - jetFlow * 0.35,
+            };
+        }
 
-        p.x = centerX + spread * 0.3;
-        p.y = centerY + jetDirection * (EVENT_HORIZON_RADIUS + 4);
-        p.vx = spread * 2.2;
-        p.vy = jetDirection * (240 + Math.random() * 180);
-        p.energy = 1.0;
-        p.depthZ = 1.45;
-        return;
+        const ringLayer = (p.id % 20) / 19;
+        const spinAngle = (p.id * 2.39996) + simTimeSec * (1.8 - ringLayer * 0.9);
+        const diskRx = width * (0.07 + ringLayer * 0.38);
+        // Часть узлов огибает черную дыру сверху и снизу как гравитационно-линзированное гало Гаргантюа
+        const isLensedHalo = p.id % 5 === 0;
+        const diskRy = isLensedHalo
+            ? height * (0.09 + ringLayer * 0.28)
+            : height * (0.03 + ringLayer * 0.13);
+
+        const tilt = -0.14;
+        const lx = Math.cos(spinAngle) * diskRx;
+        const ly = Math.sin(spinAngle) * diskRy;
+
+        return {
+            x: centerX + lx * Math.cos(tilt) - ly * Math.sin(tilt),
+            y: centerY + lx * Math.sin(tilt) + ly * Math.cos(tilt),
+            energy: Math.min(1.0, 0.55 + (1.0 - ringLayer) * 0.45),
+        };
     }
 
-    // 2. Неумолимое гравитационное притяжение к сингулярности + вращение аккреционного диска
-    const radialX = dx / dist;
-    const radialY = dy / dist;
-    const tangentX = -radialY;
-    const tangentY = radialX;
+    // 2. АКТ B: Кристаллическая гармония LOGIC (0..0.58) -> Спиральное схлопывание в Точку Нуля (0.58..1.0)
+    if (act === 'ACT_B_LOGIC') {
+        const collapseT = actProgress < 0.58 ? 0.0 : (actProgress - 0.58) / 0.42;
+        const collapseEase = 1.0 - Math.pow(collapseT, 2.4);
 
-    // Сила тяготения растет обратно пропорционально расстоянию до горизонта событий
-    const gravityPull = (290 * effectiveGravity) / Math.max(18, dist * 0.22);
-    // Внутри аккреционного диска вращение достигает максимума
-    const diskSpin = dist < ACCRETION_DISK_RADIUS ? 195 * effectiveGravity : 85 * effectiveGravity;
+        // 12-лучевая сакрально-геометрическая нейро-решетка LOGIC на весь экран
+        const spokeIndex = p.id % 12;
+        const ringTier = (Math.floor(p.id / 12) % 8) / 7;
+        const baseAngle =
+            (spokeIndex / 12) * Math.PI * 2 +
+            ringTier * 0.35 +
+            simTimeSec * 0.25 +
+            (1.0 - collapseEase) * 4.2;
 
-    // Сплющиваем траекторию к экваториальной плоскости (эффект диска Гаргантюа из Interstellar)
-    const diskFlattenForce = (centerY - p.y) * 0.85 * effectiveGravity;
+        const rx = width * (0.06 + ringTier * 0.39) * collapseEase;
+        const ry = height * (0.06 + ringTier * 0.37) * collapseEase;
 
-    p.vx += (radialX * gravityPull + tangentX * diskSpin) * dt;
-    p.vy += (radialY * gravityPull + tangentY * diskSpin + diskFlattenForce) * dt;
+        return {
+            x: centerX + Math.cos(baseAngle) * rx,
+            y: centerY + Math.sin(baseAngle) * ry,
+            energy: Math.max(0.05, collapseEase),
+        };
+    }
 
-    // 3. Максимальное свечение вблизи кольца фотонов
-    const photonRingProximity = Math.max(0, 1.0 - Math.abs(dist - EVENT_HORIZON_RADIUS * 1.8) / 140);
-    p.energy = Math.min(1.0, 0.55 + photonRingProximity * 0.45 + 0.1 * Math.sin(simTimeSec * 10));
-    p.depthZ = 0.35 + photonRingProximity * 1.1;
+    // 3. АКТ C (ZERO_SILENCE) и АКТ D (GITHUB_CARD): Абсолютная Точка Нуля в центре
+    return {
+        x: centerX,
+        y: centerY,
+        energy: 0.0,
+    };
 }

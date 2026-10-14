@@ -1,55 +1,49 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/04_collapse.ts
-// НАЗНАЧЕНИЕ: Астрофизическая модель Фазы 04 — «КОЛЛАПС (ENTROPIC COLLAPSE)»
+// НАЗНАЧЕНИЕ: Образ 04 — «ТЕКТОНИЧЕСКИЙ ШТОРМ СОЗНАНИЯ И РАЗРЫВ ВРЕМЕНИ (BREACH)»
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Генерирует блуждающие гравитационные разломы (аномалии), рвущие орбиты.
-// 2. Создает турбулентные сдвиги и резкие скачки ускорения частиц.
-// 3. Раскачивает 3D-глубину пространства, имитируя деформацию метрики времени.
-// 4. Повышает кинетическую энергию узлов перед финальным схлопыванием.
+// 1. Строго удерживает композицию в центре экрана (centerX, centerY) без ухода вверх.
+// 2. Формирует 3 пересекающихся гироскопических кольца напряжения вокруг коры мозга.
+// 3. Создает упругие волны деформации пространства, вскрывающие матрицу X-RAY.
 // ============================================================================
 
-import type { QuantumParticle } from './01_void';
+import type { MorphTargetPoint, QuantumParticle } from './01_void';
 
-// ----------------------------------------------------------------------------
-// 1. РАСЧЕТ ТУРБУЛЕНТНОСТИ И ГРАВИТАЦИОННЫХ РАЗЛОМОВ ФАЗЫ 04
-// ----------------------------------------------------------------------------
-export function applyCollapsePhysics(
+export function computeCollapseStormTarget(
     p: QuantumParticle,
     centerX: number,
     centerY: number,
-    dt: number,
+    width: number,
+    height: number,
     simTimeSec: number,
-    effectiveGravity: number
-): void {
-    const dx = centerX - p.x;
-    const dy = centerY - p.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) + 1.0;
+    phaseProgress: number
+): MorphTargetPoint {
+    // 3 пересекающихся гироскопических кольца шторма под углами -28°, 0° и +28° строго вокруг центра экрана
+    const ringGroup = p.id % 3;
+    const tiltAngles = [-0.48, 0.0, 0.48];
+    const tilt = tiltAngles[ringGroup];
+    const spinDir = ringGroup === 1 ? -1 : 1;
 
-    // 1. Координаты трех нестабильных вихревых аномалий вокруг центра
-    const anomalyIndex = p.id % 3;
-    const anomalyAngle = simTimeSec * 2.1 + (anomalyIndex * Math.PI * 2) / 3;
-    const anomalyRadius = 210 + Math.sin(simTimeSec * 4.5 + anomalyIndex) * 85;
+    const baseAngle =
+        ((p.id * 1.6180339) % (Math.PI * 2)) + simTimeSec * (0.52 + ringGroup * 0.12) * spinDir;
 
-    const anomalyX = centerX + Math.cos(anomalyAngle) * anomalyRadius;
-    const anomalyY = centerY + Math.sin(anomalyAngle) * anomalyRadius;
+    // Тектоническая волна деформации вдоль колец
+    const stormHarmonic =
+        Math.sin(baseAngle * 3.0 - simTimeSec * 3.2 + ringGroup) * 0.12 +
+        Math.cos(baseAngle * 5.0 + simTimeSec * 2.4) * 0.06;
 
-    const adx = anomalyX - p.x;
-    const ady = anomalyY - p.y;
-    const aDist = Math.sqrt(adx * adx + ady * ady) + 5.0;
+    const bandScale = 0.35 + ((p.id % 15) / 14) * 0.62;
+    const rx = width * 0.43 * bandScale * (1.0 + stormHarmonic);
+    const ry = height * (ringGroup === 1 ? 0.38 : 0.24) * bandScale * (1.0 + stormHarmonic);
 
-    // 2. Чередование фаз сжатия и резкого гравитационного выброса (пульсар-нестабильность)
-    const collapsePulse = Math.sin(simTimeSec * 5.2 + p.phaseOffset * 0.5);
-    const centralPull = collapsePulse * 85 * effectiveGravity;
+    const localX = Math.cos(baseAngle) * rx;
+    const localY = Math.sin(baseAngle) * ry;
 
-    // Сила затягивания в локальную воронку разлома
-    const vortexForce = (120 * effectiveGravity) / Math.max(30, aDist * 0.45);
-    const vortexTangentX = -ady / aDist;
-    const vortexTangentY = adx / aDist;
+    // Поворот гироскопической плоскости строго вокруг центра монитора (centerX, centerY)
+    const x = centerX + localX * Math.cos(tilt) - localY * Math.sin(tilt);
+    const y = centerY + localX * Math.sin(tilt) + localY * Math.cos(tilt);
 
-    p.vx += ((dx / dist) * centralPull + (adx / aDist) * vortexForce + vortexTangentX * 65) * dt;
-    p.vy += ((dy / dist) * centralPull + (ady / aDist) * vortexForce + vortexTangentY * 65) * dt;
-
-    // 3. Экстремальное возбуждение энергии и дрожание глубины Z
-    p.energy = 0.65 + 0.35 * Math.abs(Math.cos(simTimeSec * 8.0 + p.id));
-    p.depthZ = 0.3 + 1.1 * Math.abs(Math.sin(simTimeSec * 3.5 + p.phaseOffset));
+    const pulsePeak = 0.5 + 0.5 * Math.sin(baseAngle * 3.0 - simTimeSec * 4.5 + phaseProgress * 6.0);
+    const energy = Math.min(1.0, 0.45 + pulsePeak * 0.55);
+    return { x, y, energy };
 }

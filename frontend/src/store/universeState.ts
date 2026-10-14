@@ -1,22 +1,18 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/store/universeState.ts
-// НАЗНАЧЕНИЕ: Единый источник истины (State Store), Таймлайн 90-120с и Шина Событий
+// НАЗНАЧЕНИЕ: Единое состояние, многоцветная драматургия палитр и Таймлайн цикла
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Хранит паспорта 5 временных фаз: VOID, GENESIS, EVOLUTION, TENSION/BREACH, SINGULARITY.
-// 2. Управляет 4 подактами Фазы 05: ACCRETION -> LOGIC -> ZERO_SILENCE (2.5s) -> GITHUB_CARD.
-// 3. Разделяет 3 концептуальных мира (ILLUSION, X-RAY, NEXUS) и 5 уровней инспекции UI.
-// 4. Реализует типизированную шину однократных событий (Single-Edge Event Bus) без дублей.
-// 5. Вычисляет честную телеметрию со скользящим средним (rolling average) и статусы модулей.
+// 1. Задает уникальную многослойную цветовую и световую палитру для каждой из 5 фаз.
+// 2. Управляет непрерывным автоматическим перетеканием состояний (90-120 секунд).
+// 3. Координирует 4 акта финала: ACCRETION -> LOGIC -> ZERO_SILENCE (2.5с) -> GITHUB_CARD.
+// 4. Хранит честную телеметрию и однократные события шины EventBus.
 // ============================================================================
 
-// ----------------------------------------------------------------------------
-// 1. ИДЕНТИФИКАТОРЫ 5 ФАЗ, ПОДАКТОВ СИНГУЛЯРНОСТИ И 5 УРОВНЕЙ ИНСПЕКЦИИ
-// ----------------------------------------------------------------------------
 export type PhaseId =
     | '01_VOID'
     | '02_GENESIS'
     | '03_EVOLUTION'
-    | '04_COLLAPSE' // Имя ID сохранено для совместимости с 04_collapse.ts, в UI: TENSION / BREACH
+    | '04_COLLAPSE'
     | '05_SINGULARITY';
 
 export type SingularityAct =
@@ -34,9 +30,6 @@ export type InspectionLevel =
     | 'TERMINAL'
     | 'XRAY';
 
-// ----------------------------------------------------------------------------
-// 2. ТИПИЗИРОВАННАЯ СИСТЕМА СОБЫТИЙ (SINGLE EVENT SOURCE ПО ТЗ v1.2)
-// ----------------------------------------------------------------------------
 export type UniverseEventType =
     | 'phase:will-change'
     | 'phase:changed'
@@ -68,9 +61,6 @@ export interface UniverseEventPayload {
 
 export type UniverseEventListener = (event: Readonly<UniverseEventPayload>) => void;
 
-// ----------------------------------------------------------------------------
-// 3. ПАСПОРТА 5 ФАЗ (СТРОГАЯ ЦВЕТОВАЯ ДИСЦИПЛИНА И ТАЙМЛАЙН 105 СЕКУНД)
-// ----------------------------------------------------------------------------
 export interface PhaseMetadata {
     id: PhaseId;
     index: number;
@@ -84,11 +74,11 @@ export interface PhaseMetadata {
     autoDurationSec: number;
     cameraTargetZoom: number;
     colors: {
-        illusionPrimary: string;   // Холодный циан / серебристо-голубой
-        illusionSecondary: string; // Сдержанный индиго / фиолетовый газовых зон
-        truthWireframe: string;    // Точный оптический тон X-RAY
-        backgroundVoid: string;    // Графитово-синий вакуум
-        coreAccent: string;        // Жемчужно-белый / редкий янтарный для пиков
+        illusionPrimary: string;   // Главный свет сомы и волокон
+        illusionSecondary: string; // Глубокий полутон туманностей и дендритов
+        truthWireframe: string;    // Оптический цвет X-RAY и аксонных ядер
+        backgroundVoid: string;    // Глубокий тон космоса
+        coreAccent: string;        // Янтарно-золотой / жемчужный акцент ядер и синапсов
     };
 }
 
@@ -97,103 +87,103 @@ export const UNIVERSE_PHASES: Record<PhaseId, PhaseMetadata> = {
         id: '01_VOID',
         index: 1,
         codeName: 'PHASE_01 // PRIMORDIAL_VOID',
-        titleRu: '01. ПУСТОТА (VOID)',
-        subtitleRu: 'Предчувствие, безмолвие и первичная Точка Нуля',
+        titleRu: '01. ПУСТОТА (ТОЧКА НУЛЯ)',
+        subtitleRu: 'Безмолвие до рождения Времени и первая искра Сознания',
         philosophyRu:
-            'Почти абсолютная тишина глубокого вакуума. В центре живет микроскопическая Точка Нуля с тонким серебристо-голубым ореолом, вокруг которой зарождается предчувствие первого импульса.',
-        targetParticleCount: 420,
-        baseGravity: 0.06,
-        baseEntropy: 0.05,
-        autoDurationSec: 16,
-        cameraTargetZoom: 1.04,
+            'В бархатной сапфирово-чёрной бездне дремлет микроскопическая Точка Нуля с тёплым янтарным ядром. Вокруг неё в полутенях зарождаются первые прото-синапсы будущей Вселенной.',
+        targetParticleCount: 460,
+        baseGravity: 0.12,
+        baseEntropy: 0.06,
+        autoDurationSec: 15,
+        cameraTargetZoom: 1.0,
         colors: {
             illusionPrimary: '#7dd3fc',
-            illusionSecondary: '#38bdf8',
+            illusionSecondary: '#3b82f6',
             truthWireframe: '#38bdf8',
             backgroundVoid: '#03050a',
-            coreAccent: '#f8fafc',
+            coreAccent: '#f59e0b',
         },
     },
     '02_GENESIS': {
         id: '02_GENESIS',
         index: 2,
         codeName: 'PHASE_02 // IGNITION_GENESIS',
-        titleRu: '02. ГЕНЕЗИС (GENESIS)',
-        subtitleRu: 'Многоступенчатое развёртывание и бинарный танец масс',
+        titleRu: '02. ГЕНЕЗИС (РОЖДЕНИЕ ОБРАЗОВ)',
+        subtitleRu: 'Двойное золотое ядро, пурпурные туманности и спиральные рукава',
         philosophyRu:
-            'Точка Нуля высвобождает концентрические фронты света. Два вращающихся центра масс закручивают вещество в асимметричные спиральные рукава, связанные тонким световым мостом.',
-        targetParticleCount: 680,
-        baseGravity: 0.48,
-        baseEntropy: 0.2,
-        autoDurationSec: 22,
-        cameraTargetZoom: 0.94,
+            'Первичный взрыв разворачивает два золотисто-жемчужных центра масс. Из пурпурно-индиговых газовых облаков с тёмными пылевыми каньонами вырастают первые магистральные тракты.',
+        targetParticleCount: 700,
+        baseGravity: 0.55,
+        baseEntropy: 0.22,
+        autoDurationSec: 20,
+        cameraTargetZoom: 0.98,
         colors: {
-            illusionPrimary: '#38bdf8',
+            illusionPrimary: '#f59e0b',
             illusionSecondary: '#6366f1',
-            truthWireframe: '#7dd3fc',
-            backgroundVoid: '#040711',
-            coreAccent: '#f59e0b',
+            truthWireframe: '#38bdf8',
+            backgroundVoid: '#050814',
+            coreAccent: '#f8fafc',
         },
     },
     '03_EVOLUTION': {
         id: '03_EVOLUTION',
         index: 3,
-        codeName: 'PHASE_03 // NEXUS_EVOLUTION',
-        titleRu: '03. ЭВОЛЮЦИЯ (EVOLUTION)',
-        subtitleRu: 'Пять кеплеровских колец и рождение топологии NEXUS',
+        codeName: 'PHASE_03 // CORTEX_NEXUS',
+        titleRu: '03. НЕЙРОСЕТЬ МОЗГА (NEXUS)',
+        subtitleRu: 'Два полушария Космического Разума, ганглии и каскады мыслей',
         philosophyRu:
-            'Потоки выстраиваются в пять встречных колец. Из космических филаментов прорастает трехмерная нейронная сеть NEXUS: аксонные магистрали, мосты и каскадные импульсы с послесвечением.',
+            'Вселенная обретает архитектуру гигантского Головного Мозга. По S-образным аксонным магистралям между крупными нейронными ядрами-сомами бегут золотисто-бирюзовые разряды живой Мысли.',
         targetParticleCount: 840,
         baseGravity: 0.85,
-        baseEntropy: 0.36,
-        autoDurationSec: 26,
+        baseEntropy: 0.38,
+        autoDurationSec: 25,
         cameraTargetZoom: 1.0,
         colors: {
             illusionPrimary: '#38bdf8',
             illusionSecondary: '#8b5cf6',
-            truthWireframe: '#38bdf8',
-            backgroundVoid: '#050915',
-            coreAccent: '#f8fafc',
+            truthWireframe: '#7dd3fc',
+            backgroundVoid: '#060919',
+            coreAccent: '#f59e0b',
         },
     },
     '04_COLLAPSE': {
         id: '04_COLLAPSE',
         index: 4,
         codeName: 'PHASE_04 // TENSION_AND_BREACH',
-        titleRu: '04. НАПРЯЖЕНИЕ И РАЗРЫВ (TENSION / BREACH)',
-        subtitleRu: 'Три волны возмущений и оптическое вскрытие X-RAY',
+        titleRu: '04. РАЗРЫВ РЕАЛЬНОСТИ (BREACH)',
+        subtitleRu: 'Гравитационные воронки, шторм синапсов и вскрытие Кода Истины',
         philosophyRu:
-            'Три гравитационные аномалии последовательно деформируют орбиты и натягивают нити. Мембрана космоса преломляет свет, открывая через разрывы вычислительную структуру в тех же координатах.',
-        targetParticleCount: 900,
-        baseGravity: 1.55,
+            'Три тёмные гравитационные воронки с янтарными кольцами преломления искривляют нейронные пути. Сквозь трещины оптической мембраны проступает математическая матрица X-RAY.',
+        targetParticleCount: 880,
+        baseGravity: 1.35,
         baseEntropy: 0.82,
         autoDurationSec: 22,
-        cameraTargetZoom: 1.03,
+        cameraTargetZoom: 1.0,
         colors: {
-            illusionPrimary: '#7dd3fc',
-            illusionSecondary: '#6366f1',
-            truthWireframe: '#f8fafc',
-            backgroundVoid: '#060b19',
-            coreAccent: '#f59e0b',
+            illusionPrimary: '#f59e0b',
+            illusionSecondary: '#8b5cf6',
+            truthWireframe: '#38bdf8',
+            backgroundVoid: '#050713',
+            coreAccent: '#f8fafc',
         },
     },
     '05_SINGULARITY': {
         id: '05_SINGULARITY',
         index: 5,
         codeName: 'PHASE_05 // LOGIC_TO_SINGULARITY',
-        titleRu: '05. СИНГУЛЯРНОСТЬ И ЯСНОСТЬ (LOGIC → ZERO)',
-        subtitleRu: 'Аккреция, состояние LOGIC, 2.5с тишины и голограмма GitHub',
+        titleRu: '05. СИНГУЛЯРНОСТЬ И LOGIC',
+        subtitleRu: 'Золотой диск аккреции, слияние 3 миров, 2.5с тишины и GitHub',
         philosophyRu:
-            'Материя стягивается в аккреционный диск. В кульминации LOGIC космос, граф NEXUS и векторы X-RAY сливаются воедино, после чего схлопываются в 2.5 секунды абсолютной тишины и карточку создателя.',
-        targetParticleCount: 950,
-        baseGravity: 2.8,
-        baseEntropy: 0.96,
+            'В кульминации LOGIC Космос, Нейро-Мозг и Код сливаются в абсолютной ясности, затем втягиваются в чёрную дыру горизонта событий, оставляя 2.5 секунды тишины и голограмму создателя.',
+        targetParticleCount: 900,
+        baseGravity: 2.4,
+        baseEntropy: 0.95,
         autoDurationSec: 24,
-        cameraTargetZoom: 1.12,
+        cameraTargetZoom: 1.02,
         colors: {
-            illusionPrimary: '#f8fafc',
+            illusionPrimary: '#f59e0b',
             illusionSecondary: '#38bdf8',
-            truthWireframe: '#7dd3fc',
+            truthWireframe: '#f8fafc',
             backgroundVoid: '#03050a',
             coreAccent: '#f59e0b',
         },
@@ -208,9 +198,6 @@ export const PHASE_ORDER: PhaseId[] = [
     '05_SINGULARITY',
 ];
 
-// ----------------------------------------------------------------------------
-// 4. ИНТЕРФЕЙСЫ СЛОЕВ ИНСПЕКЦИИ, КАМЕРЫ, ВЕСОВ 3 МИРОВ И ЧЕСТНОЙ ТЕЛЕМЕТРИИ
-// ----------------------------------------------------------------------------
 export interface ImmersionLayersState {
     layer1_illusionCanvas: boolean;
     layer2_metricsHud: boolean;
@@ -220,10 +207,10 @@ export interface ImmersionLayersState {
 }
 
 export interface WorldOpticalWeights {
-    illusionWeight: number; // Прозрачность внешнего космоса (0..1)
-    xrayWeight: number;     // Глобальная прозрачность чертежа X-RAY (0..1)
-    nexusWeight: number;    // Проявленность нейронной топологии NEXUS (0..1)
-    logicConvergence: number; // Степень синхронного слияния трех миров в LOGIC (0..1)
+    illusionWeight: number;
+    xrayWeight: number;
+    nexusWeight: number;
+    logicConvergence: number;
 }
 
 export interface VirtualCameraState {
@@ -240,7 +227,7 @@ export interface UniverseTelemetry {
     activePulses: number;
     simulationTimeSec: number;
     phaseElapsedSec: number;
-    phaseProgress: number; // Нормализованный прогресс текущей фазы (0.0 .. 1.0)
+    phaseProgress: number;
     engineBackend: 'WebGPU' | 'Canvas2D-HighDPI';
     wasmStatus: 'STANDBY (Client TS)' | 'ACTIVE';
     pythonBackendStatus: 'CLIENT-ONLY FALLBACK' | 'CONNECTED';
@@ -253,9 +240,9 @@ export interface UniverseState {
     currentPhase: PhaseId;
     phaseMeta: PhaseMetadata;
     singularityAct: SingularityAct;
-    singularityActProgress: number; // 0.0 .. 1.0 внутри текущего акта Фазы 5
-    zeroSilenceRemainingSec: number; // Таймер строгих 2.5 секунд тишины
-    githubCardAssemblyProgress: number; // Прогресс геодезической сборки карточки (0.0 .. 1.0)
+    singularityActProgress: number;
+    zeroSilenceRemainingSec: number;
+    githubCardAssemblyProgress: number;
     inspectionLevel: InspectionLevel;
     isPaused: boolean;
     isTabHidden: boolean;
@@ -274,16 +261,11 @@ export interface UniverseState {
 
 export type UniverseStateListener = (state: Readonly<UniverseState>) => void;
 
-// ----------------------------------------------------------------------------
-// 5. ГЛАВНЫЙ МЕНЕДЖЕР СОСТОЯНИЯ И ТАЙМЛАЙНА ВСЕЛЕННОЙ
-// ----------------------------------------------------------------------------
 class UniverseStoreManager {
     private state: UniverseState;
     private listeners: Set<UniverseStateListener> = new Set();
     private eventListeners: Set<UniverseEventListener> = new Set();
     private emittedEdges: Set<string> = new Set();
-
-    // Кольцевой буфер для честного сглаживания FPS и frameTimeMs (rolling average)
     private frameTimeSamples: number[] = [];
     private readonly maxSamples = 24;
 
@@ -306,14 +288,14 @@ class UniverseStoreManager {
             isPaused: false,
             isTabHidden: false,
             reducedMotion: Boolean(prefersReduced),
-            autoCyclePhases: true, // По Библии v1.1 история развивается автоматически со старта
+            autoCyclePhases: true,
             timeScale: 1.0,
             gravityMultiplier: 1.0,
             audioEnabled: false,
             audioVolume: 0.75,
             layers: {
                 layer1_illusionCanvas: true,
-                layer2_metricsHud: false, // На старте чистый экран COSMOS без рамок
+                layer2_metricsHud: false,
                 layer3_topologyGraph: true,
                 layer4_architectTerminal: false,
                 layer5_truthXRayMode: false,
@@ -321,13 +303,13 @@ class UniverseStoreManager {
             opticalWeights: {
                 illusionWeight: 1.0,
                 xrayWeight: 0.0,
-                nexusWeight: 0.12,
+                nexusWeight: 0.25,
                 logicConvergence: 0.0,
             },
             camera: {
                 driftX: 0,
                 driftY: 0,
-                zoom: 1.04,
+                zoom: 1.0,
             },
             telemetry: {
                 fps: 60,
@@ -344,8 +326,8 @@ class UniverseStoreManager {
                 audioStatus: 'MUTED',
             },
             terminalLogs: [
-                '[SYS_INIT] Единая модель состояния инициализирована (Client-Only Autonomous Mode).',
-                '[PHASE_01] Точка Нуля активна. Ожидание первичного импульса GENESIS...',
+                '[SYS_INIT] Ядро Нейроверса инициализировано (Autonomous Client Mode).',
+                '[PHASE_01] Точка Нуля активна. Зарождение первичных синаптических узлов...',
             ],
         };
     }
@@ -371,7 +353,6 @@ class UniverseStoreManager {
         }
     }
 
-    // Генерация однократного события (защита от дублирования в каждом кадре)
     public emitEventOnce(
         edgeKey: string,
         type: UniverseEventType,
@@ -407,9 +388,6 @@ class UniverseStoreManager {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 6. УПРАВЛЕНИЕ 5 ФАЗАМИ И АВТОМАТИЧЕСКОЙ ДРАМАТУРГИЕЙ ЦИКЛА
-    // --------------------------------------------------------------------------
     public setPhase(phaseId: PhaseId): void {
         if (this.state.currentPhase === phaseId && phaseId !== '01_VOID') return;
         const meta = UNIVERSE_PHASES[phaseId];
@@ -436,7 +414,6 @@ class UniverseStoreManager {
 
     public nextPhase(): void {
         const currentIndex = PHASE_ORDER.indexOf(this.state.currentPhase);
-        // В конце 05_SINGULARITY цикл останавливается на карточке GitHub до нажатия Restart
         if (this.state.currentPhase === '05_SINGULARITY') return;
         const nextIndex = (currentIndex + 1) % PHASE_ORDER.length;
         this.setPhase(PHASE_ORDER[nextIndex]);
@@ -448,12 +425,9 @@ class UniverseStoreManager {
         this.setPhase(PHASE_ORDER[prevIndex]);
     }
 
-    // --------------------------------------------------------------------------
-    // 7. ПЕРЕКЛЮЧЕНИЕ 5 УРОВНЕЙ ИНСПЕКЦИИ ИНТЕРФЕЙСА (COSMOS..XRAY)
-    // --------------------------------------------------------------------------
     public setInspectionLevel(level: InspectionLevel): void {
         const layers: ImmersionLayersState = {
-            layer1_illusionCanvas: true,
+            layer1_illusionCanvas: level !== 'XRAY',
             layer2_metricsHud: level === 'METRICS',
             layer3_topologyGraph: true,
             layer4_architectTerminal: level === 'TERMINAL',
@@ -465,7 +439,7 @@ class UniverseStoreManager {
             inspectionLevel: level,
             layers,
         };
-        this.addTerminalLog(`[INSPECT_MODE] Активен режим инспекции: ${level}`);
+        this.addTerminalLog(`[OPTICS_MODE] Режим наблюдения: ${level}`);
         this.notify();
     }
 
@@ -478,15 +452,9 @@ class UniverseStoreManager {
                 [layerKey]: nextVal,
             },
         };
-        this.addTerminalLog(
-            `[LAYER_CTRL] ${String(layerKey)} -> ${nextVal ? 'VISIBLE' : 'HIDDEN'}`
-        );
         this.notify();
     }
 
-    // --------------------------------------------------------------------------
-    // 8. РАСЧЕТ ВЕСОВ ТРЕХ МИРОВ И 4 АКТОВ ФАЗЫ 05 (LOGIC -> ZERO -> GITHUB)
-    // --------------------------------------------------------------------------
     private updateOpticalWeightsForPhase(phase: PhaseId, progress: number): void {
         const smooth = (t: number) => t * t * (3 - 2 * t);
         const p = Math.max(0, Math.min(1, progress));
@@ -494,67 +462,63 @@ class UniverseStoreManager {
         if (phase === '01_VOID') {
             this.state.opticalWeights = {
                 illusionWeight: 1.0,
-                xrayWeight: p > 0.82 ? (p - 0.82) * 0.45 : 0.0, // Тонкое предчувствие вектора перед GENESIS
-                nexusWeight: 0.08 + p * 0.1,
+                xrayWeight: p > 0.8 ? (p - 0.8) * 0.4 : 0.0,
+                nexusWeight: 0.2 + p * 0.25,
                 logicConvergence: 0.0,
             };
         } else if (phase === '02_GENESIS') {
             this.state.opticalWeights = {
                 illusionWeight: 1.0,
                 xrayWeight: 0.08,
-                nexusWeight: 0.22 + smooth(p) * 0.28,
+                nexusWeight: 0.45 + smooth(p) * 0.35,
                 logicConvergence: 0.0,
             };
         } else if (phase === '03_EVOLUTION') {
             this.state.opticalWeights = {
                 illusionWeight: 1.0,
-                xrayWeight: 0.12,
-                nexusWeight: 0.55 + smooth(p) * 0.4,
+                xrayWeight: 0.14,
+                nexusWeight: 0.85 + smooth(p) * 0.15,
                 logicConvergence: 0.0,
             };
         } else if (phase === '04_COLLAPSE') {
             this.state.opticalWeights = {
                 illusionWeight: 1.0,
-                xrayWeight: 0.22 + smooth(p) * 0.25,
-                nexusWeight: 0.92,
-                logicConvergence: p > 0.85 ? (p - 0.85) * 2.0 : 0.0,
+                xrayWeight: 0.28 + smooth(p) * 0.25,
+                nexusWeight: 1.0,
+                logicConvergence: p > 0.82 ? (p - 0.82) * 2.2 : 0.0,
             };
         } else if (phase === '05_SINGULARITY') {
-            this.advanceSingularityActs(p);
+            this.advanceSingularityActs();
         }
     }
 
-    // Детерминированная машина состояний для 4 актов финала
-    private advanceSingularityActs(phaseProgress: number): void {
+    private advanceSingularityActs(): void {
         const elapsed = this.state.telemetry.phaseElapsedSec;
 
         if (this.state.singularityAct === 'RESTART_COLLAPSE') {
             return;
         }
 
-        // Акт A (0..7 сек): Гравитационный захват и аккреционный диск с джетами
         if (elapsed < 7.0) {
             const actP = elapsed / 7.0;
             this.state.singularityAct = 'ACT_A_ACCRETION';
             this.state.singularityActProgress = actP;
             this.state.opticalWeights = {
                 illusionWeight: 1.0,
-                xrayWeight: 0.3 + actP * 0.25,
-                nexusWeight: 0.95,
-                logicConvergence: actP * 0.45,
+                xrayWeight: 0.35 + actP * 0.25,
+                nexusWeight: 1.0,
+                logicConvergence: actP * 0.5,
             };
-            this.emitEventOnce('act_a', 'collapse:started', 'Акт A: Гравитационный захват и аккреция.');
-        }
-        // Акт B (7..14.5 сек): Состояние LOGIC (синхронная прозрачность трех миров + финальное сжатие)
-        else if (elapsed < 14.5) {
+            this.emitEventOnce('act_a', 'collapse:started', 'Акт A: Золотой аккреционный вихрь и джеты.');
+        } else if (elapsed < 14.5) {
             const actP = (elapsed - 7.0) / 7.5;
             this.state.singularityAct = 'ACT_B_LOGIC';
             this.state.singularityActProgress = actP;
 
             const logicBell = actP < 0.65 ? 1.0 : Math.max(0, 1.0 - (actP - 0.65) / 0.35);
             this.state.opticalWeights = {
-                illusionWeight: 0.88 * logicBell,
-                xrayWeight: 0.85 * logicBell,
+                illusionWeight: 0.92 * logicBell,
+                xrayWeight: 0.88 * logicBell,
                 nexusWeight: 1.0 * logicBell,
                 logicConvergence: logicBell,
             };
@@ -562,14 +526,12 @@ class UniverseStoreManager {
             this.emitEventOnce(
                 'logic_start',
                 'logic:convergence-started',
-                'Акт B (LOGIC): Синхронное совпадение ILLUSION, X-RAY и NEXUS.'
+                'Акт B (LOGIC): Полное слияние Космоса, Нейро-Мозга NEXUS и Кода X-RAY.'
             );
             if (actP > 0.25) {
                 this.emitEventOnce('logic_lock', 'logic:convergence-locked');
             }
-        }
-        // Акт C (14.5..17.0 сек): Строгие 2.5 секунды абсолютной неподвижной тишины ZERO_SILENCE
-        else if (elapsed < 17.0) {
+        } else if (elapsed < 17.0) {
             const silenceElapsed = elapsed - 14.5;
             const remaining = Math.max(0, 2.5 - silenceElapsed);
             const wasSilence = this.state.singularityAct === 'ACT_C_ZERO_SILENCE';
@@ -587,14 +549,12 @@ class UniverseStoreManager {
             this.emitEventOnce(
                 'zero_silence_start',
                 'zero-silence:started',
-                'Акт C (ZERO SILENCE): 2.5 секунды абсолютной тишины в Точке Нуля.'
+                'Акт C (ZERO SILENCE): 2.5 секунды абсолютной тишины.'
             );
             if (!wasSilence) this.notify();
-        }
-        // Акт D (17.0+ сек): Геодезическая сборка голографической карточки GitHub
-        else {
+        } else {
             const cardElapsed = elapsed - 17.0;
-            const assemblyP = Math.min(1.0, cardElapsed / 3.8);
+            const assemblyP = Math.min(1.0, cardElapsed / 3.5);
             const prevAct = this.state.singularityAct;
 
             this.state.singularityAct = 'ACT_D_GITHUB_CARD';
@@ -606,7 +566,7 @@ class UniverseStoreManager {
             this.emitEventOnce(
                 'github_assembly',
                 'github-card:assembly-started',
-                'Акт D: Геодезическая сборка карточки DubnovAlexey/universe из Точки Нуля.'
+                'Акт D: Проявление голограммы DubnovAlexey/universe.'
             );
 
             if (assemblyP >= 1.0) {
@@ -616,16 +576,13 @@ class UniverseStoreManager {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 9. ОБРАТНАЯ ХОРЕОГРАФИЯ RESTART UNIVERSE (СВОРАЧИВАНИЕ КАРТОЧКИ В ТОЧКУ НУЛЯ)
-    // --------------------------------------------------------------------------
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.singularityAct = 'RESTART_COLLAPSE';
         this.state.singularityActProgress = 0;
         this.emitEvent(
             'universe:restart-started',
-            'Сворачивание голографической карточки обратно в Точку Нуля...'
+            'Сворачивание голограммы обратно в Точку Нуля...'
         );
         this.notify();
     }
@@ -641,12 +598,9 @@ class UniverseStoreManager {
         this.state.zeroSilenceRemainingSec = 2.5;
         this.state.telemetry.simulationTimeSec = 0;
         this.setPhase('01_VOID');
-        this.emitEvent('universe:restarted', `Новый цикл #${this.state.cycleCount} запущен (seed: ${nextSeed}).`);
+        this.emitEvent('universe:restarted', `Цикл #${this.state.cycleCount} запущен.`);
     }
 
-    // --------------------------------------------------------------------------
-    // 10. ОБНОВЛЕНИЕ ТАЙМЛАЙНА, КАМЕРЫ И ЧЕСТНОЙ ТЕЛЕМЕТРИИ В КАЖДОМ КАДРЕ
-    // --------------------------------------------------------------------------
     public updateTelemetry(partial: Partial<UniverseTelemetry>): void {
         if (partial.frameTimeMs !== undefined && partial.frameTimeMs > 0) {
             this.frameTimeSamples.push(partial.frameTimeMs);
@@ -669,33 +623,32 @@ class UniverseStoreManager {
             phaseProgress: Number(progress.toFixed(3)),
         };
 
-        // Предчувствие смены фазы за 2.5 секунды до перехода
-        if (duration - elapsed <= 2.5 && duration - elapsed > 0 && this.state.currentPhase !== '05_SINGULARITY') {
+        if (
+            duration - elapsed <= 2.5 &&
+            duration - elapsed > 0 &&
+            this.state.currentPhase !== '05_SINGULARITY'
+        ) {
             this.emitEventOnce(
                 `will_change_${this.state.currentPhase}`,
                 'phase:will-change',
-                `Предчувствие фазового перехода из ${this.state.currentPhase}...`
+                `Предчувствие перехода из ${this.state.currentPhase}...`
             );
         }
 
-        // Обновляем веса трех миров и акты сингулярности
         this.updateOpticalWeightsForPhase(this.state.currentPhase, progress);
 
-        // Плавный кинематографический дрейф камеры
         const simT = this.state.telemetry.simulationTimeSec;
         const motionScale = this.state.reducedMotion ? 0.25 : 1.0;
         if (this.state.singularityAct === 'ACT_C_ZERO_SILENCE') {
-            // В паузе тишины камера абсолютно неподвижна
             this.state.camera.driftX = 0;
             this.state.camera.driftY = 0;
         } else {
-            this.state.camera.driftX = Math.sin(simT * 0.18) * 18 * motionScale;
-            this.state.camera.driftY = Math.cos(simT * 0.14) * 12 * motionScale;
+            this.state.camera.driftX = Math.sin(simT * 0.16) * 10 * motionScale;
+            this.state.camera.driftY = Math.cos(simT * 0.12) * 7 * motionScale;
             const targetZoom = this.state.phaseMeta.cameraTargetZoom;
-            this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.02;
+            this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.025;
         }
 
-        // Автоматический переход между фазами 01 -> 02 -> 03 -> 04 -> 05
         if (
             this.state.autoCyclePhases &&
             !this.state.isPaused &&
@@ -709,9 +662,6 @@ class UniverseStoreManager {
 
     public togglePause(): void {
         this.state = { ...this.state, isPaused: !this.state.isPaused };
-        this.addTerminalLog(
-            this.state.isPaused ? '[TIME_LOCK] Симуляция приостановлена.' : '[TIME_FLOW] Симуляция возобновлена.'
-        );
         this.notify();
     }
 
@@ -721,9 +671,6 @@ class UniverseStoreManager {
 
     public toggleAutoCycle(): void {
         this.state = { ...this.state, autoCyclePhases: !this.state.autoCyclePhases };
-        this.addTerminalLog(
-            `[TIMELINE] Автоматическое повествование: ${this.state.autoCyclePhases ? 'ВКЛ' : 'РУЧНОЙ РЕЖИМ'}`
-        );
         this.notify();
     }
 
@@ -739,7 +686,10 @@ class UniverseStoreManager {
         this.notify();
     }
 
-    public setAudioEnabled(enabled: boolean, status: UniverseTelemetry['audioStatus'] = enabled ? 'PLAYING_SYNTH' : 'MUTED'): void {
+    public setAudioEnabled(
+        enabled: boolean,
+        status: UniverseTelemetry['audioStatus'] = enabled ? 'PLAYING_SYNTH' : 'MUTED'
+    ): void {
         this.state = {
             ...this.state,
             audioEnabled: enabled,
@@ -748,7 +698,6 @@ class UniverseStoreManager {
                 audioStatus: status,
             },
         };
-        this.addTerminalLog(`[AUDIO_ENGINE] Статус аудио: ${status}`);
         this.notify();
     }
 
@@ -761,10 +710,9 @@ class UniverseStoreManager {
     public addTerminalLog(message: string): void {
         const timestamp = new Date().toLocaleTimeString('ru-RU', { hour12: false });
         const entry = `[${timestamp}] ${message}`;
-        const updatedLogs = [...this.state.terminalLogs, entry].slice(-40);
         this.state = {
             ...this.state,
-            terminalLogs: updatedLogs,
+            terminalLogs: [...this.state.terminalLogs, entry].slice(-40),
         };
     }
 }

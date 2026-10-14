@@ -1,86 +1,65 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/02_genesis.ts
-// НАЗНАЧЕНИЕ: Модель Фазы 02 — «ГЕНЕЗИС (IGNITION GENESIS)» по стандарту Bible v1.1
+// НАЗНАЧЕНИЕ: Образ 02 — «ВЕЛИКАЯ ЧЕТЫРЕХРУКАВНАЯ СПИРАЛЬНАЯ ГАЛАКТИКА (GENESIS)»
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Разворачивает пространство из Точки Нуля концентрическими волновыми фронтами.
-// 2. Формирует два вращающихся центра масс с легкой природной асимметрией.
-// 3. Закручивает материю в спиральные рукава разной плотности и строит световой мост между ядрами.
-// 4. Модулирует светимость узлов для внутренней подсветки газовых туманностей.
+// 1. Формирует 4 изогнутых спиральных рукава галактики на 90% ширины и высоты экрана.
+// 2. Создает два вращающихся солнечных ядра в центре и плазменный мост между ними.
+// 3. Строго центрирует галактику относительно (centerX, centerY).
 // ============================================================================
 
-import type { QuantumParticle } from './01_void';
+import type { MorphTargetPoint, QuantumParticle } from './01_void';
 
-// ----------------------------------------------------------------------------
-// 1. КОНСТАНТЫ БИНАРНОГО ЯДРА, АСИММЕТРИИ РУКАВОВ И СВЕТОВОГО МОСТА
-// ----------------------------------------------------------------------------
-const SPIRAL_TIGHTNESS = 0.0115;
-const MAX_BINARY_SEPARATION = 155;
-
-// ----------------------------------------------------------------------------
-// 2. РАСЧЕТ ФИЗИКИ РАЗВЕРТЫВАНИЯ ПРОСТРАНСТВА В ФАЗЕ 02 (GENESIS)
-// ----------------------------------------------------------------------------
-export function applyGenesisPhysics(
+export function computeGenesisTarget(
     p: QuantumParticle,
     centerX: number,
     centerY: number,
-    dt: number,
+    width: number,
+    height: number,
     simTimeSec: number,
-    effectiveGravity: number,
-    phaseProgress = 0.5
-): void {
-    // 1. Плавное расхождение двух вращающихся центров масс из Точки Нуля
-    const unfoldEnvelope = Math.min(1.0, phaseProgress * 1.65);
-    const coreSeparation = MAX_BINARY_SEPARATION * unfoldEnvelope;
-    const coreAngle = simTimeSec * 0.58;
+    phaseProgress: number
+): MorphTargetPoint {
+    const unfold = Math.min(1.0, 0.38 + phaseProgress * 0.72);
+    const rotSpeed = simTimeSec * 0.36;
 
-    // Асимметрия: первое ядро массивнее и чуть ближе к центру, второе описывает более широкую дугу
-    const core1X = centerX + Math.cos(coreAngle) * (coreSeparation * 0.85);
-    const core1Y = centerY + Math.sin(coreAngle) * (coreSeparation * 0.85);
-    const core2X = centerX - Math.cos(coreAngle + 0.18) * (coreSeparation * 1.15);
-    const core2Y = centerY - Math.sin(coreAngle + 0.18) * (coreSeparation * 1.15);
+    // 12% частиц образуют пылающий бинарный мост между двумя ядрами в центре галактики
+    if (p.id % 8 === 0) {
+        const coreSepX = width * 0.16 * unfold;
+        const coreSepY = height * 0.10 * unfold;
+        const c1x = centerX + Math.cos(rotSpeed) * coreSepX;
+        const c1y = centerY + Math.sin(rotSpeed) * coreSepY;
+        const c2x = centerX - Math.cos(rotSpeed) * coreSepX;
+        const c2y = centerY - Math.sin(rotSpeed) * coreSepY;
 
-    // 15% частиц формируют тонкий световой мост между двумя центрами масс
-    const isBridgeParticle = p.id % 7 === 0;
-    let targetX = p.id % 2 === 0 ? core1X : core2X;
-    let targetY = p.id % 2 === 0 ? core1Y : core2Y;
-
-    if (isBridgeParticle) {
-        const bridgeT = (p.id % 19) / 18;
-        targetX = core1X + (core2X - core1X) * bridgeT;
-        targetY = core1Y + (core2Y - core1Y) * bridgeT;
+        const t = (p.id % 23) / 22;
+        const sCurve = Math.sin(t * Math.PI * 2 + simTimeSec * 1.5) * 28;
+        return {
+            x: c1x + (c2x - c1x) * t,
+            y: c1y + (c2y - c1y) * t + sCurve,
+            energy: 0.92,
+        };
     }
 
-    const dx = targetX - p.x;
-    const dy = targetY - p.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) + 1.0;
+    // Четыре величественных спиральных рукава галактики во весь экран 16:9
+    const armIndex = p.id % 4;
+    const armBaseAngle = (armIndex * Math.PI) / 2;
+    const radialFraction = 0.08 + ((p.id % 32) / 31) * 0.88;
 
-    const radialX = dx / dist;
-    const radialY = dy / dist;
-    const tangentX = -radialY * p.quantumSpin;
-    const tangentY = radialX * p.quantumSpin;
+    // Закрутка логарифмической спирали + естественная ширина рукава
+    const spiralTwist = radialFraction * 2.85 - rotSpeed;
+    const armThickness = (Math.sin(p.phaseOffset * 3.0 + simTimeSec) * 0.14) * (1.1 - radialFraction * 0.4);
+    const totalAngle = armBaseAngle + spiralTwist + armThickness;
 
-    // 2. Концентрические фронты раскрытия пространства в начале GENESIS
-    const distFromOrigin = Math.hypot(p.x - centerX, p.y - centerY) + 1.0;
-    const waveFrontRadius = phaseProgress * 620;
-    const distToFront = Math.abs(distFromOrigin - waveFrontRadius);
-    const frontImpulse = distToFront < 75 ? (1.0 - distToFront / 75) * 34 * (1.0 - phaseProgress * 0.5) : 0;
+    const rx = width * 0.45 * radialFraction * unfold;
+    const ry = height * 0.39 * radialFraction * unfold;
 
-    // 3. Асимметричное закручивание в логарифмические спиральные рукава
-    const armOffset = p.id % 2 === 0 ? 0 : Math.PI * 1.08;
-    const currentAngle = Math.atan2(p.y - centerY, p.x - centerX);
-    const idealSpiralAngle = distFromOrigin * SPIRAL_TIGHTNESS - simTimeSec * 0.72 + armOffset;
-    const spiralAlignment = Math.sin(idealSpiralAngle - currentAngle) * 44 * effectiveGravity;
+    // Кинематографический 3D-наклон галактической плоскости
+    const rawX = Math.cos(totalAngle) * rx;
+    const rawY = Math.sin(totalAngle) * ry;
+    const tiltAngle = -0.16;
 
-    const pullStrength = (isBridgeParticle ? 54 : 34) * effectiveGravity;
-    const swirlStrength = (48 + spiralAlignment) * effectiveGravity;
+    const x = centerX + rawX * Math.cos(tiltAngle) - rawY * Math.sin(tiltAngle);
+    const y = centerY + rawX * Math.sin(tiltAngle) + rawY * Math.cos(tiltAngle);
 
-    p.vx += (radialX * (pullStrength - frontImpulse) + tangentX * swirlStrength) * dt;
-    p.vy += (radialY * (pullStrength - frontImpulse) + tangentY * swirlStrength) * dt;
-
-    // 4. Энергия узла: высокая вблизи двух ядер и светового моста, спокойнее на темной периферии
-    const coreProximity = Math.max(0, 1.0 - dist / 380);
-    p.energy = Math.min(
-        1.0,
-        (0.22 + coreProximity * 0.68 + (isBridgeParticle ? 0.18 : 0)) * Math.min(1.0, 0.35 + phaseProgress * 1.1)
-    );
+    const energy = Math.min(1.0, 0.42 + (1.0 - radialFraction * 0.55) * 0.55);
+    return { x, y, energy };
 }

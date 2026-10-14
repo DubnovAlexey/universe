@@ -1,46 +1,51 @@
+// noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/01_void.ts
-// НАЗНАЧЕНИЕ: Единая модель узлов, 4 планов глубины, топологии NEXUS и Фазы 01 (VOID)
+// НАЗНАЧЕНИЕ: Ядро плавного морфинга 5 Образов Вселенной, Нейро-Мозга и Синапсов
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Создает кластерное распределение узлов с пустотами в 4 эшелонах глубины (depthZ).
-// 2. Реализует Фазу 01 (VOID): живую микроскопическую Точку Нуля и предчувствие GENESIS.
-// 3. Строит 3 класса кривых Безье для сети NEXUS: аксонные магистрали, мосты и дендриты.
-// 4. Проводит каскадные световые пакеты вдоль длины дуги (arc length) с afterglow (0.8-1.6с).
-// 5. Моделирует интерференцию сигналов в соме нейрона (окно 120-300мс + рефрактерная пауза).
+// 1. Центрирует все 5 визуальных образов строго по центру экрана 16:9 без смещений.
+// 2. Вычисляет плавное перетекание (morphing) координат и энергии при смене фаз.
+// 3. Строит выраженную нейросеть головного мозга (сомы, дендриты, изогнутые аксоны).
+// 4. Запускает крупные синаптические сигналы-кометы и вспышки колец активации нейронов.
 // ============================================================================
 
 import type { PhaseId } from '../store/universeState';
 import { UNIVERSE_PHASES, universeStore } from '../store/universeState';
 import { stressStore } from '../store/stressState';
-import { applyGenesisPhysics } from './02_genesis';
-import { applyEvolutionPhysics } from './03_evolution';
-import { applyCollapsePhysics } from './04_collapse';
-import { applySingularityPhysics } from './05_singularity';
+import { computeGenesisTarget } from './02_genesis';
+import { computeEvolutionBrainTarget } from './03_evolution';
+import { computeCollapseStormTarget } from './04_collapse';
+import { computeSingularityTarget } from './05_singularity';
 
-// ----------------------------------------------------------------------------
-// 1. ТИПЫ 4 ЭШЕЛОНОВ ГЛУБИНЫ, УЗЛОВ-СОМ, 3 КЛАССОВ РЕБЕР NEXUS И ИМПУЛЬСОВ
-// ----------------------------------------------------------------------------
 export type DepthLayerTier = 'FOREGROUND' | 'MIDGROUND' | 'BACKGROUND' | 'DEEP_LAYER';
 export type NexusEdgeClass = 'AXON_TRUNK' | 'BRIDGE' | 'DENDRITE';
+
+export interface MorphTargetPoint {
+    x: number;
+    y: number;
+    energy: number;
+}
 
 export interface QuantumParticle {
     id: number;
     x: number;
     y: number;
-    depthZ: number;            // 0.1..0.29 (Deep), 0.3..0.65 (Bg), 0.7..1.2 (Mid), 1.25..1.6 (Fg)
+    homeNormX: number;
+    homeNormY: number;
+    depthZ: number;
     depthTier: DepthLayerTier;
-    clusterId: number;         // Привязка к одному из 7 асимметричных кластеров коры NEXUS
+    clusterId: number;
     vx: number;
     vy: number;
     mass: number;
     radius: number;
     energy: number;
-    synapticCharge: number;    // Заряд сомы нейрона при приходе импульса (0..1)
-    interferenceFlash: number; // Вспышка интерференции при совпадении >=2 сигналов (0..1)
+    synapticCharge: number;    // Яркость вспышки сомы нейрона при получении сигнала (0..1)
+    interferenceFlash: number; // Кольцо синаптического озарения вокруг нейрона (0..1)
     lastSignalArrivalMs: number;
-    cooldownUntilMs: number;   // Рефрактерный период сомы (200-400 мс)
-    degree: number;            // Количество активных связей узла для X-RAY выносок
-    moduleTag: string;         // Реальное имя модуля проекта для инженерного режима X-RAY
+    cooldownUntilMs: number;
+    degree: number;
+    moduleTag: string;
     phaseOffset: number;
     quantumSpin: number;
 }
@@ -49,17 +54,17 @@ export interface TopologyEdge {
     id: string;
     fromIndex: number;
     toIndex: number;
-    edgeClass: NexusEdgeClass; // Магистраль (A), Мост (B) или Дендрит (C)
+    edgeClass: NexusEdgeClass;
     x1: number;
     y1: number;
     x2: number;
     y2: number;
-    ctrlX: number;             // Контрольная точка кривой Безье (смещенная по нормали)
+    ctrlX: number;
     ctrlY: number;
-    arcLength: number;         // Длина дуги для равномерной скорости импульса
+    arcLength: number;
     strength: number;
     truthVisibility: number;
-    afterglow: number;         // Остаточное свечение ребра после прохода сигнала (0..1)
+    afterglow: number;
 }
 
 export interface SynapticPulse {
@@ -73,10 +78,10 @@ export interface SynapticPulse {
     ctrlY: number;
     x2: number;
     y2: number;
-    progress: number;          // Положение вдоль дуги кривой (0.0 -> 1.0)
+    progress: number;
     speed: number;
-    bodyLength: number;        // 6-14% длины ребра
-    tailLength: number;        // 10-22% длины ребра позади тела
+    bodyLength: number;
+    tailLength: number;
     intensity: number;
     cascadeDepth: number;
 }
@@ -91,9 +96,20 @@ const REAL_MODULE_TAGS = [
     'universeState.ts',
 ];
 
-// ----------------------------------------------------------------------------
-// 2. ГЛАВНЫЙ КЛАСС СИМУЛЯЦИИ ВСЕЛЕННОЙ И ТОПОЛОГИИ NEXUS
-// ----------------------------------------------------------------------------
+// 10 симметричных кортикальных центров левого и правого полушарий мозга (строго по центру экрана)
+export const BRAIN_HEMISPHERE_LOBES: ReadonlyArray<[number, number]> = [
+    [-0.34, -0.16], // Левая лобная кора
+    [-0.36, 0.08],  // Левая височная кора
+    [-0.24, -0.28], // Левая верхняя теменная извилина
+    [-0.22, 0.25],  // Левая затылочная доля
+    [-0.09, -0.04], // Левый таламус / мозолистое тело
+    [0.09, 0.04],   // Правый таламус / мозолистое тело
+    [0.22, -0.25],  // Правая верхняя теменная извилина
+    [0.24, 0.28],   // Правая затылочная доля
+    [0.36, -0.08],  // Правая височная кора
+    [0.34, 0.16],   // Правая лобная кора
+];
+
 export class VoidPhaseSimulation {
     private particles: QuantumParticle[] = [];
     private edges: TopologyEdge[] = [];
@@ -102,11 +118,12 @@ export class VoidPhaseSimulation {
     private width = 1920;
     private height = 1080;
     private lastCycleCount = 1;
+    private previousPhase: PhaseId = '01_VOID';
 
     constructor(initialWidth = 1920, initialHeight = 1080) {
         this.width = initialWidth;
         this.height = initialHeight;
-        this.respawnParticles(UNIVERSE_PHASES['01_VOID'].targetParticleCount);
+        this.respawnParticles(UNIVERSE_PHASES['03_EVOLUTION'].targetParticleCount);
     }
 
     private seededRandom(seed: number): number {
@@ -126,25 +143,9 @@ export class VoidPhaseSimulation {
         }
     }
 
-    public syncParticleCount(targetCount: number): void {
-        const uState = universeStore.getState();
-        const limit = uState.reducedMotion ? 420 : 880;
-        const cappedTarget = Math.min(targetCount, limit);
-        if (this.particles.length === cappedTarget) return;
-
-        if (this.particles.length < cappedTarget) {
-            const toAdd = cappedTarget - this.particles.length;
-            for (let i = 0; i < toAdd; i++) {
-                this.particles.push(this.createSingleParticle(this.particles.length));
-            }
-        } else {
-            this.particles.length = cappedTarget;
-        }
-    }
-
     public respawnParticles(count: number): void {
         const uState = universeStore.getState();
-        const cappedCount = Math.min(count, uState.reducedMotion ? 420 : 880);
+        const cappedCount = Math.min(count, uState.reducedMotion ? 420 : 780);
         this.particles = [];
         this.edges = [];
         this.pulses = [];
@@ -155,26 +156,22 @@ export class VoidPhaseSimulation {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 3. КЛАСТЕРНАЯ ГЕНЕРАЦИЯ УЗЛОВ С ПУСТОТАМИ И 4 ЭШЕЛОНАМИ ГЛУБИНЫ
-    // --------------------------------------------------------------------------
     private createSingleParticle(id: number): QuantumParticle {
-        const seed = universeStore.getState().seed + id * 31;
+        const seed = universeStore.getState().seed + id * 37;
         const r1 = this.seededRandom(seed);
         const r2 = this.seededRandom(seed + 1);
         const r3 = this.seededRandom(seed + 2);
         const r4 = this.seededRandom(seed + 3);
 
-        // Распределение по 4 эшелонам глубины согласно Project Bible v1.1
-        let depthZ = 0.85;
-        let depthTier: DepthLayerTier = 'MIDGROUND';
+        let depthZ: number;
+        let depthTier: DepthLayerTier;
         if (r1 < 0.14) {
-            depthZ = 0.12 + r2 * 0.16;
+            depthZ = 0.14 + r2 * 0.15;
             depthTier = 'DEEP_LAYER';
-        } else if (r1 < 0.44) {
-            depthZ = 0.32 + r2 * 0.32;
+        } else if (r1 < 0.42) {
+            depthZ = 0.34 + r2 * 0.30;
             depthTier = 'BACKGROUND';
-        } else if (r1 < 0.91) {
+        } else if (r1 < 0.90) {
             depthZ = 0.72 + r2 * 0.46;
             depthTier = 'MIDGROUND';
         } else {
@@ -182,32 +179,31 @@ export class VoidPhaseSimulation {
             depthTier = 'FOREGROUND';
         }
 
-        // 7 асимметричных кластеров, чтобы оставались выразительные космические пустоты
-        const clusterId = id % 7;
-        const clusterAngle = (clusterId / 7) * Math.PI * 2 + 0.35;
-        const clusterDist = (0.12 + (clusterId % 3) * 0.11) * Math.min(this.width, this.height);
-        const cx = this.width * 0.5 + Math.cos(clusterAngle) * clusterDist;
-        const cy = this.height * 0.5 + Math.sin(clusterAngle) * clusterDist * 0.78;
+        const clusterId = id % BRAIN_HEMISPHERE_LOBES.length;
+        const [lobeX, lobeY] = BRAIN_HEMISPHERE_LOBES[clusterId];
 
-        const localSpread = (45 + r3 * 195) * (depthTier === 'BACKGROUND' ? 1.45 : 0.95);
-        const localAngle = r4 * Math.PI * 2;
+        const angle = r4 * Math.PI * 2;
+        const radiusSpread = 0.03 + Math.pow(r3, 0.8) * 0.13;
+        const homeNormX = Math.max(-0.45, Math.min(0.45, lobeX + Math.cos(angle) * radiusSpread));
+        const homeNormY = Math.max(-0.42, Math.min(0.42, lobeY + Math.sin(angle) * (radiusSpread * 1.1)));
 
-        const x = cx + Math.cos(localAngle) * localSpread;
-        const y = cy + Math.sin(localAngle) * localSpread;
+        const x = this.width * (0.5 + homeNormX);
+        const y = this.height * (0.5 + homeNormY);
 
-        const speed = (3 + r2 * 14) * (0.5 + depthZ * 0.5);
         return {
             id,
             x,
             y,
+            homeNormX,
+            homeNormY,
             depthZ,
             depthTier,
             clusterId,
-            vx: Math.cos(localAngle + 1.4) * speed,
-            vy: Math.sin(localAngle + 1.4) * speed,
-            mass: 0.65 + depthZ * 1.15,
-            radius: (0.95 + r3 * 1.75) * (depthTier === 'FOREGROUND' ? 1.45 : depthZ),
-            energy: 0.18 + r2 * 0.55,
+            vx: 0,
+            vy: 0,
+            mass: 0.7 + depthZ * 1.1,
+            radius: (1.15 + r3 * 1.95) * (depthTier === 'FOREGROUND' ? 1.6 : depthZ),
+            energy: 0.3 + r2 * 0.5,
             synapticCharge: 0,
             interferenceFlash: 0,
             lastSignalArrivalMs: 0,
@@ -219,9 +215,52 @@ export class VoidPhaseSimulation {
         };
     }
 
-    // --------------------------------------------------------------------------
-    // 4. ГЛАВНЫЙ ШАГ ФИЗИКИ, ТОПОЛОГИИ NEXUS И КАСКАДНЫХ СИГНАЛОВ
-    // --------------------------------------------------------------------------
+    private computePhaseArchetypePoint(
+        phase: PhaseId,
+        p: QuantumParticle,
+        centerX: number,
+        centerY: number,
+        simTimeSec: number,
+        phaseProgress: number
+    ): MorphTargetPoint {
+        switch (phase) {
+            case '01_VOID':
+                return this.computeVoidWaveTarget(p, centerX, centerY, simTimeSec, phaseProgress);
+            case '02_GENESIS':
+                return computeGenesisTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+            case '03_EVOLUTION':
+                return computeEvolutionBrainTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+            case '04_COLLAPSE':
+                return computeCollapseStormTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+            case '05_SINGULARITY':
+                return computeSingularityTarget(p, centerX, centerY, this.width, this.height, simTimeSec);
+        }
+    }
+
+    private computeVoidWaveTarget(
+        p: QuantumParticle,
+        centerX: number,
+        centerY: number,
+        simTimeSec: number,
+        phaseProgress: number
+    ): MorphTargetPoint {
+        const baseDistX = p.homeNormX * this.width * 0.92;
+        const baseDistY = p.homeNormY * this.height * 0.88;
+        const dist = Math.hypot(baseDistX, baseDistY) + 1.0;
+        const angle = Math.atan2(baseDistY, baseDistX) + simTimeSec * 0.08 * p.quantumSpin;
+
+        const ripple = Math.sin(dist * 0.018 - simTimeSec * 1.4 + p.phaseOffset) * 22;
+        const anticipation = Math.max(0, (phaseProgress - 0.65) / 0.35);
+        const gatherScale = p.id % 3 === 0 ? 1.0 - anticipation * 0.45 : 1.0;
+
+        const x = centerX + Math.cos(angle) * (dist * gatherScale + ripple);
+        const y = centerY + Math.sin(angle) * (dist * gatherScale + ripple) * 0.85;
+
+        const waveGlow = 0.5 + 0.5 * Math.sin(dist * 0.02 - simTimeSec * 1.6 + p.phaseOffset);
+        const energy = 0.15 + waveGlow * 0.45 + anticipation * 0.3;
+        return { x, y, energy };
+    }
+
     public update(
         dtSeconds: number,
         phase: PhaseId,
@@ -231,175 +270,129 @@ export class VoidPhaseSimulation {
     ): void {
         const uState = universeStore.getState();
 
-        // Проверка перезапуска цикла (Restart Universe)
         if (uState.cycleCount !== this.lastCycleCount) {
             this.lastCycleCount = uState.cycleCount;
-            this.respawnParticles(UNIVERSE_PHASES['01_VOID'].targetParticleCount);
+            this.previousPhase = '01_VOID';
+            this.respawnParticles(UNIVERSE_PHASES['03_EVOLUTION'].targetParticleCount);
         }
 
-        // В состоянии 2.5с абсолютной тишины (ZERO_SILENCE) физика и импульсы полностью неподвижны
         if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
             this.pulses = [];
             return;
         }
 
-        const motionFactor = uState.reducedMotion ? 0.45 : 1.0;
-        const dt = Math.min(dtSeconds, 0.05) * timeScale * motionFactor;
-        const phaseMeta = UNIVERSE_PHASES[phase];
-
-        this.syncParticleCount(phaseMeta.targetParticleCount);
-
+        const dt = Math.min(dtSeconds, 0.05) * timeScale * (uState.reducedMotion ? 0.5 : 1.0);
         const stressState = stressStore.getState();
         const centerX = this.width * 0.5;
         const centerY = this.height * 0.5;
-        const effectiveGravity = phaseMeta.baseGravity * gravityMultiplier;
         const phaseProgress = uState.telemetry.phaseProgress;
         const nowMs = performance.now();
+
+        const morphWindow = 0.28;
+        const rawBlend = phaseProgress < morphWindow ? phaseProgress / morphWindow : 1.0;
+        const smoothBlend = rawBlend * rawBlend * (3.0 - 2.0 * rawBlend);
+
+        if (phaseProgress >= morphWindow && this.previousPhase !== phase) {
+            this.previousPhase = phase;
+        }
+
+        const springRate = Math.min(1.0, dt * (2.6 + gravityMultiplier * 0.9));
 
         for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
             p.degree = 0;
 
-            switch (phase) {
-                case '01_VOID':
-                    this.applyVoidPhysics(p, centerX, centerY, dt, simTimeSec, effectiveGravity, phaseProgress);
-                    break;
-                case '02_GENESIS':
-                    applyGenesisPhysics(p, centerX, centerY, dt, simTimeSec, effectiveGravity, phaseProgress);
-                    break;
-                case '03_EVOLUTION':
-                    applyEvolutionPhysics(p, centerX, centerY, dt, simTimeSec, effectiveGravity);
-                    break;
-                case '04_COLLAPSE':
-                    applyCollapsePhysics(p, centerX, centerY, dt, simTimeSec, effectiveGravity);
-                    break;
-                case '05_SINGULARITY':
-                    applySingularityPhysics(p, centerX, centerY, dt, simTimeSec, effectiveGravity);
-                    break;
+            const currentTarget = this.computePhaseArchetypePoint(
+                phase,
+                p,
+                centerX,
+                centerY,
+                simTimeSec,
+                phaseProgress
+            );
+
+            let targetX = currentTarget.x;
+            let targetY = currentTarget.y;
+            let targetEnergy = currentTarget.energy;
+
+            if (smoothBlend < 0.999 && this.previousPhase !== phase) {
+                const prevTarget = this.computePhaseArchetypePoint(
+                    this.previousPhase,
+                    p,
+                    centerX,
+                    centerY,
+                    simTimeSec,
+                    1.0
+                );
+                targetX = prevTarget.x * (1.0 - smoothBlend) + currentTarget.x * smoothBlend;
+                targetY = prevTarget.y * (1.0 - smoothBlend) + currentTarget.y * smoothBlend;
+                targetEnergy = prevTarget.energy * (1.0 - smoothBlend) + currentTarget.energy * smoothBlend;
             }
 
-            // Взаимодействие с инерционной BREACH LENS
+            const dx = targetX - p.x;
+            const dy = targetY - p.y;
+            p.vx = dx * 2.8;
+            p.vy = dy * 2.8;
+
             if (stressState.isPointerInside && stressState.currentBreachRadius > 4) {
                 const dxPtr = p.x - stressState.lensX;
                 const dyPtr = p.y - stressState.lensY;
-                const distPtr = Math.sqrt(dxPtr * dxPtr + dyPtr * dyPtr) + 0.1;
-                const influenceRadius = stressState.currentBreachRadius * 1.25;
+                const distPtr = Math.hypot(dxPtr, dyPtr) + 0.1;
+                const influenceRadius = stressState.currentBreachRadius * 1.35;
 
                 if (distPtr < influenceRadius) {
                     const factor = 1.0 - distPtr / influenceRadius;
-                    p.synapticCharge = Math.min(1.0, p.synapticCharge + factor * dt * 2.4);
+                    p.synapticCharge = Math.min(1.0, p.synapticCharge + factor * dt * 3.5);
 
                     if (stressState.isBreaching) {
-                        const swirlX = -dyPtr / distPtr;
-                        const swirlY = dxPtr / distPtr;
-                        p.vx += (swirlX * 95 + (dxPtr / distPtr) * 38) * factor * dt;
-                        p.vy += (swirlY * 95 + (dyPtr / distPtr) * 38) * factor * dt;
+                        const push = factor * 24;
+                        targetX += (-dyPtr / distPtr) * push;
+                        targetY += (dxPtr / distPtr) * push;
                     }
                 }
             }
 
-            // Затухание синаптического потенциала и вспышки интерференции
+            p.x += (targetX - p.x) * springRate;
+            p.y += (targetY - p.y) * springRate;
+            p.energy += (targetEnergy - p.energy) * Math.min(1.0, dt * 4.0);
+
             if (p.synapticCharge > 0) {
-                p.synapticCharge = Math.max(0, p.synapticCharge - dt * 1.35);
+                p.synapticCharge = Math.max(0, p.synapticCharge - dt * 1.1);
             }
             if (p.interferenceFlash > 0) {
-                p.interferenceFlash = Math.max(0, p.interferenceFlash - dt * 2.1);
+                p.interferenceFlash = Math.max(0, p.interferenceFlash - dt * 1.45);
             }
-
-            // Вязкое демпфирование и параллакс 4 эшелонов глубины
-            const damping = phase === '05_SINGULARITY' ? 0.955 : 0.984;
-            p.vx *= damping;
-            p.vy *= damping;
-
-            // Передний план дает выраженный параллакс, дальний и глубинный почти неподвижны
-            const parallaxSpeed =
-                p.depthTier === 'FOREGROUND'
-                    ? 1.28
-                    : p.depthTier === 'MIDGROUND'
-                        ? 0.88
-                        : p.depthTier === 'BACKGROUND'
-                            ? 0.34
-                            : 0.16;
-
-            p.x += p.vx * parallaxSpeed * dt;
-            p.y += p.vy * parallaxSpeed * dt;
-
-            // Мягкое удержание в пределах сцены
-            const margin = 48;
-            if (p.x < -margin) p.x = this.width + margin;
-            if (p.x > this.width + margin) p.x = -margin;
-            if (p.y < -margin) p.y = this.height + margin;
-            if (p.y > this.height + margin) p.y = -margin;
         }
 
         this.buildNexusOrganicTopology(dt, phase, simTimeSec);
         this.updateSynapticPulses(dt, phase, nowMs);
     }
 
-    // --------------------------------------------------------------------------
-    // 5. ХОРЕОГРАФИЯ ФАЗЫ 01 (VOID): ТИШИНА, ТОЧКА НУЛЯ И ПРЕДЧУВСТВИЕ GENESIS
-    // --------------------------------------------------------------------------
-    private applyVoidPhysics(
-        p: QuantumParticle,
-        centerX: number,
-        centerY: number,
-        dt: number,
-        simTimeSec: number,
-        effectiveGravity: number,
-        phaseProgress: number
-    ): void {
-        const dx = centerX - p.x;
-        const dy = centerY - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) + 1.0;
-
-        // В начале VOID почти все частицы погружены в темноту; видна лишь редкая пыль вокруг Точки Нуля
-        const isRareDust = p.id % 14 === 0;
-        const anticipation = Math.max(0, (phaseProgress - 0.62) / 0.38); // Предчувствие в последние 38% фазы
-
-        const driftX = Math.sin(simTimeSec * 0.45 + p.phaseOffset) * 4.5;
-        const driftY = Math.cos(simTimeSec * 0.38 + p.phaseOffset) * 4.5;
-
-        // По мере приближения к GENESIS ближайшие флуктуации ориентируются к Точке Нуля
-        const orientPull = (8 + anticipation * 58) * effectiveGravity;
-        p.vx += (driftX + (dx / dist) * orientPull) * dt;
-        p.vy += (driftY + (dy / dist) * orientPull) * dt;
-
-        if (isRareDust) {
-            p.energy = 0.14 + 0.22 * Math.sin(simTimeSec * 0.9 + p.phaseOffset) + anticipation * 0.35;
-        } else {
-            // Остальные узлы спят в темноте и мягко просыпаются только в фазе предчувствия
-            p.energy = anticipation * anticipation * 0.42;
-        }
-    }
-
-    // --------------------------------------------------------------------------
-    // 6. ПОСТРОЕНИЕ 3 КЛАССОВ КРИВЫХ NEXUS (МАГИСТРАЛИ, МОСТЫ, ДЕНДРИТЫ) И AFTERGLOW
-    // --------------------------------------------------------------------------
     private buildNexusOrganicTopology(dt: number, phase: PhaseId, simTimeSec: number): void {
-        // 1. Экспоненциальное затухание afterglow на всех ребрах (время жизни 0.8-1.6 сек)
-        for (const [edgeId, glow] of this.afterglowMap.entries()) {
-            const nextGlow = glow * Math.exp(-dt * 1.05);
-            if (nextGlow < 0.015) {
-                this.afterglowMap.delete(edgeId);
+        const keysToDelete: string[] = [];
+        this.afterglowMap.forEach((glow, edgeId) => {
+            const nextGlow = glow * Math.exp(-dt * 0.85);
+            if (nextGlow < 0.02) {
+                keysToDelete.push(edgeId);
             } else {
                 this.afterglowMap.set(edgeId, nextGlow);
             }
+        });
+        for (let k = 0; k < keysToDelete.length; k++) {
+            this.afterglowMap.delete(keysToDelete[k]);
         }
 
         this.edges = [];
-        const uState = universeStore.getState();
-        if (phase === '01_VOID' && uState.telemetry.phaseProgress < 0.65) {
-            return; // В начале VOID сеть скрыта в темноте
-        }
-
-        const maxConnectDist = phase === '03_EVOLUTION' || phase === '04_COLLAPSE' ? 128 : 105;
+        const screenScale = Math.max(1.0, Math.min(this.width, this.height) / 920);
+        const maxConnectDist =
+            (phase === '03_EVOLUTION' || phase === '04_COLLAPSE' ? 230 : 185) * screenScale;
         const maxConnectDistSq = maxConnectDist * maxConnectDist;
         const count = this.particles.length;
-        const stride = count > 540 ? 2 : 1;
+        const stride = count > 520 ? 2 : 1;
 
         for (let i = 0; i < count; i += stride) {
             const p1 = this.particles[i];
-            if (p1.depthTier === 'FOREGROUND') continue; // Пыль переднего плана не входит в граф
+            if (p1.depthTier === 'FOREGROUND') continue;
             let connections = 0;
 
             for (let j = i + stride; j < count; j += stride) {
@@ -410,40 +403,36 @@ export class VoidPhaseSimulation {
                 const dy = p2.y - p1.y;
                 const distSq = dx * dx + dy * dy;
 
-                if (distSq < maxConnectDistSq && distSq > 64) {
+                if (distSq < maxConnectDistSq && distSq > 100) {
                     const dist = Math.sqrt(distSq);
                     const strength = 1.0 - dist / maxConnectDist;
                     const edgeId = `${p1.id}_${p2.id}`;
 
-                    // Классификация ребра: Магистраль (A), Второстепенный мост (B) или Дендрит (C)
                     let edgeClass: NexusEdgeClass = 'DENDRITE';
-                    if (p1.id % 9 === 0 && dist > maxConnectDist * 0.52) {
+                    if (p1.clusterId !== p2.clusterId || dist > maxConnectDist * 0.55) {
                         edgeClass = 'AXON_TRUNK';
-                    } else if (p1.clusterId !== p2.clusterId || connections === 0) {
+                    } else if (connections === 0) {
                         edgeClass = 'BRIDGE';
                     }
 
-                    // Вычисление контрольной точки квадратичной/кубической дуги со смещением по нормали
                     const midX = (p1.x + p2.x) * 0.5;
                     const midY = (p1.y + p2.y) * 0.5;
                     const normX = -dy / dist;
                     const normY = dx / dist;
-                    const curveSign = ((p1.id + p2.id) % 2 === 0 ? 1 : -1);
-                    const flowWave = Math.sin(simTimeSec * 0.7 + p1.phaseOffset) * 4.5;
+                    const curveSign = (p1.id + p2.id) % 2 === 0 ? 1 : -1;
+                    const wave = Math.sin(simTimeSec * 0.8 + p1.phaseOffset) * 8.0;
                     const bendOffset =
                         edgeClass === 'AXON_TRUNK'
-                            ? dist * 0.18 * curveSign + flowWave
+                            ? dist * 0.22 * curveSign + wave
                             : edgeClass === 'BRIDGE'
-                                ? dist * 0.12 * curveSign
-                                : dist * 0.07 * curveSign;
+                                ? dist * 0.14 * curveSign
+                                : dist * 0.08 * curveSign;
 
                     const ctrlX = midX + normX * bendOffset;
                     const ctrlY = midY + normY * bendOffset;
-
-                    // Аппроксимация длины дуги (arc length) для постоянной скорости импульса
-                    const chord1 = Math.hypot(ctrlX - p1.x, ctrlY - p1.y);
-                    const chord2 = Math.hypot(p2.x - ctrlX, p2.y - ctrlY);
-                    const arcLength = (dist + chord1 + chord2) * 0.5;
+                    const arcLength =
+                        (dist + Math.hypot(ctrlX - p1.x, ctrlY - p1.y) + Math.hypot(p2.x - ctrlX, p2.y - ctrlY)) *
+                        0.5;
 
                     const truthVisibility = stressStore.getTruthRevealFactorAt(midX, midY);
                     const afterglow = this.afterglowMap.get(edgeId) ?? 0;
@@ -474,9 +463,6 @@ export class VoidPhaseSimulation {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 7. ДВИЖЕНИЕ СВЕТОВЫХ ПАКЕТОВ И ИНТЕРФЕРЕНЦИЯ В СОМАХ НЕЙРОНОВ (FX 02)
-    // --------------------------------------------------------------------------
     private updateSynapticPulses(dt: number, phase: PhaseId, nowMs: number): void {
         if (this.edges.length === 0) {
             this.pulses = [];
@@ -485,18 +471,17 @@ export class VoidPhaseSimulation {
 
         const maxPulses =
             phase === '01_VOID'
-                ? 6
+                ? 18
                 : phase === '02_GENESIS'
-                    ? 22
+                    ? 45
                     : phase === '03_EVOLUTION'
-                        ? 48
-                        : 60;
-        const spawnChance = phase === '01_VOID' ? 0.08 : 0.65;
+                        ? 95
+                        : 85;
 
-        if (this.pulses.length < maxPulses && Math.random() < spawnChance) {
+        if (this.pulses.length < maxPulses && Math.random() < 0.92) {
             const candidate = this.edges[Math.floor(Math.random() * this.edges.length)];
             if (candidate) {
-                this.spawnPulseOnEdge(candidate, true, 1.0, 2);
+                this.spawnPulseOnEdge(candidate, Math.random() > 0.5, 1.0, 3);
             }
         }
 
@@ -516,21 +501,16 @@ export class VoidPhaseSimulation {
             pulse.y2 = pTo.y;
 
             pulse.progress += pulse.speed * dt;
-
-            // Поддерживаем afterglow на ребре, по которому идет сигнал
-            this.afterglowMap.set(pulse.edgeId, Math.max(this.afterglowMap.get(pulse.edgeId) ?? 0, 0.92));
+            this.afterglowMap.set(pulse.edgeId, 1.0);
 
             if (pulse.progress >= 1.0) {
-                // Приход сигнала в сому нейрона: проверяем окно интерференции 120-300 мс!
                 const deltaArrivalMs = nowMs - pTo.lastSignalArrivalMs;
                 pTo.lastSignalArrivalMs = nowMs;
-                pTo.synapticCharge = Math.min(1.0, pTo.synapticCharge + 0.72);
+                pTo.synapticCharge = 1.0;
 
-                if (deltaArrivalMs >= 20 && deltaArrivalMs <= 300 && nowMs > pTo.cooldownUntilMs) {
-                    // Вспышка интерференции двух совпавших сигналов + рефрактерная пауза 320 мс
-                    pTo.interferenceFlash = 1.0;
-                    pTo.cooldownUntilMs = nowMs + 320;
-                    universeStore.emitEvent('signal:arrived', undefined, { nodeId: pTo.id, interference: true });
+                if (nowMs > pTo.cooldownUntilMs) {
+                    pTo.interferenceFlash = deltaArrivalMs <= 360 ? 1.0 : 0.72;
+                    pTo.cooldownUntilMs = nowMs + 240;
                 }
 
                 if (pulse.cascadeDepth > 0 && this.pulses.length < maxPulses) {
@@ -554,10 +534,9 @@ export class VoidPhaseSimulation {
         const pTo = this.particles[endIdx];
         if (!pFrom || !pTo) return;
 
-        pFrom.synapticCharge = Math.min(1.0, pFrom.synapticCharge + 0.45);
-        // Нормализуем скорость по длине дуги (arcLength), чтобы пакет шел равномерно
-        const worldSpeedPxPerSec = edge.edgeClass === 'AXON_TRUNK' ? 165 : 125;
-        const normalizedSpeed = worldSpeedPxPerSec / Math.max(45, edge.arcLength);
+        pFrom.synapticCharge = Math.min(1.0, pFrom.synapticCharge + 0.65);
+        const speedPxPerSec = edge.edgeClass === 'AXON_TRUNK' ? 245 : 185;
+        const normalizedSpeed = speedPxPerSec / Math.max(60, edge.arcLength);
 
         this.pulses.push({
             edgeId: edge.id,
@@ -572,22 +551,26 @@ export class VoidPhaseSimulation {
             y2: pTo.y,
             progress: 0,
             speed: normalizedSpeed,
-            bodyLength: 0.11, // 11% длины ребра (в рамках 6-14% по спец. FX 02)
-            tailLength: 0.18, // 18% мягкого хвоста позади (в рамках 10-22%)
+            bodyLength: 0.16,
+            tailLength: 0.26,
             intensity,
             cascadeDepth,
         });
     }
 
-    private triggerCascadeFromNode(nodeIndex: number, prevIndex: number, remainingDepth: number): void {
+    private triggerCascadeFromNode(
+        nodeIndex: number,
+        prevIndex: number,
+        remainingDepth: number
+    ): void {
         for (let i = 0; i < this.edges.length; i++) {
             const edge = this.edges[i];
             if (edge.fromIndex === nodeIndex && edge.toIndex !== prevIndex) {
-                this.spawnPulseOnEdge(edge, true, 0.85, remainingDepth);
+                this.spawnPulseOnEdge(edge, true, 0.95, remainingDepth);
                 break;
             }
             if (edge.toIndex === nodeIndex && edge.fromIndex !== prevIndex) {
-                this.spawnPulseOnEdge(edge, false, 0.85, remainingDepth);
+                this.spawnPulseOnEdge(edge, false, 0.95, remainingDepth);
                 break;
             }
         }
