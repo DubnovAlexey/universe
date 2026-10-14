@@ -1,16 +1,266 @@
 ---
+// ============================================================================
+// ФАЙЛ: frontend/src/pages/index.astro
+// НАЗНАЧЕНИЕ: Главный оркестратор 5D-инсталляции «Universe: Cosmic Neural Mind»
+// ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
+// 1. Подключает дизайн-систему с автозатуханием панелей для чистого погружения.
+// 2. Разворачивает интерактивный холст Космической Нейросети (#universe-canvas).
+// 3. Позволяет переключать 5 фаз эволюции и вскрывать синаптическую матрицу Истины.
+// 4. Синхронизирует WebAudio/MP3-эмбиент с Линзой Разрыва и импульсами сознания.
+// ============================================================================
+
+import '../styles/universe.css';
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+<!doctype html>
+<html lang="ru">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>UNIVERSE // 5D Digital Installation — Вселенная как Нейросеть Сознания</title>
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+<!-- 1. ГЛАВНЫЙ ХОЛСТ СИМУЛЯЦИИ КОСМИЧЕСКОГО МОЗГА -->
+<canvas id="universe-canvas"></canvas>
+
+<!-- 2. АВТОЗАТУХАЮЩИЙ ИНТЕРФЕЙС НАБЛЮДАТЕЛЯ (ПРОЯВЛЯЕТСЯ ПРИ НАВЕДЕНИИ МЫШИ) -->
+<div class="hud-overlay">
+	<!-- Верхний пояс: Паспорт фазы + Датчики синаптической сети -->
+	<div class="top-bar">
+		<div class="hud-panel brand-block" data-ui-panel="true">
+			<div class="status-badge-row">
+				<span class="pulse-dot"></span>
+				<span class="phase-codename" id="hud-phase-code">PHASE_01 // PRIMORDIAL_VOID</span>
+			</div>
+			<h1 id="hud-phase-title">01. ПУСТОТА (VOID)</h1>
+			<p id="hud-phase-philosophy">
+				Вселенная и кора головного мозга устроены по единому закону. Созвездия — это нейроны, а галактические рукава — аксоны, по которым бегут импульсы гигантского Сознания.
+			</p>
+			<div class="hint-banner">
+				[НАВЕДИТЕ НА ПАНЕЛЬ] — Проявить HUD | [ЗАЖМИТЕ ЛКМ В КОСМОСЕ] — Линза Истины
+			</div>
+		</div>
+
+		<!-- Слой 2: Датчики телеметрии -->
+		<div class="hud-panel" id="layer-metrics-panel" data-ui-panel="true">
+			<div class="metrics-grid">
+				<div class="metric-box">
+					<span class="label">ЧАСТОТА КАДРОВ</span>
+					<span class="value" id="metric-fps">60 FPS</span>
+				</div>
+				<div class="metric-box">
+					<span class="label">УЗЛЫ-НЕЙРОНЫ</span>
+					<span class="value" id="metric-particles">450</span>
+				</div>
+				<div class="metric-box">
+					<span class="label">СИНАПСЫ СЕТИ</span>
+					<span class="value" id="metric-edges">0</span>
+				</div>
+				<div class="metric-box">
+					<span class="label">НАПРЯЖЕНИЕ</span>
+					<span class="value" id="metric-stress">8%</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Нижний пояс: Консоль управления Фазами, Слоями и Терминал -->
+	<div class="bottom-bar">
+		<div class="hud-panel control-deck" data-ui-panel="true">
+			<!-- Блок 1: Переключение 5 эволюционных фаз -->
+			<div>
+				<div class="section-caption">ЭВОЛЮЦИОННЫЕ ФАЗЫ КОСМИЧЕСКОГО СОЗНАНИЯ (5 МИРОВ):</div>
+				<div class="button-row">
+					<button class="btn-hud active" data-phase-btn="01_VOID">01. VOID</button>
+					<button class="btn-hud" data-phase-btn="02_GENESIS">02. GENESIS</button>
+					<button class="btn-hud" data-phase-btn="03_EVOLUTION">03. EVOLUTION</button>
+					<button class="btn-hud" data-phase-btn="04_COLLAPSE">04. COLLAPSE</button>
+					<button class="btn-hud" data-phase-btn="05_SINGULARITY">05. SINGULARITY</button>
+					<button class="btn-hud" id="btn-auto-cycle">АВТОЦИКЛ: ВЫКЛ</button>
+					<button class="btn-hud" id="btn-toggle-audio">🔊 ЭМБИЕНТ: ВЫКЛ</button>
+				</div>
+			</div>
+
+			<!-- Блок 2: Управление 5 слоями глубины -->
+			<div>
+				<div class="section-caption">СЛОИ ПОГРУЖЕНИЯ И НЕЙРО-ВМЕШАТЕЛЬСТВО АРХИТЕКТОРА:</div>
+				<div class="button-row">
+					<button class="btn-hud truth-active" id="btn-layer-illusion">СЛОЙ 1: КОСМОС</button>
+					<button class="btn-hud truth-active" id="btn-layer-metrics">СЛОЙ 2: ДАТЧИКИ</button>
+					<button class="btn-hud truth-active" id="btn-layer-topology">СЛОЙ 3: НЕЙРО-СИНАПСЫ</button>
+					<button class="btn-hud truth-active" id="btn-layer-terminal">СЛОЙ 4: ТЕРМИНАЛ</button>
+					<button class="btn-hud" id="btn-toggle-xray">СЛОЙ 5: МАТРИЦА ИСТИНЫ</button>
+					<button class="btn-hud danger-pulse" id="btn-entropy-spike">⚡ СИНАПТИЧЕСКИЙ РАЗРЯД</button>
+					<button class="btn-hud" id="btn-toggle-pause">ПАУЗА</button>
+				</div>
+			</div>
+
+			<!-- Блок 3: Регуляторы констант -->
+			<div class="sliders-row">
+				<label class="slider-group">
+					<span>СКОРОСТЬ ИМПУЛЬСОВ:</span>
+					<input type="range" id="slider-timescale" min="0.1" max="3.0" step="0.1" value="1.0" />
+					<span class="slider-val" id="val-timescale">1.0x</span>
+				</label>
+				<label class="slider-group">
+					<span>СИЛА ПРИТЯЖЕНИЯ УЗЛОВ:</span>
+					<input type="range" id="slider-gravity" min="0.0" max="4.0" step="0.1" value="1.0" />
+					<span class="slider-val" id="val-gravity">1.0x</span>
+				</label>
+			</div>
+		</div>
+
+		<!-- Слой 4: Бортовой терминал Архитектора -->
+		<div class="hud-panel terminal-box" id="layer-terminal-panel" data-ui-panel="true">
+			<div class="terminal-header">
+				<span>LAYER 04 // НЕЙРО-ТЕРМИНАЛ АРХИТЕКТОРА</span>
+				<span id="terminal-sim-clock">T+0.0s</span>
+			</div>
+			<div class="terminal-logs" id="terminal-logs-container"></div>
+		</div>
+	</div>
+</div>
+
+<!-- 3. КЛИЕНТСКИЙ КОНТРОЛЛЕР -->
+<script>
+	import { UniverseRenderer } from '../engine/renderer';
+	import { universeStore, type PhaseId } from '../store/universeState';
+	import { stressStore } from '../store/stressState';
+	import { audioSync } from '../utils/audioSync';
+
+	const canvas = document.getElementById('universe-canvas') as HTMLCanvasElement | null;
+	if (canvas) {
+		const renderer = new UniverseRenderer(canvas);
+		renderer.start();
+
+		const codeEl = document.getElementById('hud-phase-code');
+		const titleEl = document.getElementById('hud-phase-title');
+		const philEl = document.getElementById('hud-phase-philosophy');
+		const fpsEl = document.getElementById('metric-fps');
+		const partEl = document.getElementById('metric-particles');
+		const edgesEl = document.getElementById('metric-edges');
+		const stressEl = document.getElementById('metric-stress');
+		const clockEl = document.getElementById('terminal-sim-clock');
+		const logsEl = document.getElementById('terminal-logs-container');
+
+		const metricsPanel = document.getElementById('layer-metrics-panel');
+		const terminalPanel = document.getElementById('layer-terminal-panel');
+
+		const phaseButtons = document.querySelectorAll<HTMLButtonElement>('[data-phase-btn]');
+		const btnAutoCycle = document.getElementById('btn-auto-cycle');
+		const btnToggleAudio = document.getElementById('btn-toggle-audio');
+		const btnLayerIllusion = document.getElementById('btn-layer-illusion');
+		const btnLayerMetrics = document.getElementById('btn-layer-metrics');
+		const btnLayerTopology = document.getElementById('btn-layer-topology');
+		const btnLayerTerminal = document.getElementById('btn-layer-terminal');
+		const btnXRay = document.getElementById('btn-toggle-xray');
+		const btnEntropySpike = document.getElementById('btn-entropy-spike');
+		const btnPause = document.getElementById('btn-toggle-pause');
+
+		const sliderTime = document.getElementById('slider-timescale') as HTMLInputElement | null;
+		const valTime = document.getElementById('val-timescale');
+		const sliderGravity = document.getElementById('slider-gravity') as HTMLInputElement | null;
+		const valGravity = document.getElementById('val-gravity');
+
+		universeStore.subscribe((state) => {
+			if (codeEl) codeEl.textContent = state.phaseMeta.codeName;
+			if (titleEl) titleEl.textContent = state.phaseMeta.titleRu;
+			if (philEl) philEl.textContent = state.phaseMeta.philosophyRu;
+
+			audioSync.transitionToPhase(state.currentPhase);
+
+			phaseButtons.forEach((btn) => {
+				const phaseId = btn.getAttribute('data-phase-btn');
+				btn.classList.toggle('active', phaseId === state.currentPhase);
+			});
+
+			if (btnAutoCycle) {
+				btnAutoCycle.textContent = `АВТОЦИКЛ: ${state.autoCyclePhases ? 'ВКЛ' : 'ВЫКЛ'}`;
+				btnAutoCycle.classList.toggle('active', state.autoCyclePhases);
+			}
+
+			if (btnToggleAudio) {
+				btnToggleAudio.textContent = `🔊 ЭМБИЕНТ: ${state.audioEnabled ? 'ВКЛ' : 'ВЫКЛ'}`;
+				btnToggleAudio.classList.toggle('truth-active', state.audioEnabled);
+			}
+
+			btnLayerIllusion?.classList.toggle('truth-active', state.layers.layer1_illusionCanvas);
+			btnLayerMetrics?.classList.toggle('truth-active', state.layers.layer2_metricsHud);
+			btnLayerTopology?.classList.toggle('truth-active', state.layers.layer3_topologyGraph);
+			btnLayerTerminal?.classList.toggle('truth-active', state.layers.layer4_architectTerminal);
+			btnXRay?.classList.toggle('truth-active', state.layers.layer5_truthXRayMode);
+
+			metricsPanel?.classList.toggle('layer-hidden', !state.layers.layer2_metricsHud);
+			terminalPanel?.classList.toggle('layer-hidden', !state.layers.layer4_architectTerminal);
+
+			if (btnPause) {
+				btnPause.textContent = state.isPaused ? 'ПУСК' : 'ПАУЗА';
+				btnPause.classList.toggle('active', state.isPaused);
+			}
+
+			if (logsEl) {
+				logsEl.innerHTML = state.terminalLogs
+					.slice(-7)
+					.map((line) => `<div>${line}</div>`)
+					.join('');
+				logsEl.scrollTop = logsEl.scrollHeight;
+			}
+		});
+
+		setInterval(() => {
+			const state = universeStore.getState();
+			const sState = stressStore.getState();
+			if (fpsEl) fpsEl.textContent = `${state.telemetry.fps} FPS`;
+			if (partEl) partEl.textContent = String(state.telemetry.activeParticles);
+			if (edgesEl) edgesEl.textContent = String(state.telemetry.activeConnections);
+			if (stressEl) stressEl.textContent = `${Math.round(sState.globalStress * 100)}%`;
+			if (clockEl) clockEl.textContent = `T+${state.telemetry.simulationTimeSec.toFixed(1)}s`;
+		}, 200);
+
+		phaseButtons.forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const targetPhase = btn.getAttribute('data-phase-btn') as PhaseId | null;
+				if (targetPhase) {
+					universeStore.setPhase(targetPhase);
+					stressStore.spawnShockwave(window.innerWidth * 0.5, window.innerHeight * 0.5, 550, 0.8);
+					audioSync.triggerShockwavePulse(0.75);
+				}
+			});
+		});
+
+		btnToggleAudio?.addEventListener('click', () => {
+			const nextAudioState = !universeStore.getState().audioEnabled;
+			audioSync.setEnabled(nextAudioState);
+			universeStore.setAudioEnabled(nextAudioState);
+		});
+
+		btnAutoCycle?.addEventListener('click', () => universeStore.toggleAutoCycle());
+		btnLayerIllusion?.addEventListener('click', () => universeStore.toggleLayer('layer1_illusionCanvas'));
+		btnLayerMetrics?.addEventListener('click', () => universeStore.toggleLayer('layer2_metricsHud'));
+		btnLayerTopology?.addEventListener('click', () => universeStore.toggleLayer('layer3_topologyGraph'));
+		btnLayerTerminal?.addEventListener('click', () => universeStore.toggleLayer('layer4_architectTerminal'));
+		btnXRay?.addEventListener('click', () => universeStore.toggleLayer('layer5_truthXRayMode'));
+		btnPause?.addEventListener('click', () => universeStore.togglePause());
+
+		btnEntropySpike?.addEventListener('click', () => {
+			stressStore.injectEntropySpike(0.45, window.innerWidth * 0.5, window.innerHeight * 0.5);
+			audioSync.triggerShockwavePulse(1.0);
+			universeStore.addTerminalLog('[SYNAPSE_BURST] Глобальный нейронный импульс! Сеть активирована.');
+		});
+
+		sliderTime?.addEventListener('input', () => {
+			const val = parseFloat(sliderTime.value);
+			universeStore.setTimeScale(val);
+			if (valTime) valTime.textContent = `${val.toFixed(1)}x`;
+		});
+
+		sliderGravity?.addEventListener('input', () => {
+			const val = parseFloat(sliderGravity.value);
+			universeStore.setGravityMultiplier(val);
+			if (valGravity) valGravity.textContent = `${val.toFixed(1)}x`;
+		});
+	}
+</script>
+</body>
 </html>
