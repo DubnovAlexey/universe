@@ -1,7 +1,7 @@
 ---
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
-// НАЗНАЧЕНИЕ: Главная сцена UNIVERSE / НЕЙРОВЕРС (Кино-режим + Голограмма GitHub)
+// НАЗНАЧЕНИЕ: Главная сцена UNIVERSE (Плавный цикл + Матрица букв-счётчиков в финале)
 // ============================================================================
 
 import '../styles/universe.css';
@@ -16,36 +16,28 @@ import '../styles/universe.css';
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
 <body>
-<!-- 1. ПОЛНОЭКРАННЫЙ ХОЛСТ СИМУЛЯЦИИ 5 ОБРАЗОВ -->
+<!-- 1. ПОЛНОЭКРАННЫЙ ХОЛСТ СИМУЛЯЦИИ И СЧЁТЧИКОВ БУКВ -->
 <canvas id="universe-canvas"></canvas>
 
-<!-- 2. ГОЛОГРАФИЧЕСКАЯ КАРТОЧКА СОЗДАТЕЛЯ GITHUB (ПОЯВЛЯЕТСЯ ПОСЛЕ 2.5С ТИШИНЫ) -->
-<div class="github-hologram-card" id="github-hologram-card" data-github-card="true">
-	<div class="holo-tag">UNIVERSE // NEURAL SINGULARITY</div>
-	<h2>Alexey</h2>
-	<div class="repo-name">DubnovAlexey / universe</div>
-	<p>
-		Интерактивная 5D-инсталляция «Из Нуля в Ноль»: эволюция Вселенной и нейронной сети сознания в едином пространстве координат.
-	</p>
-	<div class="stack-tags">
-		<span>Astro</span>
-		<span>TypeScript</span>
-		<span>Canvas 2D / WebGPU</span>
-		<span>Web Audio API</span>
-	</div>
-	<div class="holo-actions">
-		<a
-			class="btn-holo-primary"
-			href="https://github.com/DubnovAlexey/universe"
-			target="_blank"
-			rel="noopener noreferrer"
-		>
-			Open Repository ↗
-		</a>
-		<button class="btn-holo-secondary" id="btn-restart-universe">
-			↻ Restart Universe
-		</button>
-	</div>
+<!-- 2. ИНТЕРАКТИВНЫЕ КНОПКИ ПОД ВЫСТРОЕННЫМИ НА ХОЛСТЕ СЛОВАМИ ФИНАЛА -->
+<div class="finale-counter-actions" id="finale-counter-actions" data-github-card="true">
+	<a
+		class="btn-cipher-action"
+		id="link-open-repo"
+		data-target-label="[ OPEN GITHUB REPOSITORY ↗ ]"
+		href="https://github.com/DubnovAlexey/universe"
+		target="_blank"
+		rel="noopener noreferrer"
+	>
+		[ OPEN GITHUB REPOSITORY ↗ ]
+	</a>
+	<button
+		class="btn-cipher-action"
+		id="btn-restart-universe"
+		data-target-label="[ ↻ RESTART UNIVERSE CYCLE ]"
+	>
+		[ ↻ RESTART UNIVERSE CYCLE ]
+	</button>
 </div>
 
 <!-- 3. ИСЧЕЗАЮЩИЙ КИНЕМАТОГРАФИЧЕСКИЙ ИНТЕРФЕЙС -->
@@ -123,7 +115,7 @@ import '../styles/universe.css';
 		const edgesEl = document.getElementById('metric-edges');
 		const pulsesEl = document.getElementById('metric-pulses');
 		const metricsPanel = document.getElementById('layer-metrics-panel');
-		const githubCard = document.getElementById('github-hologram-card');
+		const finaleActions = document.getElementById('finale-counter-actions');
 		const hudOverlay = document.getElementById('hud-overlay');
 
 		const phaseButtons = document.querySelectorAll<HTMLButtonElement>('[data-phase-btn]');
@@ -133,6 +125,33 @@ import '../styles/universe.css';
 		const btnAudio = document.getElementById('btn-toggle-audio');
 		const sliderVolume = document.getElementById('slider-volume') as HTMLInputElement | null;
 		const btnRestart = document.getElementById('btn-restart-universe');
+
+		// Эффект перебора символов на кнопках при наведении (Scramble Counter Effect)
+		const cipherPool = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆Ωλ∞';
+		const attachScrambleHover = (el: HTMLElement | null) => {
+			if (!el) return;
+			const original = el.getAttribute('data-target-label') || el.textContent || '';
+			el.addEventListener('mouseenter', () => {
+				let iter = 0;
+				const timer = window.setInterval(() => {
+					el.textContent = original
+						.split('')
+						.map((ch, idx) => {
+							if (ch === ' ' || ch === '[' || ch === ']' || idx < iter) return ch;
+							return cipherPool[Math.floor(Math.random() * cipherPool.length)];
+						})
+						.join('');
+					iter += 1.5;
+					if (iter >= original.length) {
+						el.textContent = original;
+						clearInterval(timer);
+					}
+				}, 24);
+			});
+		};
+
+		attachScrambleHover(document.getElementById('link-open-repo'));
+		attachScrambleHover(btnRestart);
 
 		universeStore.subscribe((state) => {
 			if (codeEl) codeEl.textContent = state.phaseMeta.codeName;
@@ -166,15 +185,15 @@ import '../styles/universe.css';
 			if (edgesEl) edgesEl.textContent = String(state.telemetry.activeConnections);
 			if (pulsesEl) pulsesEl.textContent = String(state.telemetry.activePulses);
 
-			const showCard =
-				state.singularityAct === 'ACT_D_GITHUB_CARD' && state.githubCardAssemblyProgress > 0.55;
-			githubCard?.classList.toggle('visible', showCard);
+			const showActions =
+				state.singularityAct === 'ACT_D_GITHUB_CARD' && state.githubCardAssemblyProgress > 0.72;
+			finaleActions?.classList.toggle('visible', showActions);
 
 			if (hudOverlay) {
 				hudOverlay.style.opacity =
-					state.singularityAct === 'ACT_C_ZERO_SILENCE' || showCard ? '0' : '1';
+					state.singularityAct === 'ACT_D_GITHUB_CARD' ? '0.25' : '1';
 			}
-		}, 150);
+		}, 120);
 
 		phaseButtons.forEach((btn) => {
 			btn.addEventListener('click', () => {

@@ -1,16 +1,16 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/renderer.ts
-// НАЗНАЧЕНИЕ: Главный режиссерский рендерер 5 Образов Вселенной и Нейро-Мозга
+// НАЗНАЧЕНИЕ: Кинематографический рендерер UNIVERSE с плавным перетеканием фаз
+//             и финальной матрицей вращающихся букв-счётчиков (Odometer Glyph Reels)
 // ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Управляет 4 планами глубины (Deep Layer, Background, Midground, Foreground Bokeh) и камерой.
-// 2. FX 01: Рисует анизотропные туманности с темными пылевыми каньонами-тенями,
-//    внутренним освещением от активных сом, контровым rim-light и силовыми волокнами (filaments).
-// 3. FX 02: Рисует скульптурные полушария Головного Мозга с извилинами, 3 класса сплайнов Безье,
-//    ветвящиеся кроны дендритов, кометы синаптических импульсов и кольца озарения нейронов.
-// 4. FX 03: Реализует оптическую мембрану BREACH LENS с преломлением звезд на кромке,
-//    ветвящимися микротрещинами и неперекрывающимися научными выносками (Optical Callouts).
-// 5. FX 04: Исполняет финал LOGIC -> 2.5с ZERO_SILENCE -> 5-шаговую сборку голограммы GitHub.
+// 1. Плавно интерполирует цвета (lerpHexColor) и смешивает фоновые образы (cross-fade)
+//    при каждом переходе между 5 фазами — без резких скачков цвета и сюжета.
+// 2. Рисует 4 плана глубины, туманности с пылевыми тенями, полушария Нейро-Мозга,
+//    ветвящиеся дендриты, яркие кометы синаптических импульсов и оптическую линзу BREACH.
+// 3. В 5-й фазе не выключает экран в пустоту, а запускает из Точки Нуля поток символов,
+//    которые крутятся как барабаны счётчиков (переворачиваясь в 3D) и выстраиваются
+//    буква за буквой в смысловые строки и имя создателя (DubnovAlexey / universe).
 // ============================================================================
 
 import { universeStore, type PhaseId } from '../store/universeState';
@@ -26,7 +26,7 @@ import { RenderPipeline } from './pipeline';
 import { audioSync } from '../utils/audioSync';
 
 // ----------------------------------------------------------------------------
-// 1. ЦВЕТОВАЯ И СВЕТОТЕНЕВАЯ ДРАМАТУРГИЯ КАЖДОГО ИЗ 5 ОБРАЗОВ
+// 1. ЦВЕТОВЫЕ ПАЛИТРЫ 5 ОБРАЗОВ И ФУНКЦИЯ ПЛАВНОГО ПЕРЕТЕКАНИЯ ЦВЕТА (LERP)
 // ----------------------------------------------------------------------------
 interface PhaseVisualTheme {
     bgCenter: string;
@@ -116,6 +116,69 @@ const PHASE_VISUAL_THEMES: Record<PhaseId, PhaseVisualTheme> = {
     },
 };
 
+// ----------------------------------------------------------------------------
+// 2. СТРОКИ И СИМВОЛЫ ДЛЯ ФИНАЛЬНОГО СЧЁТЧИКА БУКВ (CIPHER ODOMETER REELS)
+// ----------------------------------------------------------------------------
+const CIPHER_GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЭЮЯ∑∆Ωλ∞∇◊◈┼';
+
+interface CounterTextLineSpec {
+    text: string;
+    fontSize: number;
+    fontWeight: string;
+    color: string;
+    yOffset: number;
+    letterSpacing: number;
+    startDelay: number;
+}
+
+const FINALE_COUNTER_LINES: ReadonlyArray<CounterTextLineSpec> = [
+    {
+        text: 'UNIVERSE // NEURAL SINGULARITY',
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#00f5d4',
+        yOffset: -118,
+        letterSpacing: 11,
+        startDelay: 0.05,
+    },
+    {
+        text: 'ALEXEY DUBNOV',
+        fontSize: 28,
+        fontWeight: '700',
+        color: '#ffffff',
+        yOffset: -66,
+        letterSpacing: 19,
+        startDelay: 0.16,
+    },
+    {
+        text: 'GITHUB.COM / DUBNOVALEXEY / UNIVERSE',
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#38bdf8',
+        yOffset: -20,
+        letterSpacing: 10.5,
+        startDelay: 0.28,
+    },
+    {
+        text: 'ВРЕМЯ · ПРОСТРАНСТВО · МЫСЛЬ · ОБРАЗ · КОД',
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#fde047',
+        yOffset: 24,
+        letterSpacing: 9.5,
+        startDelay: 0.40,
+    },
+    {
+        text: 'ASTRO  ·  TYPESCRIPT  ·  WEBGPU  ·  RUST/WASM  ·  PYTHON',
+        fontSize: 11,
+        fontWeight: '500',
+        color: '#94a3b8',
+        yOffset: 64,
+        letterSpacing: 8.2,
+        startDelay: 0.52,
+    },
+];
+
 export class UniverseRenderer {
     private pipeline: RenderPipeline;
     private simulation: VoidPhaseSimulation;
@@ -124,6 +187,8 @@ export class UniverseRenderer {
     private simulationTimeSec = 0;
     private phaseElapsedSec = 0;
     private lastTrackedPhase: PhaseId = universeStore.getState().currentPhase;
+    private previousVisualPhase: PhaseId = universeStore.getState().currentPhase;
+    private phaseTransitionBlend = 1.0; // 0.0 -> 1.0 плавный микс тем и фонов (5 секунд)
     private lastTrackedCycle = universeStore.getState().cycleCount;
     private restartCollapseElapsed = 0;
 
@@ -134,9 +199,6 @@ export class UniverseRenderer {
         this.bindEvents();
     }
 
-    // --------------------------------------------------------------------------
-    // 2. ПРИВЯЗКА СОБЫТИЙ МЫШИ, TOUCH-КАСАНИЙ, ВКЛАДКИ И ОЧИСТКИ РЕСУРСОВ
-    // --------------------------------------------------------------------------
     private bindEvents(): void {
         window.addEventListener('resize', () => {
             const { width, height } = this.pipeline.updateViewportSize();
@@ -199,7 +261,57 @@ export class UniverseRenderer {
     }
 
     // --------------------------------------------------------------------------
-    // 3. ЕДИНЫЙ КАДРОВЫЙ ЦИКЛ СИМУЛЯЦИИ, ТАЙМЛАЙНА И РЕНДЕРИНГА
+    // 3. ПЛАВНАЯ ИНТЕРПОЛЯЦИЯ HEX-ЦВЕТОВ МЕЖДУ ФАЗАМИ (БЕЗ РЕЗКИХ СКАЧКОВ)
+    // --------------------------------------------------------------------------
+    private lerpHexColor(hexA: string, hexB: string, t: number): string {
+        const clamped = Math.max(0, Math.min(1, t));
+        const a = hexA.replace('#', '');
+        const b = hexB.replace('#', '');
+
+        const r1 = parseInt(a.substring(0, 2), 16) || 0;
+        const g1 = parseInt(a.substring(2, 4), 16) || 0;
+        const b1 = parseInt(a.substring(4, 6), 16) || 0;
+
+        const r2 = parseInt(b.substring(0, 2), 16) || 0;
+        const g2 = parseInt(b.substring(2, 4), 16) || 0;
+        const b2 = parseInt(b.substring(4, 6), 16) || 0;
+
+        const r = Math.round(r1 + (r2 - r1) * clamped);
+        const g = Math.round(g1 + (g2 - g1) * clamped);
+        const bl = Math.round(b1 + (b2 - b1) * clamped);
+
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
+    }
+
+    private getBlendedPhaseTheme(currentPhase: PhaseId): PhaseVisualTheme {
+        const target = PHASE_VISUAL_THEMES[currentPhase];
+        if (this.phaseTransitionBlend >= 0.999 || this.previousVisualPhase === currentPhase) {
+            return target;
+        }
+        const prev = PHASE_VISUAL_THEMES[this.previousVisualPhase];
+        const s =
+            this.phaseTransitionBlend *
+            this.phaseTransitionBlend *
+            (3.0 - 2.0 * this.phaseTransitionBlend);
+
+        return {
+            bgCenter: this.lerpHexColor(prev.bgCenter, target.bgCenter, s),
+            bgMid: this.lerpHexColor(prev.bgMid, target.bgMid, s),
+            bgEdge: this.lerpHexColor(prev.bgEdge, target.bgEdge, s),
+            nebulaPrimary: this.lerpHexColor(prev.nebulaPrimary, target.nebulaPrimary, s),
+            nebulaSecondary: this.lerpHexColor(prev.nebulaSecondary, target.nebulaSecondary, s),
+            nebulaShadow: this.lerpHexColor(prev.nebulaShadow, target.nebulaShadow, s),
+            rimLightColor: this.lerpHexColor(prev.rimLightColor, target.rimLightColor, s),
+            axonColor: this.lerpHexColor(prev.axonColor, target.axonColor, s),
+            pulseHeadColor: this.lerpHexColor(prev.pulseHeadColor, target.pulseHeadColor, s),
+            pulseTailColor: this.lerpHexColor(prev.pulseTailColor, target.pulseTailColor, s),
+            somaCoreColor: this.lerpHexColor(prev.somaCoreColor, target.somaCoreColor, s),
+            somaHaloColor: this.lerpHexColor(prev.somaHaloColor, target.somaHaloColor, s),
+        };
+    }
+
+    // --------------------------------------------------------------------------
+    // 4. ЕДИНЫЙ КАДРОВЫЙ ЦИКЛ СИМУЛЯЦИИ И ТАЙМЛАЙНА
     // --------------------------------------------------------------------------
     private tick(now: number): void {
         const rawDeltaMs = Math.max(1, now - this.lastTimestamp);
@@ -214,14 +326,21 @@ export class UniverseRenderer {
             uState.currentPhase !== this.lastTrackedPhase ||
             uState.cycleCount !== this.lastTrackedCycle
         ) {
+            this.previousVisualPhase = this.lastTrackedPhase;
             this.lastTrackedPhase = uState.currentPhase;
             this.lastTrackedCycle = uState.cycleCount;
+            this.phaseTransitionBlend = 0.0;
             this.phaseElapsedSec = 0;
             this.restartCollapseElapsed = 0;
         }
 
+        // Плавное перетекание цветов и фоновых декораций в течение 4.8 секунд
+        if (this.phaseTransitionBlend < 1.0) {
+            this.phaseTransitionBlend = Math.min(1.0, this.phaseTransitionBlend + dtSeconds * 0.21);
+        }
+
         if (uState.singularityAct === 'RESTART_COLLAPSE') {
-            this.restartCollapseElapsed += dtSeconds * 0.95;
+            this.restartCollapseElapsed += dtSeconds * 0.75;
             if (this.restartCollapseElapsed >= 1.0) {
                 this.restartCollapseElapsed = 0;
                 this.simulationTimeSec = 0;
@@ -277,20 +396,20 @@ export class UniverseRenderer {
     }
 
     // --------------------------------------------------------------------------
-    // 4. ГЛАВНЫЙ КОНВЕЙЕР СЦЕНЫ: 4 ПЛАНА ГЛУБИНЫ И 5 ХУДОЖЕСТВЕННЫХ ОБРАЗОВ
+    // 5. ГЛАВНЫЙ КОНВЕЙЕР СЦЕНЫ (С CROSS-FADE ФОНОВ И ФИНАЛЬНЫМ СЧЁТЧИКОМ БУКВ)
     // --------------------------------------------------------------------------
     private renderScene(): void {
         const ctx = this.pipeline.getContext();
         const { viewportWidth: width, viewportHeight: height } = this.pipeline.getCapabilities();
         const uState = universeStore.getState();
         const sState = stressStore.getState();
-        const theme = PHASE_VISUAL_THEMES[uState.currentPhase];
+        const theme = this.getBlendedPhaseTheme(uState.currentPhase);
         const fullXRay = uState.layers.layer5_truthXRayMode;
 
         const cx = width * 0.5;
         const cy = height * 0.5;
 
-        // 1. Многослойный глубокий вакуум с полутонами фазы
+        // 1. Многослойный глубокий вакуум с плавной интерполяцией оттенков
         const bgGrad = ctx.createRadialGradient(cx, cy, 12, cx, cy, Math.max(width, height) * 0.74);
         bgGrad.addColorStop(0, theme.bgCenter);
         bgGrad.addColorStop(0.52, theme.bgMid);
@@ -298,30 +417,8 @@ export class UniverseRenderer {
         ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, width, height);
 
-        // АКТ C: РОВНО 2.5 СЕКУНДЫ АБСОЛЮТНОЙ НЕПОДВИЖНОЙ ТИШИНЫ (ZERO_SILENCE)
-        if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
-            ctx.fillStyle = 'rgba(248, 250, 252, 0.45)';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
-            ctx.fill();
-            return;
-        }
-
-        // АКТ D: 5-ШАГОВАЯ ГЕОДЕЗИЧЕСКАЯ СБОРКА ИЛИ СВОРАЧИВАНИЕ КАРТОЧКИ GITHUB
-        if (
-            uState.singularityAct === 'ACT_D_GITHUB_CARD' ||
-            uState.singularityAct === 'RESTART_COLLAPSE'
-        ) {
-            const progress =
-                uState.singularityAct === 'RESTART_COLLAPSE'
-                    ? Math.max(0, 1.0 - this.restartCollapseElapsed)
-                    : uState.githubCardAssemblyProgress;
-            this.renderGeodesicGitHubHologramCanvas(ctx, width, height, progress, theme);
-            return;
-        }
-
         ctx.save();
-        ctx.translate(cx + uState.camera.driftX * 0.35, cy + uState.camera.driftY * 0.35);
+        ctx.translate(cx + uState.camera.driftX * 0.32, cy + uState.camera.driftY * 0.32);
         ctx.scale(uState.camera.zoom, uState.camera.zoom);
         ctx.translate(-cx, -cy);
 
@@ -329,32 +426,297 @@ export class UniverseRenderer {
         const edges = this.simulation.getEdges();
         const pulses = this.simulation.getPulses();
 
-        // 2. ЭШЕЛОН 4 (DEEP LAYER): Координатная сетка X-RAY (внутри линзы BREACH, в LOGIC или X-RAY)
+        // 2. Координатная сетка X-RAY
         this.renderTruthCoordinateGrid(ctx, width, height, theme.axonColor, fullXRay);
 
-        // 3. ЭШЕЛОН 3 (BACKGROUND): Уникальный центральный образ каждой из 5 фаз на весь экран
-        this.renderPhaseSignatureBackdrop(ctx, width, height, cx, cy, uState.currentPhase, theme);
+        // 3. ПЛАВНЫЙ CROSS-FADE ФОНОВЫХ ОБРАЗОВ: предыдущая фаза плавно растворяется в текущей!
+        const smoothMix =
+            this.phaseTransitionBlend *
+            this.phaseTransitionBlend *
+            (3.0 - 2.0 * this.phaseTransitionBlend);
 
-        // 4. FX 01: Анизотропные туманности с пылевыми тенями, подсветкой изнутри, rim-light и волокнами
-        this.renderAnisotropicNebulaeWithShadows(ctx, width, height, particles, theme);
-        this.renderCosmicStreamlineFilaments(ctx, width, height, theme);
-
-        // 5. ЭШЕЛОН 2 (MIDGROUND): FX 02 — Сеть головного мозга NEXUS и кометы синаптических импульсов
-        if (uState.layers.layer3_topologyGraph || fullXRay) {
-            this.renderSynapticBrainNetworkAndComets(ctx, edges, pulses, theme, fullXRay);
+        if (smoothMix < 0.99 && this.previousVisualPhase !== uState.currentPhase) {
+            ctx.save();
+            ctx.globalAlpha = 1.0 - smoothMix;
+            this.renderPhaseSignatureBackdrop(
+                ctx,
+                width,
+                height,
+                cx,
+                cy,
+                this.previousVisualPhase,
+                PHASE_VISUAL_THEMES[this.previousVisualPhase]
+            );
+            ctx.restore();
         }
 
-        // 6. ЭШЕЛОН 1 и 2: Многолучевые нейроны (сомы с дендритами и кольцами озарения) + Bokeh
-        this.renderNeuronsAndSynapticRings(ctx, particles, theme, fullXRay);
+        ctx.save();
+        ctx.globalAlpha = smoothMix;
+        this.renderPhaseSignatureBackdrop(ctx, width, height, cx, cy, uState.currentPhase, theme);
+        ctx.restore();
 
-        // 7. FX 03: Оптическая мембрана BREACH LENS с рефракцией, микротрещинами и выносками
-        this.renderBreachLensAndCallouts(ctx, sState, particles, theme.axonColor, fullXRay);
+        // 4. Анизотропные туманности с пылевыми тенями и силовые волокна
+        if (
+            uState.singularityAct !== 'ACT_C_ZERO_SILENCE' &&
+            uState.singularityAct !== 'ACT_D_GITHUB_CARD' &&
+            uState.singularityAct !== 'RESTART_COLLAPSE'
+        ) {
+            this.renderAnisotropicNebulaeWithShadows(ctx, width, height, particles, theme);
+            this.renderCosmicStreamlineFilaments(ctx, width, height, theme);
+
+            if (uState.layers.layer3_topologyGraph || fullXRay) {
+                this.renderSynapticBrainNetworkAndComets(ctx, edges, pulses, theme, fullXRay);
+            }
+
+            this.renderNeuronsAndSynapticRings(ctx, particles, theme, fullXRay);
+            this.renderBreachLensAndCallouts(ctx, sState, particles, theme.axonColor, fullXRay);
+        }
+
+        ctx.restore();
+
+        // 5. АКТ C И D В ФАЗЕ 05: ЗАРОЖДЕНИЕ СИМВОЛОВ В ТИШИНЕ И БАРАБАНЫ-СЧЁТЧИКИ БУКВ!
+        if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
+            this.renderSilenceHorizonAndGlyphSeeds(
+                ctx,
+                width,
+                height,
+                uState.singularityActProgress,
+                theme
+            );
+        } else if (
+            uState.singularityAct === 'ACT_D_GITHUB_CARD' ||
+            uState.singularityAct === 'RESTART_COLLAPSE'
+        ) {
+            const progress =
+                uState.singularityAct === 'RESTART_COLLAPSE'
+                    ? Math.max(0, 1.0 - this.restartCollapseElapsed)
+                    : uState.githubCardAssemblyProgress;
+            this.renderKineticCounterReelsFinale(ctx, width, height, progress, theme);
+        }
+    }
+
+    // --------------------------------------------------------------------------
+    // 6. ЖИВОЙ ГОРИЗОНТ СОБЫТИЙ В ПАУЗЕ ТИШИНЫ И БАРАБАНЫ-СЧЁТЧИКИ БУКВ (ФИНАЛ)
+    // --------------------------------------------------------------------------
+    private renderSilenceHorizonAndGlyphSeeds(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        silenceProgress: number,
+        theme: PhaseVisualTheme
+    ): void {
+        const cx = width * 0.5;
+        const cy = height * 0.5;
+
+        ctx.save();
+        // Вместо «мертвого выключенного экрана» в центре дышит глубокое кольцо Горизонта Событий,
+        // вокруг которого в последние доли тишины начинают проступать первые матрицы символов
+        const haloR = 45 + Math.sin(silenceProgress * Math.PI) * 35;
+        const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, haloR);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.25, RenderPipeline.hexToRgba(theme.axonColor, 0.45));
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Во второй половине паузы тишины из центра начинают проступать полупрозрачные крутящиеся знаки
+        if (silenceProgress > 0.45) {
+            const emerge = (silenceProgress - 0.45) / 0.55;
+            ctx.font = '12px "JetBrains Mono", Consolas, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (let i = 0; i < 28; i++) {
+                const angle = (i / 28) * Math.PI * 2 + silenceProgress * 2.2;
+                const r = (18 + (i % 5) * 42) * emerge;
+                const gx = cx + Math.cos(angle) * r * 1.4;
+                const gy = cy + Math.sin(angle) * r * 0.75;
+                const glyphIdx = Math.floor(i * 7 + silenceProgress * 40) % CIPHER_GLYPHS.length;
+
+                ctx.fillStyle = RenderPipeline.hexToRgba(theme.axonColor, emerge * 0.42);
+                ctx.fillText(CIPHER_GLYPHS[glyphIdx], gx, gy);
+            }
+        }
+        ctx.restore();
+    }
+
+    // ГЛАВНЫЙ ФИНАЛ: Спиральный рой знаков и барабаны-счётчики (Odometer / Split-Flap Reels),
+    // где символы крутятся, переворачиваются друг перед другом и выстраиваются в слова!
+    private renderKineticCounterReelsFinale(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        assemblyProgress: number,
+        theme: PhaseVisualTheme
+    ): void {
+        const cx = width * 0.5;
+        const cy = height * 0.5;
+        const t = this.simulationTimeSec;
+        const p = Math.max(0, Math.min(1, assemblyProgress));
+
+        ctx.save();
+
+        // 1. Фоновая голографическая решетка и кружащиеся в глубине символы матрицы
+        const ambientHalo = ctx.createRadialGradient(cx, cy, 10, cx, cy, Math.min(width, height) * 0.48);
+        ambientHalo.addColorStop(0, RenderPipeline.hexToRgba('#061c30', 0.65 * p));
+        ambientHalo.addColorStop(0.6, RenderPipeline.hexToRgba('#040917', 0.35 * p));
+        ambientHalo.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = ambientHalo;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.min(width, height) * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Орбитальные потоки свободных символов на заднем плане
+        ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < 64; i++) {
+            const orbitA = (i / 64) * Math.PI * 2 + t * (i % 2 === 0 ? 0.18 : -0.14);
+            const orbitRx = width * (0.18 + (i % 7) * 0.042) * Math.min(1, p * 1.4);
+            const orbitRy = height * (0.14 + (i % 5) * 0.055) * Math.min(1, p * 1.4);
+            const ox = cx + Math.cos(orbitA) * orbitRx;
+            const oy = cy + Math.sin(orbitA) * orbitRy;
+
+            const flip3D = Math.cos(t * 3.2 + i * 1.1);
+            const charIdx = Math.floor(t * 9 + i * 13) % CIPHER_GLYPHS.length;
+
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.scale(flip3D, 1.0); // 3D-переворот символа вокруг вертикальной оси
+            ctx.fillStyle = RenderPipeline.hexToRgba(
+                i % 3 === 0 ? '#00f5d4' : '#38bdf8',
+                0.16 * p
+            );
+            ctx.fillText(CIPHER_GLYPHS[charIdx], 0, 0);
+            ctx.restore();
+        }
+
+        // 2. Тонкие геодезические направляющие вокруг области выстраивания слов
+        const frameW = Math.min(760, width * 0.9);
+        const frameH = 290;
+        ctx.strokeStyle = RenderPipeline.hexToRgba('#38bdf8', 0.22 * p);
+        ctx.lineWidth = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(cx - frameW * 0.5 * p, cy - frameH * 0.5);
+        ctx.lineTo(cx + frameW * 0.5 * p, cy - frameH * 0.5);
+        ctx.moveTo(cx - frameW * 0.5 * p, cy + frameH * 0.5);
+        ctx.lineTo(cx + frameW * 0.5 * p, cy + frameH * 0.5);
+        ctx.stroke();
+
+        // 3. ВЫСТРАИВАНИЕ СЛОВ ЧЕРЕЗ БАРАБАНЫ-СЧЁТЧИКИ (ODOMETER / SPLIT-FLAP REELS)
+        const scaleFactor = width < 720 ? 0.68 : 1.0;
+
+        for (let lineIdx = 0; lineIdx < FINALE_COUNTER_LINES.length; lineIdx++) {
+            const line = FINALE_COUNTER_LINES[lineIdx];
+            const chars = line.text.split('');
+            const stepX = line.letterSpacing * scaleFactor;
+            const fontSize = Math.round(line.fontSize * scaleFactor);
+            const totalLineW = (chars.length - 1) * stepX;
+            const startX = cx - totalLineW * 0.5;
+            const targetY = cy + line.yOffset * scaleFactor;
+
+            ctx.font = `${line.fontWeight} ${fontSize}px "JetBrains Mono", Consolas, monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (let c = 0; c < chars.length; c++) {
+                const targetChar = chars[c];
+                const targetX = startX + c * stepX;
+
+                // Индивидуальный тайминг для каждой буквы: выстраиваются волной слева направо!
+                const charStart = line.startDelay + (c / Math.max(1, chars.length)) * 0.28;
+                const charDuration = 0.34;
+                const localP = Math.max(0, Math.min(1, (p - charStart) / charDuration));
+
+                if (localP <= 0.001) continue;
+
+                // Фаза 1 (localP 0..0.45): буква прилетает по спиральной дуге из Точки Нуля в свою ячейку счётчика
+                const flyEase = 1.0 - Math.pow(1.0 - Math.min(1, localP / 0.45), 3);
+                const spiralAngle = (1.0 - flyEase) * (Math.PI * 1.5 + (c % 5) * 0.6);
+                const spiralR = (1.0 - flyEase) * 140;
+
+                const curX = cx + (targetX - cx) * flyEase + Math.cos(spiralAngle) * spiralR;
+                const curY = cy + (targetY - cy) * flyEase + Math.sin(spiralAngle) * spiralR * 0.6;
+
+                if (targetChar === ' ') continue;
+
+                // Фаза 2 (localP < 1.0): ВРАЩАЮЩИЙСЯ БАРАБАН СЧЁТЧИКА (символы крутятся и переворачиваются)
+                if (localP < 0.995) {
+                    // Скорость вращения барабана замедляется перед щелчком фиксации
+                    const spinRemaining = 1.0 - localP;
+                    const wheelPos = (t * 26 + c * 3.7 + lineIdx * 5.1) * spinRemaining;
+                    const baseGlyphIdx = Math.floor(wheelPos) % CIPHER_GLYPHS.length;
+                    const prevGlyphIdx = (baseGlyphIdx + CIPHER_GLYPHS.length - 1) % CIPHER_GLYPHS.length;
+                    const nextGlyphIdx = (baseGlyphIdx + 1) % CIPHER_GLYPHS.length;
+                    const fracScroll = wheelPos - Math.floor(wheelPos); // 0.0 .. 1.0 прокрутка колёсика
+
+                    // Эффект 3D-переворота пластинки счётчика (split-flap / counter wheel)
+                    const flapScaleY = 0.28 + 0.72 * Math.abs(Math.cos(fracScroll * Math.PI));
+                    const slotH = fontSize * 1.45;
+
+                    ctx.save();
+                    ctx.translate(curX, curY);
+
+                    // Подложка ячейки счётчика во время перебора символов
+                    ctx.fillStyle = `rgba(15, 23, 42, ${0.65 * spinRemaining})`;
+                    ctx.strokeStyle = RenderPipeline.hexToRgba('#38bdf8', 0.45 * spinRemaining);
+                    ctx.lineWidth = 0.75;
+                    ctx.fillRect(-stepX * 0.46, -slotH * 0.55, stepX * 0.92, slotH * 1.1);
+                    ctx.strokeRect(-stepX * 0.46, -slotH * 0.55, stepX * 0.92, slotH * 1.1);
+
+                    // Обрезаем область барабана, чтобы соседние символы входили сверху и уходили вниз
+                    ctx.beginPath();
+                    ctx.rect(-stepX * 0.5, -slotH * 0.55, stepX, slotH * 1.1);
+                    ctx.clip();
+
+                    // Верхний уходящий символ на барабане
+                    ctx.fillStyle = RenderPipeline.hexToRgba('#7dd3fc', 0.38);
+                    ctx.fillText(CIPHER_GLYPHS[prevGlyphIdx], 0, (fracScroll - 0.85) * slotH);
+
+                    // Центральный переворачивающийся символ на барабане
+                    ctx.save();
+                    ctx.translate(0, (fracScroll - 0.5) * slotH * 0.45);
+                    ctx.scale(1.0, flapScaleY);
+                    ctx.fillStyle = '#fde047';
+                    ctx.fillText(CIPHER_GLYPHS[baseGlyphIdx], 0, 0);
+                    ctx.restore();
+
+                    // Нижний набегающий символ на барабане
+                    ctx.fillStyle = RenderPipeline.hexToRgba('#38bdf8', 0.38);
+                    ctx.fillText(CIPHER_GLYPHS[nextGlyphIdx], 0, (fracScroll + 0.15) * slotH);
+
+                    ctx.restore();
+                } else {
+                    // Фаза 3 (localP === 1.0): ЩЕЛЧОК ФИКСАЦИИ! Буква встала на место в слове
+                    const timeSinceLock = Math.max(0, p - (charStart + charDuration));
+                    const lockFlash = Math.max(0, 1.0 - timeSinceLock * 5.5);
+
+                    ctx.save();
+                    ctx.translate(targetX, targetY);
+
+                    // Вспышка при защелкивании буквы на барабане
+                    if (lockFlash > 0.02) {
+                        ctx.fillStyle = RenderPipeline.hexToRgba('#fde047', lockFlash * 0.45);
+                        ctx.fillRect(-stepX * 0.48, -fontSize * 0.65, stepX * 0.96, fontSize * 1.3);
+                    }
+
+                    ctx.shadowColor = lockFlash > 0.1 ? '#fde047' : line.color;
+                    ctx.shadowBlur = lockFlash > 0.1 ? 14 : 8;
+                    ctx.fillStyle = lockFlash > 0.25 ? '#ffffff' : line.color;
+                    ctx.fillText(targetChar, 0, 0);
+
+                    ctx.restore();
+                }
+            }
+        }
 
         ctx.restore();
     }
 
     // --------------------------------------------------------------------------
-    // 5. УНИКАЛЬНЫЙ ЦЕНТРАЛЬНЫЙ АРХЕТИП КАЖДОЙ ИЗ 5 ФАЗ (ВО ВЕСЬ ЭКРАН 16:9)
+    // 7. УНИКАЛЬНЫЙ ФОНОВЫЙ АРХЕТИП КАЖДОЙ ИЗ 5 ФАЗ (ВО ВЕСЬ ЭКРАН 16:9)
     // --------------------------------------------------------------------------
     private renderPhaseSignatureBackdrop(
         ctx: CanvasRenderingContext2D,
@@ -369,7 +731,6 @@ export class UniverseRenderer {
         ctx.save();
 
         if (phase === '01_VOID') {
-            // ОБРАЗ 01: Гравитационные волны Квантовой Колыбели и корона Точки Нуля
             for (let r = 0; r < 6; r++) {
                 const waveProg = (t * 0.22 + r / 6) % 1.0;
                 const rx = width * 0.46 * waveProg;
@@ -393,8 +754,7 @@ export class UniverseRenderer {
             ctx.arc(cx, cy, 74, 0, Math.PI * 2);
             ctx.fill();
         } else if (phase === '02_GENESIS') {
-            // ОБРАЗ 02: Четыре спиральных рукава Галактики и золотой бинарный центр
-            const unfold = Math.min(1.0, 0.4 + universeStore.getState().telemetry.phaseProgress * 0.65);
+            const unfold = Math.min(1.0, 0.45 + universeStore.getState().telemetry.phaseProgress * 0.6);
             for (let arm = 0; arm < 4; arm++) {
                 const baseA = (arm * Math.PI) / 2 - t * 0.36;
                 ctx.strokeStyle = RenderPipeline.hexToRgba(
@@ -414,7 +774,6 @@ export class UniverseRenderer {
                 ctx.stroke();
             }
         } else if (phase === '03_EVOLUTION') {
-            // ОБРАЗ 03: Скульптурные Левое и Правое Полушария Головного Мозга с бороздами извилин
             for (let h = -1; h <= 1; h += 2) {
                 const hx = cx + h * (width * 0.19);
                 const rx = width * 0.23;
@@ -429,7 +788,6 @@ export class UniverseRenderer {
                 ctx.ellipse(hx, cy, rx, ry, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Внешний и внутренний контуры коры полушария с рельефом извилин
                 for (let shell = 0; shell < 2; shell++) {
                     const scale = shell === 0 ? 1.0 : 0.68;
                     ctx.strokeStyle = RenderPipeline.hexToRgba(
@@ -454,7 +812,6 @@ export class UniverseRenderer {
                 }
             }
 
-            // Светящийся межполушарный мост (Corpus Callosum) в самом центре мозга
             const bridgeGrad = ctx.createRadialGradient(cx, cy, 5, cx, cy, width * 0.16);
             bridgeGrad.addColorStop(0, RenderPipeline.hexToRgba('#f59e0b', 0.24));
             bridgeGrad.addColorStop(1, 'rgba(0,0,0,0)');
@@ -463,7 +820,6 @@ export class UniverseRenderer {
             ctx.ellipse(cx, cy, width * 0.16, height * 0.11, 0, 0, Math.PI * 2);
             ctx.fill();
         } else if (phase === '04_COLLAPSE') {
-            // ОБРАЗ 04: Три пересекающихся гироскопических кольца шторма строго по центру экрана
             const tilts = [-0.48, 0.0, 0.48];
             for (let g = 0; g < 3; g++) {
                 ctx.save();
@@ -480,14 +836,21 @@ export class UniverseRenderer {
                 ctx.restore();
             }
         } else if (phase === '05_SINGULARITY') {
-            // ОБРАЗ 05: Сверхмассивная Черная Дыра с золотым аккреционным диском и полярными джетами
             const uState = universeStore.getState();
+            if (
+                uState.singularityAct === 'ACT_C_ZERO_SILENCE' ||
+                uState.singularityAct === 'ACT_D_GITHUB_CARD' ||
+                uState.singularityAct === 'RESTART_COLLAPSE'
+            ) {
+                ctx.restore();
+                return;
+            }
+
             const collapseScale =
                 uState.singularityAct === 'ACT_B_LOGIC' && uState.singularityActProgress > 0.58
-                    ? Math.max(0.05, 1.0 - (uState.singularityActProgress - 0.58) / 0.42)
+                    ? Math.max(0.08, 1.0 - (uState.singularityActProgress - 0.58) / 0.42)
                     : 1.0;
 
-            // Полярные релятивистские джеты вдоль вертикальной оси
             const jetLen = height * 0.45 * collapseScale;
             const jetGrad = ctx.createLinearGradient(cx, cy - jetLen, cx, cy + jetLen);
             jetGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
@@ -502,7 +865,6 @@ export class UniverseRenderer {
             ctx.lineTo(cx, cy + jetLen);
             ctx.stroke();
 
-            // Гравитационно-линзированное гало вокруг горизонта событий
             const haloR = Math.min(width, height) * 0.24 * collapseScale;
             const diskGrad = ctx.createRadialGradient(cx, cy, haloR * 0.22, cx, cy, haloR * 1.5);
             diskGrad.addColorStop(0, '#000000');
@@ -516,7 +878,6 @@ export class UniverseRenderer {
             ctx.arc(cx, cy, haloR * 1.5, 0, Math.PI * 2);
             ctx.fill();
 
-            // Наклонный экваториальный аккреционный диск на 84% ширины экрана
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(-0.14);
@@ -539,7 +900,6 @@ export class UniverseRenderer {
             ctx.fill();
             ctx.restore();
 
-            // Черная сфера Горизонта Событий в центре
             ctx.fillStyle = '#020205';
             ctx.beginPath();
             ctx.arc(cx, cy, Math.max(6, 34 * collapseScale), 0, Math.PI * 2);
@@ -550,7 +910,7 @@ export class UniverseRenderer {
     }
 
     // --------------------------------------------------------------------------
-    // 6. FX 01: АНИЗОТРОПНЫЕ ТУМАННОСТИ С ТЕНЯМИ, RIM-LIGHT И ВОЛОКНАМИ
+    // 8. АНИЗОТРОПНЫЕ ТУМАННОСТИ, АКСОНЫ, НЕЙРОНЫ И ОПТИЧЕСКАЯ ЛИНЗА BREACH
     // --------------------------------------------------------------------------
     private renderAnisotropicNebulaeWithShadows(
         ctx: CanvasRenderingContext2D,
@@ -561,7 +921,6 @@ export class UniverseRenderer {
     ): void {
         const t = this.simulationTimeSec;
 
-        // Находим самую яркую активную сому для внутренней подсветки близлежащего облака
         let activeNode: QuantumParticle | null = null;
         let bestCharge = 0.25;
         for (let i = 0; i < particles.length; i += 4) {
@@ -602,14 +961,12 @@ export class UniverseRenderer {
             ctx.arc(0, 0, rx, 0, Math.PI * 2);
             ctx.fill();
 
-            // Холодный контровой блик (Rim Light) на гребне газовой складки
             ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, 0.06 + internalLight * 0.1);
             ctx.lineWidth = 2.0;
             ctx.beginPath();
             ctx.arc(0, 0, rx * 0.64, -0.7, 0.7);
             ctx.stroke();
 
-            // Темная пылевая прожилка (каньон поглощения света) для глубоких полутеней
             const shadowGrad = ctx.createLinearGradient(0, -28, 0, 28);
             shadowGrad.addColorStop(0, 'rgba(0,0,0,0)');
             shadowGrad.addColorStop(0.5, RenderPipeline.hexToRgba(theme.nebulaShadow, 0.52));
@@ -658,9 +1015,6 @@ export class UniverseRenderer {
         ctx.restore();
     }
 
-    // --------------------------------------------------------------------------
-    // 7. FX 02: ИЗОГНУТЫЕ АКСОНЫ МОЗГА И ЯРКИЕ КОМЕТЫ СИНАПТИЧЕСКИХ ИМПУЛЬСОВ
-    // --------------------------------------------------------------------------
     private renderSynapticBrainNetworkAndComets(
         ctx: CanvasRenderingContext2D,
         edges: ReadonlyArray<TopologyEdge>,
@@ -744,9 +1098,6 @@ export class UniverseRenderer {
         };
     }
 
-    // --------------------------------------------------------------------------
-    // 8. МНОГОЛУЧЕВЫЕ НЕЙРОНЫ (СОМЫ С ДЕНДРИТАМИ И КОЛЬЦАМИ ОЗАРЕНИЯ)
-    // --------------------------------------------------------------------------
     private renderNeuronsAndSynapticRings(
         ctx: CanvasRenderingContext2D,
         particles: ReadonlyArray<QuantumParticle>,
@@ -852,9 +1203,6 @@ export class UniverseRenderer {
         ctx.restore();
     }
 
-    // --------------------------------------------------------------------------
-    // 9. FX 03 & FX 04: СЕТКА X-RAY, ОПТИЧЕСКАЯ ЛИНЗА BREACH И 5 ШАГОВ ГОЛОГРАММЫ GITHUB
-    // --------------------------------------------------------------------------
     private renderTruthCoordinateGrid(
         ctx: CanvasRenderingContext2D,
         width: number,
@@ -981,88 +1329,5 @@ export class UniverseRenderer {
                 ctx.fillText(`P(${Math.round(p.x)},${Math.round(p.y)}) syn:${p.degree}`, lx, ly + 12);
             }
         }
-    }
-
-    // Полная 5-шаговая геодезическая сборка голографической карточки GitHub из Точки Нуля
-    private renderGeodesicGitHubHologramCanvas(
-        ctx: CanvasRenderingContext2D,
-        width: number,
-        height: number,
-        progress: number,
-        theme: PhaseVisualTheme
-    ): void {
-        const cx = width * 0.5;
-        const cy = height * 0.5;
-        const p = Math.max(0, Math.min(1, progress));
-        const cardW = Math.min(460, width * 0.88);
-        const cardH = 250;
-        const left = cx - cardW * 0.5;
-        const top = cy - cardH * 0.5;
-
-        ctx.save();
-
-        // Шаг 1: Остаточный импульс Точки Нуля и выход тонких геодезических дуг
-        const step1 = Math.min(1, p / 0.25);
-        const pulseR = 6 + step1 * 34;
-        const zeroHalo = ctx.createRadialGradient(cx, cy, 0.5, cx, cy, pulseR);
-        zeroHalo.addColorStop(0, RenderPipeline.hexToRgba('#ffffff', 0.7 * (1 - p * 0.45)));
-        zeroHalo.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = zeroHalo;
-        ctx.beginPath();
-        ctx.arc(cx, cy, pulseR, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = RenderPipeline.hexToRgba(theme.axonColor, 0.32 * step1);
-        ctx.lineWidth = 0.85;
-        for (let g = -1; g <= 1; g += 2) {
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.quadraticCurveTo(
-                cx + g * cardW * 0.62 * step1,
-                cy - cardH * 0.52 * step1,
-                cx + g * (cardW * 0.5) * step1,
-                cy + g * (cardH * 0.5) * step1
-            );
-            ctx.stroke();
-        }
-
-        // Шаг 2: Поэтапное проведение геодезических сегментов контура рамки
-        if (p > 0.2) {
-            const step2 = Math.min(1, (p - 0.2) / 0.35);
-            const segW = cardW * step2;
-            const segH = cardH * step2;
-
-            ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, 0.48 * step2);
-            ctx.lineWidth = 1.1;
-            ctx.beginPath();
-            ctx.moveTo(cx - segW * 0.5, top);
-            ctx.lineTo(cx + segW * 0.5, top);
-            ctx.moveTo(cx - segW * 0.5, top + cardH);
-            ctx.lineTo(cx + segW * 0.5, top + cardH);
-            ctx.moveTo(left, cy - segH * 0.5);
-            ctx.lineTo(left, cy + segH * 0.5);
-            ctx.moveTo(left + cardW, cy - segH * 0.5);
-            ctx.lineTo(left + cardW, cy + segH * 0.5);
-            ctx.stroke();
-        }
-
-        // Шаг 3: Сканирующая волна матовой графитово-синей поверхности
-        if (p > 0.45) {
-            const step3 = Math.min(1, (p - 0.45) / 0.35);
-            const scanY = top + cardH * step3;
-            ctx.fillStyle = `rgba(6, 11, 25, ${0.65 * step3})`;
-            ctx.fillRect(left, top, cardW, cardH * step3);
-
-            if (step3 < 0.99) {
-                ctx.strokeStyle = RenderPipeline.hexToRgba(theme.axonColor, 0.6 * (1 - step3));
-                ctx.lineWidth = 1.3;
-                ctx.beginPath();
-                ctx.moveTo(left, scanY);
-                ctx.lineTo(left + cardW, scanY);
-                ctx.stroke();
-            }
-        }
-
-        ctx.restore();
     }
 }
