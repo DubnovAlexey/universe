@@ -1,18 +1,18 @@
+// noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/store/stressState.ts
-// НАЗНАЧЕНИЕ: Оптика BREACH LENS, пружинная инерция, рефракция и микротрещины
-// ЧТО ДЕЛАЕТ ЭТОТ ФАЙЛ:
-// 1. Двигает центр линзы (lensX, lensY) за указателем мыши/touch с пружинным демпфированием.
-// 2. Масштабирует радиус разрыва в пределах 12-24% от меньшей стороны экрана (viewport).
-// 3. Строит 4 зоны оптической маски и вычисляет вектор рефракции звезд на кромке мембраны.
-// 4. Генерирует 3-8 детерминированных ветвящихся микротрещин на контуре разрыва и спонтанные разломы.
+// НАЗНАЧЕНИЕ: Математическая модель BREACH LENS, C¹-рефракции и микротрещин (MASTER 04 v2.0)
+// ЗАДАЧИ ФАЙЛА:
+// 1. Двигать центр линзы (lensX, lensY) критически демпфированной пружиной (ζ ≈ 0.92).
+// 2. Поддерживать управление мышью, касанием (touch) и клавиатурой (Стрелки, Space, Esc).
+// 3. Вычислять C¹-непрерывное поле преломления δ(p) = r̂·A·g(d) + t̂·B·g(d), строго g=0 за кромкой.
+// 4. Генерировать 3–8 детерминированных микротрещин через DeterministicPRNG (без Math.random).
+// 5. Выполнять режиссёрский авто-разрыв около 66 с цикла при отсутствии пользовательского ввода.
 // ============================================================================
 
 import { universeStore } from './universeState';
+import { DeterministicPRNG } from '../core/prng';
 
-// ----------------------------------------------------------------------------
-// 1. СТРУКТУРЫ УДАРНЫХ ВОЛН, МИКРОТРЕЩИН МЕМБРАНЫ И СПОНТАННЫХ РАЗРЫВОВ
-// ----------------------------------------------------------------------------
 export interface SpaceShockwave {
     id: number;
     x: number;
@@ -33,10 +33,10 @@ export interface MicroCrackSegment {
 
 export interface MembraneMicroCrack {
     id: number;
-    anchorAngle: number;      // Угол привязки к кромке BREACH LENS
+    anchorAngle: number;
     segments: MicroCrackSegment[];
     branches: MicroCrackSegment[];
-    life: number;             // 0.0 -> 1.0 (фаза жизни трещины)
+    life: number;
     maxLife: number;
     intensity: number;
 }
@@ -53,58 +53,53 @@ export interface SpontaneousRift {
 export interface RefractionOffset {
     dx: number;
     dy: number;
-    rimHighlight: number;     // Яркость холодного блика на кромке мембраны (0..1)
-    dispersionFactor: number; // Тонкая дисперсия на контрастных дугах (0..1)
+    rimHighlight: number;
+    dispersionFactor: number;
 }
 
 export interface StressStateData {
     globalStress: number;
     targetStress: number;
-
-    // Сырые координаты указателя мыши или касания пальца (touch)
     pointerX: number;
     pointerY: number;
-    // Инерционные координаты центра BREACH LENS (догоняют курсор с пружиной)
     lensX: number;
     lensY: number;
     lensVx: number;
     lensVy: number;
-
     normX: number;
     normY: number;
     isPointerInside: boolean;
-
     isBreaching: boolean;
+    hasUserInteracted: boolean;
+    ghostHintAlpha: number; // Однократная призрачная подсказка у курсора около 60 с (MASTER 00)
     currentBreachRadius: number;
     baseBreachRadius: number;
     maxBreachRadius: number;
-    revealIntensity: number;  // Степень вскрытия мембраны Истины (0..1)
-
+    revealIntensity: number;
     shockwaves: SpaceShockwave[];
     microCracks: MembraneMicroCrack[];
     spontaneousRifts: SpontaneousRift[];
 }
 
-// ----------------------------------------------------------------------------
-// 2. КОНТРОЛЛЕР ОПТИЧЕСКОЙ МЕМБРАНЫ ПРОСТРАНСТВА И BREACH LENS
-// ----------------------------------------------------------------------------
 class StressStateController {
     private state: StressStateData = {
         globalStress: 0.05,
         targetStress: 0.05,
-        pointerX: -1000,
-        pointerY: -1000,
-        lensX: -1000,
-        lensY: -1000,
+        pointerX: 960,
+        pointerY: 540,
+        lensX: 960,
+        lensY: 540,
         lensVx: 0,
         lensVy: 0,
         normX: 0.5,
         normY: 0.5,
         isPointerInside: false,
         isBreaching: false,
+        hasUserInteracted: false,
+        ghostHintAlpha: 0,
         currentBreachRadius: 0,
-        baseBreachRadius: 110,
-        maxBreachRadius: 230,
+        baseBreachRadius: 115,
+        maxBreachRadius: 225,
         revealIntensity: 0,
         shockwaves: [],
         microCracks: [],
@@ -113,23 +108,65 @@ class StressStateController {
 
     private nextId = 1;
     private radialVelocity = 0;
-    private viewportMinSide = 960;
+    private viewportWidth = 1920;
+    private viewportHeight = 1080;
+    private viewportMinSide = 1080;
+
+    constructor() {
+        if (typeof window !== 'undefined') {
+            this.bindKeyboardNavigation();
+        }
+    }
 
     public getState(): Readonly<StressStateData> {
         return this.state;
     }
 
-    // Детерминированный псевдослучайный генератор от сида
-    private seededRandom(seed: number): number {
-        const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
-        return x - Math.floor(x);
+    // Клавиатурная альтернатива по MASTER 04: стрелки двигают линзу, Space удерживает, Esc закрывает
+    private bindKeyboardNavigation(): void {
+        window.addEventListener('keydown', (e: KeyboardEvent) => {
+            const step = 28;
+            if (e.key === 'ArrowLeft') {
+                this.moveLensByKeyboard(-step, 0);
+            } else if (e.key === 'ArrowRight') {
+                this.moveLensByKeyboard(step, 0);
+            } else if (e.key === 'ArrowUp') {
+                this.moveLensByKeyboard(0, -step);
+            } else if (e.key === 'ArrowDown') {
+                this.moveLensByKeyboard(0, step);
+            } else if (e.key === ' ' && !e.repeat) {
+                if (!this.state.isPointerInside) {
+                    this.updatePointer(this.viewportWidth * 0.5, this.viewportHeight * 0.5, this.viewportWidth, this.viewportHeight);
+                }
+                this.setBreaching(true, true);
+            } else if (e.key === 'Escape') {
+                this.setBreaching(false, false);
+                this.clearPointer();
+            }
+        });
+
+        window.addEventListener('keyup', (e: KeyboardEvent) => {
+            if (e.key === ' ') {
+                this.setBreaching(false, false);
+            }
+        });
     }
 
-    // Обновление позиции курсора или точки касания (с калибровкой 12-24% экрана)
+    private moveLensByKeyboard(dx: number, dy: number): void {
+        const baseX = this.state.isPointerInside ? this.state.pointerX : this.viewportWidth * 0.5;
+        const baseY = this.state.isPointerInside ? this.state.pointerY : this.viewportHeight * 0.5;
+        const nx = Math.max(40, Math.min(this.viewportWidth - 40, baseX + dx));
+        const ny = Math.max(40, Math.min(this.viewportHeight - 40, baseY + dy));
+        this.updatePointer(nx, ny, this.viewportWidth, this.viewportHeight);
+    }
+
     public updatePointer(x: number, y: number, viewportWidth: number, viewportHeight: number): void {
-        this.viewportMinSide = Math.max(320, Math.min(viewportWidth, viewportHeight));
-        // По спецификации FX 03: диапазон линзы 12-24% меньшей стороны окна
-        this.state.baseBreachRadius = Math.round(this.viewportMinSide * 0.11);
+        this.viewportWidth = Math.max(320, viewportWidth);
+        this.viewportHeight = Math.max(320, viewportHeight);
+        this.viewportMinSide = Math.min(this.viewportWidth, this.viewportHeight);
+
+        // Радиус R = 12–24% меньшей стороны окна по MASTER 04
+        this.state.baseBreachRadius = Math.round(this.viewportMinSide * 0.12);
         this.state.maxBreachRadius = Math.round(this.viewportMinSide * 0.22);
 
         if (!this.state.isPointerInside) {
@@ -139,8 +176,8 @@ class StressStateController {
 
         this.state.pointerX = x;
         this.state.pointerY = y;
-        this.state.normX = viewportWidth > 0 ? x / viewportWidth : 0.5;
-        this.state.normY = viewportHeight > 0 ? y / viewportHeight : 0.5;
+        this.state.normX = this.viewportWidth > 0 ? x / this.viewportWidth : 0.5;
+        this.state.normY = this.viewportHeight > 0 ? y / this.viewportHeight : 0.5;
         this.state.isPointerInside = true;
     }
 
@@ -151,15 +188,21 @@ class StressStateController {
         }
     }
 
-    // Раскрытие или закрытие локального разрыва реальности
     public setBreaching(active: boolean, triggerShockwave = true): void {
         const wasBreaching = this.state.isBreaching;
         this.state.isBreaching = active;
+        if (active) {
+            this.state.hasUserInteracted = true;
+            this.state.ghostHintAlpha = 0;
+        }
 
         if (active && !wasBreaching && this.state.isPointerInside) {
-            universeStore.emitEvent('breach:opened', `BREACH LENS открыта в (${Math.round(this.state.lensX)}, ${Math.round(this.state.lensY)})`);
+            universeStore.emitEvent(
+                'breach:opened',
+                `BREACH LENS открыта в (${Math.round(this.state.lensX)}, ${Math.round(this.state.lensY)}) [wgsl/breach.wgsl]`
+            );
             if (triggerShockwave) {
-                this.spawnShockwave(this.state.lensX, this.state.lensY, this.state.maxBreachRadius * 1.65, 0.8);
+                this.spawnShockwave(this.state.lensX, this.state.lensY, this.state.maxBreachRadius * 1.6, 0.8);
             }
             this.generateDeterministicMicroCracks();
         } else if (!active && wasBreaching) {
@@ -174,10 +217,13 @@ class StressStateController {
     public injectEntropySpike(amount = 0.35, centerX?: number, centerY?: number): void {
         this.state.globalStress = Math.min(1.0, this.state.globalStress + amount);
         if (centerX !== undefined && centerY !== undefined) {
-            this.spawnShockwave(centerX, centerY, this.viewportMinSide * 0.55, 0.95);
+            this.spawnShockwave(centerX, centerY, this.viewportMinSide * 0.5, 0.9);
             this.spawnSpontaneousRift(centerX, centerY);
         }
-        universeStore.emitEvent('stress:threshold-crossed', `Скачок напряжения ткани: ${Math.round(this.state.globalStress * 100)}%`);
+        universeStore.emitEvent(
+            'stress:threshold-crossed',
+            `Скачок напряжения ткани: ${Math.round(this.state.globalStress * 100)}% [rust/breach_math.rs]`
+        );
     }
 
     public spawnShockwave(x: number, y: number, maxRadius = 360, strength = 0.7): void {
@@ -196,12 +242,13 @@ class StressStateController {
     }
 
     private spawnSpontaneousRift(x: number, y: number): void {
+        const rng = new DeterministicPRNG(universeStore.getState().seed + this.nextId * 71);
         this.state.spontaneousRifts.push({
             id: this.nextId++,
             x,
             y,
             radius: 14,
-            maxRadius: this.viewportMinSide * (0.08 + Math.random() * 0.06),
+            maxRadius: this.viewportMinSide * rng.nextRange(0.08, 0.14),
             life: 1.0,
         });
         if (this.state.spontaneousRifts.length > 5) {
@@ -209,25 +256,25 @@ class StressStateController {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 3. ГЕНЕРАЦИЯ ДЕТЕРМИНИРОВАННЫХ МИКРОТРЕЩИН НА КРОМКЕ ЛИНЗЫ (3-8 ТРЕЩИН)
-    // --------------------------------------------------------------------------
+    // Генерация 3–8 детерминированных микротрещин (0.5–1.0 px) строго от eventSeed
     private generateDeterministicMicroCracks(): void {
         this.state.microCracks = [];
+        const uState = universeStore.getState();
+        const eventSeed = (uState.seed ^ Math.imul(this.nextId, 0x9e3779b9)) >>> 0;
+        const rng = new DeterministicPRNG(eventSeed);
+
         const crackCount = Math.min(8, Math.max(3, Math.floor(4 + this.state.globalStress * 4)));
-        const baseSeed = this.nextId * 37 + Math.round(this.state.lensX);
 
         for (let i = 0; i < crackCount; i++) {
-            const seed = baseSeed + i * 19;
-            const anchorAngle = (i / crackCount) * Math.PI * 2 + (this.seededRandom(seed) - 0.5) * 0.45;
-            const segmentCount = 2 + Math.floor(this.seededRandom(seed + 1) * 3); // 2..4 сегмента
+            const anchorAngle = (i / crackCount) * Math.PI * 2 + rng.nextRange(-0.22, 0.22);
+            const segmentCount = 2 + (rng.nextU32() % 4); // 2..5 укорачивающихся сегментов
 
             const segments: MicroCrackSegment[] = [];
             const branches: MicroCrackSegment[] = [];
 
             let curX = 0;
             let curY = 0;
-            let curAngle = anchorAngle + (this.seededRandom(seed + 2) - 0.5) * 0.65;
+            let curAngle = anchorAngle + rng.nextRange(-0.32, 0.32);
             let segLen = 14 + this.state.globalStress * 18;
 
             for (let s = 0; s < segmentCount; s++) {
@@ -237,9 +284,8 @@ class StressStateController {
 
                 segments.push({ x1: curX, y1: curY, x2: nextX, y2: nextY, thickness });
 
-                // 1-2 коротких боковых ответвления
-                if (s === 0 || (s === 1 && this.seededRandom(seed + s * 7) > 0.45)) {
-                    const branchAngle = curAngle + (this.seededRandom(seed + s * 11) > 0.5 ? 0.52 : -0.52);
+                if (s < 2 && rng.nextFloat() > 0.35) {
+                    const branchAngle = curAngle + (rng.nextFloat() > 0.5 ? 0.52 : -0.52);
                     const branchLen = segLen * 0.55;
                     branches.push({
                         x1: nextX,
@@ -252,8 +298,8 @@ class StressStateController {
 
                 curX = nextX;
                 curY = nextY;
-                curAngle += (this.seededRandom(seed + s * 13) - 0.5) * 0.55;
-                segLen *= 0.72; // Сегменты укорачиваются к концу
+                curAngle += rng.nextRange(-0.28, 0.28);
+                segLen *= 0.72;
             }
 
             this.state.microCracks.push({
@@ -262,20 +308,17 @@ class StressStateController {
                 segments,
                 branches,
                 life: 1.0,
-                maxLife: 0.9 + this.seededRandom(seed + 5) * 0.7,
+                maxLife: rng.nextRange(0.9, 1.6),
                 intensity: 0.7 + this.state.globalStress * 0.3,
             });
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 4. ФИЗИЧЕСКИЙ ШАГ ПРУЖИННОЙ ИНЕРЦИИ ЛИНЗЫ, ТРЕЩИН И СПОНТАННЫХ РАЗРЫВОВ
-    // --------------------------------------------------------------------------
     public stepPhysics(dtSeconds: number): void {
         const dt = Math.min(dtSeconds, 0.05);
         const uState = universeStore.getState();
+        const simSec = uState.telemetry.simulationTimeSec;
 
-        // В состоянии 2.5с абсолютной тишины (ZERO_SILENCE) все возмущения заморожены
         if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
             this.state.currentBreachRadius = 0;
             this.state.revealIntensity = 0;
@@ -285,61 +328,78 @@ class StressStateController {
             return;
         }
 
-        // 1. Плавная релаксация глобального стресса
         this.state.globalStress += (this.state.targetStress - this.state.globalStress) * dt * 1.6;
 
-        // 2. Пружинная инерция следования центра линзы (lensX, lensY) за указателем (pointerX, pointerY)
-        if (this.state.isPointerInside) {
-            const posStiffness = 160;
-            const posDamping = 18;
-            const ax = (this.state.pointerX - this.state.lensX) * posStiffness;
-            const ay = (this.state.pointerY - this.state.lensY) * posStiffness;
+        // Однократная призрачная подсказка около 60 с цикла (MASTER 00 раздел 1)
+        if (!this.state.hasUserInteracted && simSec >= 58.5 && simSec <= 64.5) {
+            this.state.ghostHintAlpha = Math.sin(((simSec - 58.5) / 6.0) * Math.PI) * 0.38;
+        } else {
+            this.state.ghostHintAlpha = 0;
+        }
 
-            this.state.lensVx = (this.state.lensVx + ax * dt) * Math.exp(-posDamping * dt);
-            this.state.lensVy = (this.state.lensVy + ay * dt) * Math.exp(-posDamping * dt);
+        // Режиссёрский автоматический разрыв на 66–71 с, если пользователь ещё не нажимал мышь (MASTER 04)
+        const isDirectorAutoBreach =
+            !this.state.hasUserInteracted &&
+            uState.currentPhase === '04_COLLAPSE' &&
+            simSec >= 66.0 &&
+            simSec <= 71.5;
+
+        if (isDirectorAutoBreach && !this.state.isPointerInside) {
+            this.state.lensX = this.viewportWidth * 0.5 + Math.cos(simSec * 0.8) * 120;
+            this.state.lensY = this.viewportHeight * 0.5 + Math.sin(simSec * 0.8) * 70;
+        }
+
+        // Критически/слегка недодемпфированная пружина (ζ ≈ 0.92) следования центра линзы
+        if (this.state.isPointerInside) {
+            const omega = 14.0;
+            const zeta = 0.92;
+            const ax = omega * omega * (this.state.pointerX - this.state.lensX) - 2 * zeta * omega * this.state.lensVx;
+            const ay = omega * omega * (this.state.pointerY - this.state.lensY) - 2 * zeta * omega * this.state.lensVy;
+
+            this.state.lensVx += ax * dt;
+            this.state.lensVy += ay * dt;
             this.state.lensX += this.state.lensVx * dt;
             this.state.lensY += this.state.lensVy * dt;
         }
 
-        // 3. Пружинная инерция радиуса раскрытия BREACH LENS
         let targetRadius = 0;
-        if (this.state.isPointerInside) {
-            const stressBonus = this.state.globalStress * 35;
-            targetRadius = this.state.isBreaching
-                ? this.state.maxBreachRadius + stressBonus
-                : this.state.baseBreachRadius * 0.55;
+        if (this.state.isPointerInside || isDirectorAutoBreach) {
+            const stressBonus = this.state.globalStress * 32;
+            targetRadius =
+                this.state.isBreaching || isDirectorAutoBreach
+                    ? this.state.maxBreachRadius + stressBonus
+                    : this.state.baseBreachRadius * 0.55;
         }
 
-        const radStiffness = 135;
-        const radDamping = 14;
-        const radialForce = (targetRadius - this.state.currentBreachRadius) * radStiffness;
-        this.radialVelocity = (this.radialVelocity + radialForce * dt) * Math.exp(-radDamping * dt);
+        const radOmega = 12.5;
+        const radZeta = 0.9;
+        const radialAccel =
+            radOmega * radOmega * (targetRadius - this.state.currentBreachRadius) -
+            2 * radZeta * radOmega * this.radialVelocity;
+        this.radialVelocity += radialAccel * dt;
         this.state.currentBreachRadius = Math.max(0, this.state.currentBreachRadius + this.radialVelocity * dt);
 
-        // Плавная интенсивность раскрытия X-RAY внутри линзы
-        const targetReveal = this.state.isBreaching ? 1.0 : this.state.isPointerInside ? 0.38 : 0.0;
+        const targetReveal =
+            this.state.isBreaching || isDirectorAutoBreach ? 1.0 : this.state.isPointerInside ? 0.38 : 0.0;
         this.state.revealIntensity += (targetReveal - this.state.revealIntensity) * dt * 7.5;
 
-        if (this.state.isBreaching && this.state.revealIntensity > 0.92) {
+        if ((this.state.isBreaching || isDirectorAutoBreach) && this.state.revealIntensity > 0.92) {
             universeStore.emitEventOnce('breach_peak', 'breach:peak');
         }
 
-        // 4. Жизненный цикл микротрещин на кромке
         for (let i = this.state.microCracks.length - 1; i >= 0; i--) {
             const crack = this.state.microCracks[i];
-            const decayRate = this.state.isBreaching ? 0.35 : 1.45;
+            const decayRate = this.state.isBreaching || isDirectorAutoBreach ? 0.35 : 1.45;
             crack.life -= (dt / crack.maxLife) * decayRate;
             if (crack.life <= 0.01) {
                 this.state.microCracks.splice(i, 1);
             }
         }
 
-        // Если кнопка удерживается, периодически обновляем затухшие микротрещины
-        if (this.state.isBreaching && this.state.microCracks.length < 3) {
+        if ((this.state.isBreaching || isDirectorAutoBreach) && this.state.microCracks.length < 3) {
             this.generateDeterministicMicroCracks();
         }
 
-        // 5. Обновление ударных волн и спонтанных разрывов при высоком стрессе
         for (let i = this.state.shockwaves.length - 1; i >= 0; i--) {
             const wave = this.state.shockwaves[i];
             wave.currentRadius += (wave.maxRadius - wave.currentRadius) * dt * 3.8;
@@ -353,126 +413,100 @@ class StressStateController {
             rift.life -= dt * 0.75;
             if (rift.life <= 0.01) this.state.spontaneousRifts.splice(i, 1);
         }
-
-        // Редкие спонтанные разрывы в фазе TENSION / BREACH при высоком глобальном стрессе
-        if (
-            this.state.globalStress > 0.68 &&
-            this.state.spontaneousRifts.length < 2 &&
-            Math.random() < dt * 0.45
-        ) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 120 + Math.random() * 220;
-            const cx = (typeof window !== 'undefined' ? window.innerWidth : 1920) * 0.5 + Math.cos(angle) * dist;
-            const cy = (typeof window !== 'undefined' ? window.innerHeight : 1080) * 0.5 + Math.sin(angle) * dist;
-            this.spawnSpontaneousRift(cx, cy);
-        }
     }
 
-    // --------------------------------------------------------------------------
-    // 5. НЕИДЕАЛЬНЫЙ УПРУГИЙ КОНТУР ЛИНЗЫ И РЕФРАКЦИЯ НА ГРАНИЦЕ (FX 03)
-    // --------------------------------------------------------------------------
     public getDeformedLensRadiusAtAngle(angleRad: number, simTimeSec = 0): number {
         const baseR = this.state.currentBreachRadius;
         if (baseR <= 1) return 0;
-        // Низкочастотное органическое возмущение кромки (без превращения в шестеренку)
-        const warp1 = Math.sin(angleRad * 3.0 + simTimeSec * 1.7) * 0.045;
-        const warp2 = Math.cos(angleRad * 5.0 - simTimeSec * 1.1) * 0.025;
+        const warp1 = Math.sin(angleRad * 3.0 + simTimeSec * 1.7) * 0.042;
+        const warp2 = Math.cos(angleRad * 5.0 - simTimeSec * 1.1) * 0.024;
         return baseR * (1.0 + (warp1 + warp2) * (0.5 + this.state.globalStress * 0.5));
     }
 
-    // Вычисление оптического смещения (преломления) внешних звезд и волокон у кромки разрыва
+    // Математическая модель C¹-непрерывного преломления δ(p) = r̂·A·g(d) + t̂·B·g(d) по MASTER 04:
+    // строго g(d) = 0 за пределами кольца ширины w вокруг d = 1
     public getBoundaryRefractionOffset(x: number, y: number, simTimeSec = 0): RefractionOffset {
         const r = this.state.currentBreachRadius;
-        if (r < 8 || !this.state.isPointerInside) {
+        if (r < 8) {
             return { dx: 0, dy: 0, rimHighlight: 0, dispersionFactor: 0 };
         }
 
         const dx = x - this.state.lensX;
         const dy = y - this.state.lensY;
-        const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+        const dist = Math.hypot(dx, dy) + 0.0001;
         const angle = Math.atan2(dy, dx);
-        const deformedR = this.getDeformedLensRadiusAtAngle(angle, simTimeSec);
+        const localR = Math.max(8, this.getDeformedLensRadiusAtAngle(angle, simTimeSec));
 
-        const bandHalfWidth = Math.max(18, deformedR * 0.24);
-        const distFromRim = Math.abs(dist - deformedR);
+        const d = dist / localR;
+        const w = 0.24; // Полуширина кольца рефракции вокруг d = 1
+        const u = Math.abs(d - 1.0) / w;
 
-        if (distFromRim > bandHalfWidth) {
+        // Строго g(d) = 0 за границей кольца (u >= 1.0)
+        if (u >= 1.0) {
             return { dx: 0, dy: 0, rimHighlight: 0, dispersionFactor: 0 };
         }
 
-        const t = 1.0 - distFromRim / bandHalfWidth;
-        const smoothBand = t * t * (3.0 - 2.0 * t);
+        // C¹-гладкий колокол: g(u) = (1 - u²)²
+        const oneMinusU2 = 1.0 - u * u;
+        const g = oneMinusU2 * oneMinusU2;
 
         const radialUnitX = dx / dist;
         const radialUnitY = dy / dist;
         const tangentUnitX = -radialUnitY;
         const tangentUnitY = radialUnitX;
 
-        const radialPush = smoothBand * (6.5 + this.state.revealIntensity * 8.0);
-        const tangentShift = smoothBand * Math.sin(angle * 4.0 + simTimeSec * 2.0) * 3.2;
+        const radialAmp = (6.5 + this.state.revealIntensity * 8.5) * g;
+        const tangentAmp = Math.sin(angle * 4.0 + simTimeSec * 2.0) * 3.4 * g;
 
         return {
-            dx: radialUnitX * radialPush + tangentUnitX * tangentShift,
-            dy: radialUnitY * radialPush + tangentUnitY * tangentShift,
-            rimHighlight: smoothBand,
-            dispersionFactor: smoothBand * (this.state.isBreaching ? 0.85 : 0.35),
+            dx: radialUnitX * radialAmp + tangentUnitX * tangentAmp,
+            dy: radialUnitY * radialAmp + tangentUnitY * tangentAmp,
+            rimHighlight: g,
+            dispersionFactor: g * (this.state.isBreaching ? 0.85 : 0.35),
         };
     }
 
-    // --------------------------------------------------------------------------
-    // 6. ЧЕТЫРЕ ЗОНЫ МАСКИ ПРОЗРАЧНОСТИ ИСТИНЫ (X-RAY REVEAL FACTOR 0..1)
-    // --------------------------------------------------------------------------
     public getTruthRevealFactorAt(x: number, y: number, fullXRayMode = false): number {
         if (fullXRayMode) return 1.0;
 
         const uState = universeStore.getState();
         if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') return 0.0;
 
-        // В кульминации LOGIC все три мира прозрачны и совпадают глобально
         let reveal = uState.opticalWeights.logicConvergence * 0.88;
 
-        // 1. Вклад от инерционной BREACH LENS (4 зоны: ядро X-RAY, переход, кольцо рефракции, космос)
         if (this.state.currentBreachRadius > 2.0) {
             const dx = x - this.state.lensX;
             const dy = y - this.state.lensY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.hypot(dx, dy);
             const angle = Math.atan2(dy, dx);
             const localR = this.getDeformedLensRadiusAtAngle(angle);
 
             if (dist < localR) {
                 const norm = dist / Math.max(1, localR);
-                // Внутренние 55% радиуса — уверенное ядро X-RAY, далее плавный переход
                 const coreMask =
                     norm < 0.55
                         ? 1.0
-                        : 1.0 - Math.pow((norm - 0.55) / 0.45, 2) * (3.0 - 2.0 * ((norm - 0.55) / 0.45));
+                        : 1.0 -
+                        Math.pow((norm - 0.55) / 0.45, 2) * (3.0 - 2.0 * ((norm - 0.55) / 0.45));
                 reveal = Math.max(reveal, coreMask * (0.45 + this.state.revealIntensity * 0.55));
             }
         }
 
-        // 2. Вклад от спонтанных разломов пространства
         for (let i = 0; i < this.state.spontaneousRifts.length; i++) {
             const rift = this.state.spontaneousRifts[i];
-            const dx = x - rift.x;
-            const dy = y - rift.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.hypot(x - rift.x, y - rift.y);
             if (dist < rift.radius) {
                 const t = 1.0 - dist / rift.radius;
                 reveal = Math.max(reveal, t * t * rift.life * 0.85);
             }
         }
 
-        // 3. Вклад от бегущих гравитационных волн
         for (let i = 0; i < this.state.shockwaves.length; i++) {
             const wave = this.state.shockwaves[i];
-            const dx = x - wave.x;
-            const dy = y - wave.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.hypot(x - wave.x, y - wave.y);
             const ringDist = Math.abs(dist - wave.currentRadius);
-            const ringThickness = 44;
-
-            if (ringDist < ringThickness) {
-                const factor = (1.0 - ringDist / ringThickness) * wave.life * wave.strength;
+            if (ringDist < 44) {
+                const factor = (1.0 - ringDist / 44) * wave.life * wave.strength;
                 reveal = Math.max(reveal, factor);
             }
         }
