@@ -3,9 +3,9 @@
 // ФАЙЛ: frontend/src/phases/01_void.ts
 // НАЗНАЧЕНИЕ: Ядро симуляции 5 фаз, SceneBuffer SoA, чирп-рябь VOID и импульсы NEXUS (v2.0)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Генерировать детерминированные сущности в 4 эшелонах глубины (Z0..Z3) через DeterministicPRNG.
-// 2. Реализовать драматургию VOID (0–17 с): первая искра (1.2 с), наклонные 3D-фронты чирпа (3–10 с)
-//    и рождение потоков с круговой скоростью v_t ≈ sqrt(G·M(r)/r) (10–17 с).
+// 1. Генерировать детерминированные сущности в 4 эшелонах глубины (Z0-Z3) через DeterministicPRNG.
+// 2. Реализовать драматургию VOID (0-17 с): первая искра (1.2 с), наклонные 3D-фронты чирпа (3-10 с)
+//    и рождение потоков с круговой скоростью v_t ≈ sqrt(G*M(r)/r) (10-17 с).
 // 3. Обеспечивать C¹-гладкий морфинг координат и скоростей между всеми 5 фазами без hard cuts.
 // 4. Синхронизировать все тела с SceneBufferSoA, wasmPhysicsBridge и nexusGraphEngine.
 // 5. Двигать синаптические импульсы строго по таблице длины дуги (lengthLUT) с интерференцией.
@@ -27,7 +27,7 @@ import { computeCollapseStormTarget } from './04_collapse';
 import { computeSingularityTarget } from './05_singularity';
 
 // ----------------------------------------------------------------------------
-// 1. ТИПЫ ЭШЕЛОНОВ ГЛУБИНЫ Z0..Z3, ЧАСТИЦ, СПЛАЙНОВ БЕЗЬЕ И СИНАПТИЧЕСКИХ ПАКЕТОВ
+// 1. ТИПЫ ЭШЕЛОНОВ ГЛУБИНЫ Z0-Z3, ЧАСТИЦ, СПЛАЙНОВ БЕЗЬЕ И СИНАПТИЧЕСКИХ ПАКЕТОВ
 // ----------------------------------------------------------------------------
 export type DepthLayerTier = 'FOREGROUND' | 'MIDGROUND' | 'BACKGROUND' | 'DEEP_LAYER';
 export type NexusEdgeClass = ComputedEdgeClass;
@@ -47,23 +47,23 @@ export interface QuantumParticle {
     prevY: number;
     homeNormX: number;
     homeNormY: number;
-    depthZ: number;            // Z0: 1.25–1.6, Z1: 0.7–1.2, Z2: 0.3–0.65, Z3: 0.1–0.29 (MASTER 00)
+    depthZ: number;
     depthTier: DepthLayerTier;
     clusterId: number;
-    ringIndex: number;         // Индекс одного из 5 встречных кеплеровских колец (решение D-3)
-    tripleGroupId: number;     // Идентификатор тройного узла синхронизации Курамото
+    ringIndex: number;
+    tripleGroupId: number;
     vx: number;
     vy: number;
     mass: number;
     radius: number;
     energy: number;
-    kuramotoPhase: number;     // Фаза осциллятора θ_i для волны синхронизации
-    synapticCharge: number;    // Заряд сомы нейрона (0..1)
-    interferenceFlash: number; // Вспышка интерференции #F59E0B при совпадении >= 2 сигналов (0..1)
+    kuramotoPhase: number;
+    synapticCharge: number;
+    interferenceFlash: number;
     lastSignalArrivalMs: number;
-    cooldownUntilMs: number;   // Рефрактерный период сомы (200–400 мс по MASTER 03)
+    cooldownUntilMs: number;
     degree: number;
-    moduleTag: string;         // Метка модуля-владельца для X-RAY callouts (MASTER 00B / 04)
+    moduleTag: string;
     phaseOffset: number;
     quantumSpin: number;
 }
@@ -99,15 +99,14 @@ export interface SynapticPulse {
     x2: number;
     y2: number;
     lengthLUT: readonly [number, number, number, number, number];
-    progress: number;          // Нормализованная координата ВДОЛЬ ДЛИНЫ ДУГИ s ∈ [0, 1]
+    progress: number;
     speed: number;
-    bodyLength: number;        // 6–14% длины ребра (MASTER 03)
-    tailLength: number;        // 10–22% длины ребра (MASTER 03)
+    bodyLength: number;
+    tailLength: number;
     intensity: number;
     cascadeDepth: number;
 }
 
-// Истинные метки языковых модулей по стандарту MASTER 00B (раздел 5)
 const POLYGLOT_OWNER_TAGS: ReadonlyArray<string> = [
     'rust/gravity.rs',
     'python/graph_logic.py',
@@ -118,7 +117,6 @@ const POLYGLOT_OWNER_TAGS: ReadonlyArray<string> = [
     'ts/sceneBuffer.ts',
 ];
 
-// 10 симметричных кортикальных центров левого и правого полушарий мозга (строго по центру экрана)
 export const BRAIN_HEMISPHERE_LOBES: ReadonlyArray<[number, number]> = [
     [-0.34, -0.16],
     [-0.36, 0.08],
@@ -192,7 +190,6 @@ export class VoidPhaseSimulation {
         }
     }
 
-    // Детерминированное создание частицы с иерархической кластеризацией и 4 эшелонами Z0..Z3
     private createSingleParticle(id: number, seed: number): QuantumParticle {
         const r1 = DeterministicPRNG.hashFloat(seed, id * 37 + 1);
         const r2 = DeterministicPRNG.hashFloat(seed, id * 37 + 2);
@@ -202,16 +199,16 @@ export class VoidPhaseSimulation {
         let depthZ: number;
         let depthTier: DepthLayerTier;
         if (r1 < 0.14) {
-            depthZ = 0.10 + r2 * 0.19; // Z3 deep ≈ 0.10–0.29
+            depthZ = 0.10 + r2 * 0.19;
             depthTier = 'DEEP_LAYER';
         } else if (r1 < 0.42) {
-            depthZ = 0.30 + r2 * 0.35; // Z2 background ≈ 0.30–0.65
+            depthZ = 0.30 + r2 * 0.35;
             depthTier = 'BACKGROUND';
         } else if (r1 < 0.91) {
-            depthZ = 0.70 + r2 * 0.50; // Z1 midground ≈ 0.70–1.20
+            depthZ = 0.70 + r2 * 0.50;
             depthTier = 'MIDGROUND';
         } else {
-            depthZ = 1.25 + r2 * 0.35; // Z0 foreground ≈ 1.25–1.60
+            depthZ = 1.25 + r2 * 0.35;
             depthTier = 'FOREGROUND';
         }
 
@@ -257,7 +254,7 @@ export class VoidPhaseSimulation {
     }
 
     // --------------------------------------------------------------------------
-    // 3. ВЫЧИСЛЕНИЕ ЦЕЛЕВОЙ ТОЧКИ ОБРАЗА И ГРАВИТАЦИОННОГО ЧИРПА VOID (0–17 С)
+    // 3. ВЫЧИСЛЕНИЕ ЦЕЛЕВОЙ ТОЧКИ ОБРАЗА И ГРАВИТАЦИОННОГО ЧИРПА VOID (0-17 С)
     // --------------------------------------------------------------------------
     private computePhaseArchetypePoint(
         phase: PhaseId,
@@ -281,10 +278,6 @@ export class VoidPhaseSimulation {
         }
     }
 
-    // MASTER 01 v2.0 (0–17 с):
-    // 0–3 с: Потенциал + первая искра на 1.2 с.
-    // 3–10 с: Наклонные 3D-фронты ряби с сокращением интервалов по чирпу T_n = T_0 · (1 - n/N)^α.
-    // 10–17 с: Предчувствие материи и закрутка с круговой скоростью v_t ≈ sqrt(G·M(r)/r).
     private computeVoidChirpTarget(
         p: QuantumParticle,
         centerX: number,
@@ -297,12 +290,10 @@ export class VoidPhaseSimulation {
         const baseDistY = p.homeNormY * this.height * 0.86;
         const r = Math.hypot(baseDistX, baseDistY) + 1.0;
 
-        // 1. Закон гравитационного чирпа двойной системы: частота колец растёт от 3 с к 17 с
         const chirpProgress = Math.max(0, Math.min(0.96, (phaseSec - 3.0) / 14.0));
         const chirpAlpha = 0.75;
         const chirpFreqMultiplier = 1.0 / Math.pow(1.0 - chirpProgress * 0.65, chirpAlpha);
 
-        // 2. В третьем окне (10–17 с) узлы набирают круговую скорость v_t ≈ sqrt(G·M(r)/r)
         const matterAnticipation = Math.max(0, Math.min(1, (phaseSec - 10.0) / 7.0));
         const enclosedMass = 120.0 + r * 0.85;
         const circularAngularVel = Math.sqrt(enclosedMass / Math.max(45, r)) * 0.14;
@@ -311,7 +302,6 @@ export class VoidPhaseSimulation {
             Math.atan2(baseDistY, baseDistX) +
             simTimeSec * (0.06 * p.quantumSpin + matterAnticipation * circularAngularVel);
 
-        // Наклонный 3D-фронт ряби (наклон 62° = сжатие по вертикали 0.78)
         const rippleWave =
             phaseSec >= 3.0
                 ? Math.sin(r * 0.019 * chirpFreqMultiplier - simTimeSec * 1.85 + p.phaseOffset) *
@@ -324,7 +314,6 @@ export class VoidPhaseSimulation {
         const x = centerX + Math.cos(baseAngle) * finalR;
         const y = centerY + Math.sin(baseAngle) * finalR * 0.78;
 
-        // Первая искра на ≈ 1.2 с (MASTER 01 раздел Драматургия)
         const firstSparkBoost =
             phaseSec >= 1.0 && phaseSec <= 1.8 && p.id % 19 === 0
                 ? Math.sin(((phaseSec - 1.0) / 0.8) * Math.PI) * 0.75
@@ -371,10 +360,8 @@ export class VoidPhaseSimulation {
         const phaseProgress = uState.telemetry.phaseProgress;
         const nowMs = performance.now();
 
-        // Сохраняем предыдущие позиции в SceneBuffer для гладкой межкадровой интерполяции
         sceneBuffer.snapshotPreviousPositions(this.particles.length);
 
-        // Плавное C¹-перетекание между предыдущей и текущей фазой в первые 26% времени фазы
         const morphWindow = 0.26;
         const rawBlend = phaseProgress < morphWindow ? phaseProgress / morphWindow : 1.0;
         const smoothBlend = rawBlend * rawBlend * (3.0 - 2.0 * rawBlend);
@@ -383,7 +370,6 @@ export class VoidPhaseSimulation {
             this.previousPhase = phase;
         }
 
-        // Критически демпфированный коэффициент подтягивания с сохранением инерции
         const springRate = Math.min(1.0, dt * (2.8 + gravityMultiplier * 0.85));
 
         for (let i = 0; i < this.particles.length; i++) {
@@ -425,7 +411,6 @@ export class VoidPhaseSimulation {
             p.vx = dx * 2.75;
             p.vy = dy * 2.75;
 
-            // Отклик на оптическую линзу BREACH LENS
             if (stressState.isPointerInside && stressState.currentBreachRadius > 4) {
                 const dxPtr = p.x - stressState.lensX;
                 const dyPtr = p.y - stressState.lensY;
@@ -455,7 +440,6 @@ export class VoidPhaseSimulation {
                 p.interferenceFlash = Math.max(0, p.interferenceFlash - dt * 1.4);
             }
 
-            // Записываем актуальное состояние частицы в единый SceneBuffer (SoA)
             const kindCode =
                 p.depthTier === 'FOREGROUND'
                     ? EntityKindCode.DUST
@@ -479,7 +463,6 @@ export class VoidPhaseSimulation {
             );
         }
 
-        // Выполняем симплектический шаг в wasmPhysicsBridge (расчёт ΔE/E₀ и Kuramoto r(t))
         const kuramotoK = phase === '02_GENESIS' ? 0.4 + phaseProgress * 1.8 : 1.2;
         const physTelemetry = wasmPhysicsBridge.stepSymplecticPhysics(
             sceneBuffer,
@@ -493,7 +476,6 @@ export class VoidPhaseSimulation {
             kuramotoK
         );
 
-        // Фиксируем тик и вычисляем единый State Digest (FNV-1a 32-bit)
         sceneBuffer.commitTickAndComputeDigest(this.tickCounter, this.particles.length, uState.seed);
 
         universeStore.updateTelemetry({
@@ -507,7 +489,6 @@ export class VoidPhaseSimulation {
         this.updateSynapticPulsesByArcLut(dt, phase, nowMs);
     }
 
-    // Построение 3 классов кривых через детерминированный NexusGraphEngine (MASTER 03)
     private buildTopologyViaGraphEngine(
         dt: number,
         phase: PhaseId,
@@ -552,9 +533,10 @@ export class VoidPhaseSimulation {
             simTimeSec
         );
 
+        // ИСПРАВЛЕНО: корректное чтение из Map<number, number> через метод .get(pIdx)
         for (let i = 0; i < graphInputs.length; i++) {
             const pIdx = graphInputs[i].index;
-            this.particles[pIdx].degree = degreeByIndex[i] ?? 0;
+            this.particles[pIdx].degree = degreeByIndex.get(pIdx) ?? 0;
         }
 
         this.edges = computedEdges.map((ce) => {
@@ -581,7 +563,6 @@ export class VoidPhaseSimulation {
         });
     }
 
-    // Дискретно-событийное движение импульсов по параметру длины дуги (lengthLUT)
     private updateSynapticPulsesByArcLut(dt: number, phase: PhaseId, nowMs: number): void {
         if (this.edges.length === 0) {
             this.pulses = [];
@@ -628,8 +609,6 @@ export class VoidPhaseSimulation {
                 pTo.lastSignalArrivalMs = nowMs;
                 pTo.synapticCharge = 1.0;
 
-                // Окно совпадения 120–300 мс и рефрактерный период 240 мс по MASTER 03:
-                // при совпадении >= 2 сигналов сома даёт жемчужно-янтарную вспышку #F59E0B
                 if (nowMs > pTo.cooldownUntilMs) {
                     const isInterference = deltaArrivalMs >= 20 && deltaArrivalMs <= 300;
                     pTo.interferenceFlash = isInterference ? 1.0 : 0.68;
@@ -666,7 +645,6 @@ export class VoidPhaseSimulation {
         if (!pFrom || !pTo) return;
 
         pFrom.synapticCharge = Math.min(1.0, pFrom.synapticCharge + 0.62);
-        // Скорость проводимости зависит от класса ребра (магистрали быстрее: 255 px/s)
         const speedPxPerSec =
             edge.edgeClass === 'AXON_TRUNK' ? 255 : edge.edgeClass === 'BRIDGE' ? 195 : 145;
         const normalizedSpeed = speedPxPerSec / Math.max(55, edge.arcLength);
@@ -685,8 +663,8 @@ export class VoidPhaseSimulation {
             lengthLUT: edge.lengthLUT,
             progress: 0,
             speed: normalizedSpeed,
-            bodyLength: 0.12, // 12% длины ребра (в каноничном окне 6–14% MASTER 03)
-            tailLength: 0.18, // 18% длины ребра (в каноничном окне 10–22% MASTER 03)
+            bodyLength: 0.12,
+            tailLength: 0.18,
             intensity,
             cascadeDepth,
         });
@@ -710,7 +688,6 @@ export class VoidPhaseSimulation {
         }
     }
 
-    // Точное вычисление позиции импульса через таблицу длины дуги (lengthLUT)
     public samplePulsePoint(pulse: SynapticPulse, arcFraction: number): { x: number; y: number } {
         return NexusGraphEngine.sampleBezierByArcLength(
             pulse.x1,
