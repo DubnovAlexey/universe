@@ -1,14 +1,13 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/utils/audioSync.ts
-// НАЗНАЧЕНИЕ: Гибридный аудио-движок MASTER 06 v2.0 (cosmic_ambient.mp3 + Плейлист + Web Audio DSP)
+// НАЗНАЧЕНИЕ: Гибридный аудио-движок MASTER 06 v2.1 (Бесшовный cosmic_ambient.mp3 + Плейлист)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Воспроизводить основной трек владельца '/audio/cosmic_ambient.mp3' через BASE_URL
-//    и поддерживать массив-плейлист со слотами-заглушками для подключения будущих треков.
-// 2. Маршрутизировать звук через 4 шины Web Audio (bed, rhythm, events, air с ConvolverNode
-//    и StereoPannerNode) -> компрессор/лимитер -> masterGain -> AnalyserNode.
-// 3. Вычислять сглаженные FFT-признаки (low, mid, high, rmsDb) с внутренним LFO при mute.
-// 4. Обеспечивать 100% тишину в Акте C (2500 мс, RMS < -80 dBFS) и учёт узлов в ResourceLedger.
+// 1. Воспроизводить основной трек владельца '/audio/cosmic_ambient.mp3' непрерывно
+//    и без затянутых пауз/обрывов в 5-й фазе и в финале.
+// 2. Поддерживать массив-плейлист со слотами-заглушками для подключения будущих треков.
+// 3. Маршрутизировать звук через 4 шины Web Audio -> компрессор -> masterGain -> AnalyserNode.
+// 4. Вычислять сглаженные FFT-признаки (low, mid, high, rmsDb) с внутренним LFO при mute.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -28,15 +27,15 @@ export const COSMIC_AUDIO_PLAYLIST: ReadonlyArray<string> = [
 ];
 
 export interface SmoothedAudioFeatures {
-    low: number;          // Сглаженные низкие частоты (0..1) — управляют инерцией колец VOID
-    mid: number;          // Сглаженные средние частоты (0..1) — плотность газовой вуали
-    high: number;         // Сглаженные высокие частоты (0..1) — редкие искры
-    rmsDb: number;        // Измеренный уровень сигнала в dBFS (для проверки тишины < -80 dBFS)
+    low: number;
+    mid: number;
+    high: number;
+    rmsDb: number;
     isUsingInternalLfo: boolean;
 }
 
 // ----------------------------------------------------------------------------
-// 2. КЛАСС ГИБРИДНОГО АУДИО-СИНТЕЗАТОРА И МЕНЕДЖЕРА ПЛЕЙЛИСТА (MASTER 06 V2.0)
+// 2. КЛАСС ГИБРИДНОГО АУДИО-СИНТЕЗАТОРА И МЕНЕДЖЕРА ПЛЕЙЛИСТА (V2.1)
 // ----------------------------------------------------------------------------
 class CosmicAudioSynthesizer {
     private ctx: AudioContext | null = null;
@@ -44,7 +43,6 @@ class CosmicAudioSynthesizer {
     private compressor: DynamicsCompressorNode | null = null;
     private analyser: AnalyserNode | null = null;
 
-    // Четыре специализированные шины по спецификации MASTER 06 (раздел 2)
     private bedBus: GainNode | null = null;
     private bedFilter: BiquadFilterNode | null = null;
     private rhythmBus: GainNode | null = null;
@@ -60,16 +58,16 @@ class CosmicAudioSynthesizer {
     private timeDomainArray: Float32Array<ArrayBuffer> | null = null;
 
     private smoothedFeatures: SmoothedAudioFeatures = {
-        low: 0.15,
-        mid: 0.12,
-        high: 0.05,
-        rmsDb: -96.0,
+        low: 0.18,
+        mid: 0.14,
+        high: 0.06,
+        rmsDb: -24.0,
         isUsingInternalLfo: true,
     };
 
     private isInitialized = false;
     private isMutedByUser = false;
-    private currentVolume = 0.8;
+    private currentVolume = 0.82;
     private lfoClockSec = 0;
 
     constructor() {
@@ -78,7 +76,6 @@ class CosmicAudioSynthesizer {
         }
     }
 
-    // Формирование корректного URL ассета через import.meta.env.BASE_URL (правило 10 MASTER 00)
     private resolveAssetUrl(relativePath: string): string {
         const baseUrl = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
         const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
@@ -86,11 +83,9 @@ class CosmicAudioSynthesizer {
         return `${cleanBase}${cleanRel}`;
     }
 
-    // Инициализация HTML5 Audio для cosmic_ambient.mp3 с поддержкой круговой ротации плейлиста
     private setupPlaylistAndAutoUnlock(): void {
         const firstTrackUrl = this.resolveAssetUrl(COSMIC_AUDIO_PLAYLIST[0]);
         this.mp3Audio = new Audio(firstTrackUrl);
-        // Если в плейлисте 1 трек — включаем нативный бесшовный loop; если больше — переключаем по 'ended'
         this.mp3Audio.loop = COSMIC_AUDIO_PLAYLIST.length <= 1;
         this.mp3Audio.volume = this.currentVolume;
         this.mp3Audio.preload = 'auto';
@@ -101,7 +96,6 @@ class CosmicAudioSynthesizer {
             }
         });
 
-        // Решение D-5: до разрешённого жеста статус честный — AWAITING_GESTURE, первый жест плавно поднимает звук
         universeStore.setAudioEnabled(false, 'AWAITING_GESTURE');
 
         const unlockAndPlay = () => {
@@ -115,11 +109,10 @@ class CosmicAudioSynthesizer {
             this.mp3Audio
                 .play()
                 .then(() => {
-                    // Плавный подъём мастер-гейна от 0 за 1.8 с при первом входе без перезапуска сцены (D-5)
                     if (this.masterGain && this.ctx) {
                         const now = this.ctx.currentTime;
-                        this.masterGain.gain.setValueAtTime(0.01, now);
-                        this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 1.8);
+                        this.masterGain.gain.setValueAtTime(0.05, now);
+                        this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 1.5);
                     }
                     universeStore.setAudioEnabled(true, 'PLAYING_MP3');
                     removeUnlockListeners();
@@ -135,7 +128,6 @@ class CosmicAudioSynthesizer {
             window.removeEventListener('touchstart', unlockAndPlay);
         };
 
-        // Пробуем мягкий старт при готовности DOM и подхватываем при первом разрешённом жесте
         if (document.readyState === 'complete' || document.readyState === 'interactive') {
             setTimeout(unlockAndPlay, 120);
         } else {
@@ -149,7 +141,6 @@ class CosmicAudioSynthesizer {
         window.addEventListener('touchstart', unlockAndPlay, { passive: true });
     }
 
-    // Переключение на следующий трек плейлиста по кругу (когда будут добавлены новые треки)
     public advanceToNextTrackInPlaylist(): void {
         if (!this.mp3Audio || COSMIC_AUDIO_PLAYLIST.length <= 1) return;
         this.currentTrackIndex = (this.currentTrackIndex + 1) % COSMIC_AUDIO_PLAYLIST.length;
@@ -160,9 +151,6 @@ class CosmicAudioSynthesizer {
         }
     }
 
-    // --------------------------------------------------------------------------
-    // 3. ПОСТРОЕНИЕ 4-ШИННОГО ГРАФА WEB AUDIO API (ЕДИНЫЙ КОНТЕКСТ НА ВСЮ ЖИЗНЬ СТРАНИЦЫ)
-    // --------------------------------------------------------------------------
     private initWebAudioGraph(): void {
         if (this.isInitialized || typeof window === 'undefined') return;
         const t0 = performance.now();
@@ -173,7 +161,6 @@ class CosmicAudioSynthesizer {
                 (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
             this.ctx = new AudioCtx();
 
-            // Мастер-цепь: Compressor/Limiter -> MasterGain -> Analyser -> Destination
             this.compressor = this.ctx.createDynamicsCompressor();
             this.compressor.threshold.value = -14;
             this.compressor.knee.value = 18;
@@ -190,26 +177,22 @@ class CosmicAudioSynthesizer {
             this.fftDataArray = new Uint8Array(new ArrayBuffer(binCount));
             this.timeDomainArray = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
 
-            // Шина 1 (bed): основное полотно cosmic_ambient.mp3 через фильтр линзы BREACH
             this.bedBus = this.ctx.createGain();
-            this.bedBus.gain.value = 0.92;
+            this.bedBus.gain.value = 0.94;
             this.bedFilter = this.ctx.createBiquadFilter();
             this.bedFilter.type = 'lowpass';
-            this.bedFilter.frequency.value = 2200;
+            this.bedFilter.frequency.value = 2600;
             this.bedBus.connect(this.bedFilter);
             this.bedFilter.connect(this.compressor);
 
-            // Шина 2 (rhythm): тональные чирп-кольца и волна синхронизации
             this.rhythmBus = this.ctx.createGain();
             this.rhythmBus.gain.value = 0.35;
             this.rhythmBus.connect(this.compressor);
 
-            // Шина 3 (events): синаптические импульсы, интерференция и щелчки барабанов Odometer
             this.eventsBus = this.ctx.createGain();
             this.eventsBus.gain.value = 0.45;
             this.eventsBus.connect(this.compressor);
 
-            // Шина 4 (air): синтетический ревербератор ConvolverNode для дальних планов Z2/Z3
             this.airBus = this.ctx.createGain();
             this.airBus.gain.value = 0.24;
             this.airConvolver = this.createSyntheticReverbConvolver(this.ctx);
@@ -236,7 +219,6 @@ class CosmicAudioSynthesizer {
         }
     }
 
-    // Генерация синтетического импульсного отклика реверберации (экспоненциально затухающий шум)
     private createSyntheticReverbConvolver(ctx: AudioContext): ConvolverNode {
         const convolver = ctx.createConvolver();
         const rate = ctx.sampleRate;
@@ -286,19 +268,17 @@ class CosmicAudioSynthesizer {
         if (this.mp3Audio) {
             this.mp3Audio.volume = this.currentVolume;
         }
-        if (this.masterGain && this.ctx && universeStore.getState().singularityAct !== 'ACT_C_ZERO_SILENCE') {
+        if (this.masterGain && this.ctx) {
             this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.1);
         }
         universeStore.setAudioVolume(this.currentVolume);
     }
 
     public transitionToPhase(_phase: PhaseId): void {
-        // Основное музыкальное полотно ведётся треком cosmic_ambient.mp3 без разрывов на швах
+        // Основной трек cosmic_ambient.mp3 звучит непрерывно через все 5 фаз и финал
     }
 
-    // --------------------------------------------------------------------------
-    // 4. МОДУЛЯЦИЯ В РЕАЛЬНОМ ВРЕМЕНИ, FFT-АНАЛИЗ И КОНТРОЛЬ 2,5 С ТИШИНЫ (RMS)
-    // --------------------------------------------------------------------------
+    // Бесшовная модуляция без принудительного глушения музыки в финале
     public updateRealtimeModulation(
         breachRadius: number,
         isBreaching: boolean,
@@ -306,59 +286,31 @@ class CosmicAudioSynthesizer {
         fullXRay: boolean
     ): void {
         const t0 = performance.now();
-        const uState = universeStore.getState();
         this.lfoClockSec += 1 / 60;
 
-        // АКТ C (93.0–95.5 с): Полная цифровая тишина в течение 2500 мс (MASTER 05 / MASTER 06 раздел 5)
-        if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
-            if (this.mp3Audio) {
-                this.mp3Audio.volume = 0;
-            }
-            if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
-            }
-            this.smoothedFeatures.rmsDb = -96.0;
-            universeStore.updateTelemetry({ silenceRmsDb: -96.0 });
-            return;
-        }
-
-        // Плавный S-образный увод звука за 250 мс до начала тишины (в конце Акта B)
-        if (
-            uState.currentPhase === '05_SINGULARITY' &&
-            uState.singularityAct === 'ACT_B_LOGIC' &&
-            uState.singularityActProgress > 0.94
-        ) {
-            const fadeOut = Math.max(0, 1.0 - (uState.singularityActProgress - 0.94) / 0.06);
-            if (this.mp3Audio && !this.isMutedByUser) {
-                this.mp3Audio.volume = this.currentVolume * fadeOut;
-            }
-            if (this.masterGain && this.ctx && !this.isMutedByUser) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume * fadeOut, this.ctx.currentTime, 0.04);
-            }
-        } else if (this.mp3Audio && !this.isMutedByUser) {
+        if (this.mp3Audio && !this.isMutedByUser) {
             this.mp3Audio.volume = this.currentVolume;
             if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.12);
+                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.15);
             }
         }
 
-        // Модуляция фильтра линзы BREACH LENS и обновление сглаженных FFT-признаков
         if (this.isInitialized && this.ctx && this.bedFilter && this.analyser && !this.isMutedByUser) {
-            const baseFreq = 1850;
-            const boost = fullXRay ? 1900 : breachRadius * (isBreaching ? 4.4 : 1.5) + globalStress * 420;
+            const baseFreq = 2200;
+            const boost = fullXRay ? 2000 : breachRadius * (isBreaching ? 4.4 : 1.5) + globalStress * 480;
             this.bedFilter.frequency.setTargetAtTime(
-                Math.min(5200, baseFreq + boost),
+                Math.min(5800, baseFreq + boost),
                 this.ctx.currentTime,
-                0.1
+                0.12
             );
 
             this.extractSmoothedFftAndRms();
+            universeStore.updateTelemetry({ silenceRmsDb: this.smoothedFeatures.rmsDb });
         } else {
-            // Внутренний LFO «дыхания» при mute/блокировке, чтобы визуал никогда не замирал (MASTER 06)
             this.smoothedFeatures.low = 0.22 + 0.14 * Math.sin(this.lfoClockSec * 1.4);
             this.smoothedFeatures.mid = 0.18 + 0.1 * Math.cos(this.lfoClockSec * 0.9);
             this.smoothedFeatures.high = 0.06 + 0.04 * Math.sin(this.lfoClockSec * 2.3);
-            this.smoothedFeatures.rmsDb = -96.0;
+            this.smoothedFeatures.rmsDb = -24.0;
             this.smoothedFeatures.isUsingInternalLfo = true;
         }
 
@@ -387,7 +339,6 @@ class CosmicAudioSynthesizer {
         const rawMid = midSum / 36;
         const rawHigh = highSum / Math.max(1, len - 48);
 
-        // Раздельное сглаживание атаки (быстрее) и спада (плавнее) по MASTER 01 / 06
         const smoothBand = (prev: number, target: number) =>
             target > prev ? prev + (target - prev) * 0.28 : prev + (target - prev) * 0.08;
 
@@ -396,7 +347,6 @@ class CosmicAudioSynthesizer {
         this.smoothedFeatures.high = Number(smoothBand(this.smoothedFeatures.high, rawHigh).toFixed(3));
         this.smoothedFeatures.isUsingInternalLfo = false;
 
-        // Расчёт фактического RMS в dBFS для контроля тишины
         let sumSq = 0;
         for (let i = 0; i < this.timeDomainArray.length; i++) {
             const sample = this.timeDomainArray[i];
@@ -411,15 +361,8 @@ class CosmicAudioSynthesizer {
         return this.smoothedFeatures;
     }
 
-    // Пространственный импульс при открытии линзы BREACH LENS с панорамированием
     public triggerShockwavePulse(strength = 0.7, panNorm = 0): void {
-        if (
-            !this.isInitialized ||
-            this.isMutedByUser ||
-            !this.ctx ||
-            !this.eventsBus ||
-            universeStore.getState().singularityAct === 'ACT_C_ZERO_SILENCE'
-        ) {
+        if (!this.isInitialized || this.isMutedByUser || !this.ctx || !this.eventsBus) {
             return;
         }
 

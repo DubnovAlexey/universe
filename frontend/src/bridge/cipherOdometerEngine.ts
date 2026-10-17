@@ -1,275 +1,219 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
-// НАЗНАЧЕНИЕ: Движок 3D-барабанов Odometer, магнитного detent и вёрстки (MASTER 05 v2.0)
+// НАЗНАЧЕНИЕ: Движок непрерывного квантового одометра и кодового потока (v2.1)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Хранить 5 каноничных строк финала и упорядоченный алфавитный барабан символов.
-// 2. Адаптивно переносить длинные строки 4–5 по разделителям ' · ' на узких экранах
-//    (320px..1920px), полностью исключая обрезку (clipping) текста.
-// 3. Вычислять физически достоверное торможение барабанов с магнитной фиксацией (detent),
-//    волной защёлкивания слева направо (15–25 мс на колонку) и гарантией 100% фиксации
-//    всех символов к progress = 0.86 (никакого зависания или дрожи последних букв!).
-// 4. Сохранять спиральные траектории для обратного возврата глифов в Точку Нуля при Restart.
+// 1. Вместо статичной фиксации на 5 словах вращать непрерывный бесконечный поток
+//    математических символов, астрономических знаков и квантовых структур.
+// 2. Динамически менять цвета символов по волнам спектра (#F8FAFC, #7DD3FC,
+//    #38BDF8, #6366F1, #8B5CF6, #F59E0B) в зависимости от фазы и координат ячейки.
+// 3. Адаптивно масштабировать матрицу символов под любой экран (320px..1920px) без обрезки.
 // ============================================================================
 
-// ----------------------------------------------------------------------------
-// 1. КАНОНИЧНЫЕ 5 СТРОК ФИНАЛА И УПОРЯДОЧЕННОЕ КОЛЕСО СИМВОЛОВ (MASTER 05 АКТ D)
-// ----------------------------------------------------------------------------
-export const CANONICAL_FINALE_LINES: ReadonlyArray<string> = [
-    'UNIVERSE // NEURAL SINGULARITY',
-    'ALEXEY DUBNOV',
-    'GITHUB.COM / DUBNOVALEXEY / UNIVERSE',
-    'ВРЕМЯ · ПРОСТРАНСТВО · МЫСЛЬ · ОБРАЗ · КОД',
-    'ASTRO · TYPESCRIPT · REACT · WEBGPU · RUST/WASM · PYTHON',
+import { DeterministicPRNG } from '../core/prng';
+import { universeStore } from '../store/universeState';
+
+// Семантические строки сохраняются для совместимости с тестами и aria-live
+export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
+    '∑ ∆ Ω Ψ Φ Λ Π Ξ Θ ∇ ∂ ∫ ≈ ≠ ≡ ⊕ ⊗ ⊙',
+    '◊ ◈ ✶ ✴ ⟨ 01 : NEURO-COSMOS : FF ⟩ ✴ ✶ ◈ ◊',
+    '⟦ ∞ QUANTUM TOPOLOGY // EVENT HORIZON ∞ ⟧',
+    '⊢ ⊣ ⊥ ⟡ DUBNOV ALEXEY // UNIVERSE ⟡ ⊥ ⊣ ⊢',
+    '⟨ 0x53564E55 · SYMPLECTIC STREAM · ACTIVE ⟩',
 ];
 
-// Упорядоченный набор символов барабана: вращение читается как прокрутка алфавитного колеса
-export const ORDERED_WHEEL_ALPHABET =
-    ' ABCDEFGHIJKLMNOPQRSTUVWXYZАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ0123456789/·.-';
+const QUANTUM_STREAM_GLYPHS =
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡∷';
+
+const DYNAMIC_SPECTRUM_COLORS: ReadonlyArray<string> = [
+    '#f8fafc', // Жемчужный пик
+    '#7dd3fc', // Ледяной циан
+    '#38bdf8', // Глубокий циан
+    '#6366f1', // Индиго
+    '#8b5cf6', // Фиолетовый спектр короны
+    '#f59e0b', // Тёплый янтарь горизонта событий
+];
 
 export interface OdometerGlyphCellState {
-    readonly lineIndex: number;
-    readonly charIndex: number;
-    readonly targetChar: string;
-    readonly targetX: number;
-    readonly targetY: number;
-    readonly currentX: number;
-    readonly currentY: number;
-    readonly fontSizePx: number;
-    readonly fontWeight: string;
-    readonly colorHex: string;
-    readonly stepWidthPx: number;
-    readonly isLocked: boolean;
-    readonly lockFlash: number;      // Короткий янтарно-циановый импульс в момент защёлкивания (0..1)
-    readonly primaryChar: string;    // Текущая центральная грань 3D-барабана
-    readonly upperChar: string;      // Верхняя соседняя грань в перспективе
-    readonly lowerChar: string;      // Нижняя соседняя грань в перспективе
-    readonly wheelPhaseFrac: number; // Смещение прокрутки грани (-0.5 .. +0.5)
-    readonly verticalScale: number;  // Косинусное перспективное сжатие грани при вращении
-}
-
-interface ResponsiveSubRow {
     lineIndex: number;
-    text: string;
+    charIndex: number;
+    targetChar: string;
+    upperChar: string;
+    primaryChar: string;
+    lowerChar: string;
+    wheelPhaseFrac: number;
+    verticalScale: number;
+    isLocked: boolean;
+    lockFlash: number;
+    currentX: number;
+    currentY: number;
+    targetX: number;
+    targetY: number;
     fontSizePx: number;
-    fontWeight: string;
+    stepWidthPx: number;
     colorHex: string;
-    letterSpacingPx: number;
-    yOffsetPx: number;
-    rowStartProgress: number;
+    fontWeight: string;
 }
 
-// ----------------------------------------------------------------------------
-// 2. КЛАСС ДВИЖКА 3D-БАРАБАНОВ ODOMETER С ГАРАНТИРОВАННОЙ СХОДИМОСТЬЮ
-// ----------------------------------------------------------------------------
 export class CipherOdometerEngine {
-    private readonly alphabetLen = ORDERED_WHEEL_ALPHABET.length;
+    private lastLockedCount = 0;
 
-    // Адаптивная раскладка строк под любую ширину экрана (320, 360, 390, 768, 1280, 1920 px)
-    public buildResponsiveLayout(viewportWidth: number, viewportHeight: number): ResponsiveSubRow[] {
-        const safeW = Math.max(320, viewportWidth);
-        const isCompactMobile = safeW < 640;
-        const isTablet = safeW >= 640 && safeW < 1024;
+    private getLineTypography(
+        lineIndex: number,
+        charCount: number,
+        viewportWidth: number
+    ): {
+        fontSizePx: number;
+        stepWidthPx: number;
+        colorHex: string;
+        fontWeight: string;
+    } {
+        const safeWidth = Math.max(280, viewportWidth - 44);
 
-        const baseScale = isCompactMobile
-            ? Math.max(0.54, safeW / 680)
-            : isTablet
-                ? 0.82
-                : 1.0;
+        let idealFontPx = 15;
+        let colorHex = '#7dd3fc';
+        let fontWeight = '500';
 
-        const rawSpecs = [
-            { idx: 0, text: CANONICAL_FINALE_LINES[0], size: 13, weight: '600', color: '#7dd3fc', spacing: 10.5 },
-            { idx: 1, text: CANONICAL_FINALE_LINES[1], size: 26, weight: '700', color: '#f8fafc', spacing: 17.5 },
-            { idx: 2, text: CANONICAL_FINALE_LINES[2], size: 14, weight: '600', color: '#38bdf8', spacing: 10.0 },
-            { idx: 3, text: CANONICAL_FINALE_LINES[3], size: 13, weight: '500', color: '#f59e0b', spacing: 9.2 },
-            { idx: 4, text: CANONICAL_FINALE_LINES[4], size: 11.5, weight: '500', color: '#7dd3fc', spacing: 8.2 },
-        ];
-
-        const subRows: Array<Omit<ResponsiveSubRow, 'yOffsetPx' | 'rowStartProgress'>> = [];
-        const maxAllowedRowWidth = safeW * 0.88;
-
-        for (let i = 0; i < rawSpecs.length; i++) {
-            const spec = rawSpecs[i];
-            const scaledSize = Math.max(9, Math.round(spec.size * baseScale));
-            let scaledSpacing = spec.spacing * baseScale;
-            const estimatedWidth = spec.text.length * scaledSpacing;
-
-            // Если строка 4 или 5 с разделителями ' · ' не помещается на узком экране — делим на 2 ряда
-            if (estimatedWidth > maxAllowedRowWidth && spec.text.includes(' · ')) {
-                const parts = spec.text.split(' · ');
-                const mid = Math.ceil(parts.length / 2);
-                const firstHalf = parts.slice(0, mid).join(' · ');
-                const secondHalf = parts.slice(mid).join(' · ');
-
-                const maxHalfLen = Math.max(firstHalf.length, secondHalf.length);
-                if (maxHalfLen * scaledSpacing > maxAllowedRowWidth) {
-                    scaledSpacing = maxAllowedRowWidth / Math.max(1, maxHalfLen);
-                }
-
-                subRows.push({
-                    lineIndex: spec.idx,
-                    text: firstHalf,
-                    fontSizePx: scaledSize,
-                    fontWeight: spec.weight,
-                    colorHex: spec.color,
-                    letterSpacingPx: scaledSpacing,
-                });
-                subRows.push({
-                    lineIndex: spec.idx,
-                    text: secondHalf,
-                    fontSizePx: scaledSize,
-                    fontWeight: spec.weight,
-                    colorHex: spec.color,
-                    letterSpacingPx: scaledSpacing,
-                });
-            } else {
-                if (estimatedWidth > maxAllowedRowWidth) {
-                    scaledSpacing = maxAllowedRowWidth / Math.max(1, spec.text.length);
-                }
-                subRows.push({
-                    lineIndex: spec.idx,
-                    text: spec.text,
-                    fontSizePx: scaledSize,
-                    fontWeight: spec.weight,
-                    colorHex: spec.color,
-                    letterSpacingPx: scaledSpacing,
-                });
-            }
+        if (lineIndex === 0) {
+            idealFontPx = 16;
+            colorHex = '#38bdf8';
+            fontWeight = '600';
+        } else if (lineIndex === 1) {
+            idealFontPx = 18;
+            colorHex = '#f8fafc';
+            fontWeight = '600';
+        } else if (lineIndex === 2) {
+            idealFontPx = 22;
+            colorHex = '#f59e0b';
+            fontWeight = '700';
+        } else if (lineIndex === 3) {
+            idealFontPx = 17;
+            colorHex = '#7dd3fc';
+            fontWeight = '600';
+        } else {
+            idealFontPx = 14;
+            colorHex = '#8b5cf6';
+            fontWeight = '500';
         }
 
-        // Вертикальное центрирование всех рядов с учётом высоты экрана
-        const rowGap = Math.min(36, Math.max(22, viewportHeight * 0.044));
-        const totalBlockHeight = (subRows.length - 1) * rowGap;
-        const startYOffset = -totalBlockHeight * 0.5 - 18;
+        const maxStepAllowed = safeWidth / Math.max(1, charCount);
+        const idealStep = idealFontPx * 0.72;
+        const stepWidthPx = Math.min(idealStep, maxStepAllowed);
+        const fontSizePx = Math.max(8.5, Math.min(idealFontPx, stepWidthPx / 0.66));
 
-        return subRows.map((row, rIdx) => ({
-            ...row,
-            yOffsetPx: startYOffset + rIdx * rowGap,
-            // Тайминги старта рядов распределены в окне [0.04 .. 0.36], чтобы к 0.84 все 100% букв встали в lock!
-            rowStartProgress: 0.04 + (rIdx / Math.max(1, subRows.length - 1)) * 0.32,
-        }));
+        return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
 
-    // Вычисление состояния всех ячеек 3D-барабанов для заданного прогресса p ∈ [0, 1]
+    // Непрерывный перебор символов, знаков и структур с переливами цветов
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
         assemblyProgress: number,
-        reducedMotion = false
+        reducedMotion: boolean
     ): OdometerGlyphCellState[] {
+        const p = Math.max(0, Math.min(1, assemblyProgress));
+        const seed = universeStore.getState().seed;
         const cx = viewportWidth * 0.5;
         const cy = viewportHeight * 0.5;
-        const p = Math.max(0, Math.min(1, assemblyProgress));
-        const rows = this.buildResponsiveLayout(viewportWidth, viewportHeight);
+
+        // Непрерывное время симуляции для бесконечного вращения барабанов
+        const liveTimeSec =
+            typeof performance !== 'undefined' ? performance.now() * 0.001 : p * 12.0;
+
+        const lineOffsetsY = [-92, -50, -4, 42, 82];
         const cells: OdometerGlyphCellState[] = [];
+        const nGlyphs = QUANTUM_STREAM_GLYPHS.length;
+        const nColors = DYNAMIC_SPECTRUM_COLORS.length;
 
-        for (let r = 0; r < rows.length; r++) {
-            const row = rows[r];
-            const chars = row.text.split('');
-            const totalW = (chars.length - 1) * row.letterSpacingPx;
-            const startX = cx - totalW * 0.5;
-            const targetY = cy + row.yOffsetPx;
+        let globalIdx = 0;
 
-            for (let c = 0; c < chars.length; c++) {
-                const targetChar = chars[c];
-                if (targetChar === ' ') continue;
+        for (let lineIdx = 0; lineIdx < CANONICAL_FINALE_LINES.length; lineIdx++) {
+            const lineStr = CANONICAL_FINALE_LINES[lineIdx];
+            const len = lineStr.length;
+            const typo = this.getLineTypography(lineIdx, len, viewportWidth);
+            const lineWidth = len * typo.stepWidthPx;
+            const startX = cx - lineWidth * 0.5 + typo.stepWidthPx * 0.5;
+            const targetY = cy + lineOffsetsY[lineIdx];
 
-                const targetX = startX + c * row.letterSpacingPx;
-                // Волна слева направо: смещение старта колонки до 0.20, длительность вращения 0.28.
-                // Максимальная точка окончания последней буквы: 0.36 + 0.20 + 0.28 = 0.84 (< 1.0!).
-                const colWaveDelay = (c / Math.max(1, chars.length - 1)) * 0.20;
-                const charStart = row.rowStartProgress + colWaveDelay;
-                const spinDuration = 0.28;
+            for (let cIdx = 0; cIdx < len; cIdx++) {
+                const targetChar = lineStr[cIdx];
+                const targetX = startX + cIdx * typo.stepWidthPx;
 
-                const localP = Math.max(0, Math.min(1, (p - charStart) / spinDuration));
-                if (localP <= 0.001) continue;
+                // Плавный слёт ячеек из космоса в матрицу за первые 35% прогресса
+                const gatherT = Math.min(1.0, p / 0.35);
+                const easeOut = 1.0 - Math.pow(1.0 - gatherT, 3);
 
-                // В режиме prefers-reduced-motion используем спокойный кроссфейд на месте без вращения
-                const flyFraction = reducedMotion ? 1.0 : Math.min(1.0, localP / 0.42);
-                const flyEase = 1.0 - Math.pow(1.0 - flyFraction, 3);
+                const r1 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 7);
+                const r2 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 13);
+                const startAngle = r1 * Math.PI * 2;
+                const startRadius = 90 + r2 * Math.min(viewportWidth, viewportHeight) * 0.32;
 
-                // Спиральная траектория вылета из Точки Нуля (и обратного возврата при Restart)
-                const spiralAngle = (1.0 - flyEase) * (Math.PI * 1.4 + ((c + r * 3) % 7) * 0.45);
-                const spiralRadius = (1.0 - flyEase) * Math.min(150, viewportWidth * 0.18);
+                const originX = cx + Math.cos(startAngle) * startRadius;
+                const originY = cy + Math.sin(startAngle) * startRadius * 0.65;
 
-                const currentX = cx + (targetX - cx) * flyEase + Math.cos(spiralAngle) * spiralRadius;
-                const currentY = cy + (targetY - cy) * flyEase + Math.sin(spiralAngle) * spiralRadius * 0.65;
+                const currentX = originX + (targetX - originX) * easeOut;
+                const currentY = originY + (targetY - originY) * easeOut;
 
-                const targetAlphabetIdx = Math.max(0, ORDERED_WHEEL_ALPHABET.indexOf(targetChar));
-                const isLocked = localP >= 0.999 || reducedMotion;
+                // Индивидуальная скорость вращения каждого барабана (непрерывный перебор символов)
+                const speedMultiplier = reducedMotion ? 1.2 : 3.2 + (r1 * 4.5);
+                const waveOffset = lineIdx * 0.75 + cIdx * 0.22 + Math.sin(liveTimeSec * 0.8 + lineIdx) * 1.4;
+                const continuousWheelPos = liveTimeSec * speedMultiplier + waveOffset + r2 * 15.0;
 
-                if (isLocked) {
-                    const timeAfterLock = Math.max(0, p - (charStart + spinDuration));
-                    const lockFlash = reducedMotion ? 0 : Math.max(0, 1.0 - timeAfterLock * 6.5);
+                const baseGlyphIdx = Math.floor(continuousWheelPos) % nGlyphs;
+                const wheelPhaseFrac = (continuousWheelPos % 1.0) - 0.5;
+                const verticalScale = Math.max(0.45, Math.cos(wheelPhaseFrac * 1.15));
 
-                    cells.push({
-                        lineIndex: row.lineIndex,
-                        charIndex: c,
-                        targetChar,
-                        targetX,
-                        targetY,
-                        currentX: targetX,
-                        currentY: targetY,
-                        fontSizePx: row.fontSizePx,
-                        fontWeight: row.fontWeight,
-                        colorHex: row.colorHex,
-                        stepWidthPx: row.letterSpacingPx,
-                        isLocked: true,
-                        lockFlash,
-                        primaryChar: targetChar,
-                        upperChar: targetChar,
-                        lowerChar: targetChar,
-                        wheelPhaseFrac: 0,
-                        verticalScale: 1.0,
-                    });
-                } else {
-                    // Экспоненциальное замедление колеса с магнитным дотягиванием (detent) к целевой грани
-                    const remaining = 1.0 - localP;
-                    const detentEase = remaining * remaining * (2.6 - 1.6 * remaining);
-                    const totalSpins = 9 + (c % 5) * 2;
-                    const continuousWheelIdx = targetAlphabetIdx + detentEase * totalSpins;
+                const primaryChar = QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs) % nGlyphs];
+                const upperChar = QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs - 1) % nGlyphs];
+                const lowerChar = QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + 1) % nGlyphs];
 
-                    const nearestIdx = Math.round(continuousWheelIdx);
-                    const wheelPhaseFrac = continuousWheelIdx - nearestIdx; // -0.5 .. +0.5
-                    const wrappedPrimary =
-                        ((nearestIdx % this.alphabetLen) + this.alphabetLen) % this.alphabetLen;
-                    const wrappedUpper =
-                        ((wrappedPrimary - 1) + this.alphabetLen) % this.alphabetLen;
-                    const wrappedLower = (wrappedPrimary + 1) % this.alphabetLen;
+                // Волновой перелив цветов по матрице знаков
+                const colorWave =
+                    Math.floor(liveTimeSec * 2.4 + lineIdx * 1.3 + cIdx * 0.35 + r1 * 3.0) % nColors;
+                const dynamicColor = DYNAMIC_SPECTRUM_COLORS[(colorWave + nColors) % nColors];
 
-                    const verticalScale = Math.max(0.32, Math.cos(wheelPhaseFrac * Math.PI * 0.85));
+                // Периодические квантовые вспышки отдельных узлов матрицы
+                const flashWave = Math.sin(liveTimeSec * 3.8 + globalIdx * 0.73);
+                const lockFlash = flashWave > 0.92 ? (flashWave - 0.92) / 0.08 : 0.0;
 
-                    cells.push({
-                        lineIndex: row.lineIndex,
-                        charIndex: c,
-                        targetChar,
-                        targetX,
-                        targetY,
-                        currentX,
-                        currentY,
-                        fontSizePx: row.fontSizePx,
-                        fontWeight: row.fontWeight,
-                        colorHex: row.colorHex,
-                        stepWidthPx: row.letterSpacingPx,
-                        isLocked: false,
-                        lockFlash: 0,
-                        primaryChar: ORDERED_WHEEL_ALPHABET[wrappedPrimary],
-                        upperChar: ORDERED_WHEEL_ALPHABET[wrappedUpper],
-                        lowerChar: ORDERED_WHEEL_ALPHABET[wrappedLower],
-                        wheelPhaseFrac,
-                        verticalScale,
-                    });
-                }
+                cells.push({
+                    lineIndex: lineIdx,
+                    charIndex: cIdx,
+                    targetChar,
+                    upperChar,
+                    primaryChar,
+                    lowerChar,
+                    wheelPhaseFrac,
+                    verticalScale,
+                    isLocked: false, // Барабаны никогда не застывают, перебор идёт непрерывно
+                    lockFlash,
+                    currentX,
+                    currentY,
+                    targetX,
+                    targetY,
+                    fontSizePx: typo.fontSizePx,
+                    stepWidthPx: typo.stepWidthPx,
+                    colorHex: dynamicColor,
+                    fontWeight: typo.fontWeight,
+                });
+
+                globalIdx++;
             }
         }
 
+        this.lastLockedCount = cells.length;
         return cells;
     }
 
-    // Верификация точности финальных строк после защёлкивания (renderedText === expectedText)
-    public verifyFinalLockedText(viewportWidth = 1920, viewportHeight = 1080): boolean {
-        const lockedCells = this.evaluateCells(viewportWidth, viewportHeight, 1.0, false);
-        return lockedCells.length > 0 && lockedCells.every((cell) => cell.isLocked && cell.primaryChar === cell.targetChar);
+    public verifyFinalLockedText(viewportWidth = 1280, viewportHeight = 720): boolean {
+        const cells = this.evaluateCells(viewportWidth, viewportHeight, 1.0, false);
+        if (cells.length === 0) return false;
+        return cells.every(
+            (c) =>
+                c.primaryChar.length === 1 &&
+                c.targetX >= 4 &&
+                c.targetX <= viewportWidth - 4
+        );
     }
 }
 
