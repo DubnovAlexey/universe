@@ -1,226 +1,120 @@
 ---
+// noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
-// НАЗНАЧЕНИЕ: Главная сцена UNIVERSE (Плавный цикл + Матрица букв-счётчиков в финале)
+// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.0 (MASTER 00-99)
+// ЗАДАЧИ ФАЙЛА:
+// 1. Развернуть полноэкранный холст #universe-canvas без спиннеров и экранов загрузки.
+// 2. Разместить точки монтирования для реактивных островов Layer2-Layer5.
+// 3. Подключить клиентский оркестратор через внешний модуль renderer.ts.
 // ============================================================================
-
 import '../styles/universe.css';
+import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
+
+const initialPhase = UNIVERSE_PHASES['01_VOID'];
 ---
 
 <!doctype html>
 <html lang="ru">
 <head>
 	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>UNIVERSE // Нейроверс — Вселенная как Сознание</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+	<title>UNIVERSE // NEUROVERSE — Interactive Polyglot Audiovisual Installation</title>
+	<meta
+		name="description"
+		content="Полноэкранная кинематографическая аудиовизуальная инсталляция «Из Нуля в Ноль» (108 секунд): Astro, TypeScript, React, WebGPU, Rust/WASM, Python."
+	/>
 	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 </head>
+
 <body>
-<!-- 1. ПОЛНОЭКРАННЫЙ ХОЛСТ СИМУЛЯЦИИ И СЧЁТЧИКОВ БУКВ -->
-<canvas id="universe-canvas"></canvas>
+<main class="universe-viewport">
+	<!-- СЛОЙ 1: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
+	<canvas
+		id="universe-canvas"
+		aria-label="Интерактивное космическое и нейронное полотно UNIVERSE"
+	></canvas>
 
-<!-- 2. ИНТЕРАКТИВНЫЕ КНОПКИ ПОД ВЫСТРОЕННЫМИ НА ХОЛСТЕ СЛОВАМИ ФИНАЛА -->
-<div class="finale-counter-actions" id="finale-counter-actions" data-github-card="true">
-	<a
-		class="btn-cipher-action"
-		id="link-open-repo"
-		data-target-label="[ OPEN GITHUB REPOSITORY ↗ ]"
-		href="https://github.com/DubnovAlexey/universe"
-		target="_blank"
-		rel="noopener noreferrer"
-	>
-		[ OPEN GITHUB REPOSITORY ↗ ]
-	</a>
-	<button
-		class="btn-cipher-action"
-		id="btn-restart-universe"
-		data-target-label="[ ↻ RESTART UNIVERSE CYCLE ]"
-	>
-		[ ↻ RESTART UNIVERSE CYCLE ]
-	</button>
-</div>
+	<div class="optical-vignette"></div>
 
-<!-- 3. ИСЧЕЗАЮЩИЙ КИНЕМАТОГРАФИЧЕСКИЙ ИНТЕРФЕЙС -->
-<div class="hud-overlay" id="hud-overlay">
-	<div class="top-bar">
-		<div class="hud-panel brand-block" data-ui-panel="true">
-			<div class="phase-codename" id="hud-phase-code">PHASE_01 // PRIMORDIAL_VOID</div>
-			<h1 id="hud-phase-title">01. ПУСТОТА (VOID)</h1>
-			<p id="hud-phase-philosophy">
-				Дыхание Точки Нуля и плавное перетекание 5 образов: от рождения спиральной галактики до синаптической сети Головного Мозга Вселенной.
-			</p>
-		</div>
+	<!-- СЛОЙ 5 (АКТ D): Семантический DOM-контейнер кнопок финальной карточки GitHub и aria-live -->
+	<div id="layer5-finale-root"></div>
 
-		<div class="hud-panel layer-hidden" id="layer-metrics-panel" data-ui-panel="true">
-			<div class="metrics-grid">
-				<div class="metric-box">
-					<span class="label">КАДРЫ</span>
-					<span class="value" id="metric-fps">60 FPS</span>
-				</div>
-				<div class="metric-box">
-					<span class="label">НЕЙРОНЫ</span>
-					<span class="value" id="metric-particles">780</span>
-				</div>
-				<div class="metric-box">
-					<span class="label">СИНАПСЫ</span>
-					<span class="value" id="metric-edges">0</span>
-				</div>
-				<div class="metric-box">
-					<span class="label">ИМПУЛЬСЫ</span>
-					<span class="value" id="metric-pulses">0</span>
-				</div>
+	<!-- ИСЧЕЗАЮЩИЙ В ПОКОЕ КОНТЕЙНЕР ИНТЕРФЕЙСА (ТЕСТ БЕЗ ИНТЕРФЕЙСА) -->
+	<div class="hud-overlay" id="hud-overlay-root">
+		<!-- ВЕРХНИЙ БАР: Паспорт текущей фазы + Стек реактивных островов инспекции (Layer 2, 3, 4) -->
+		<header class="hud-top-bar">
+			<section class="hud-panel brand-card" data-ui-panel="true">
+				<span class="phase-codename" id="ui-phase-codename">{initialPhase.codeName}</span>
+				<h1 class="phase-title" id="ui-phase-title">{initialPhase.titleRu}</h1>
+				<p class="phase-subtitle" id="ui-phase-subtitle">{initialPhase.subtitleRu}</p>
+				<p class="phase-philosophy" id="ui-phase-philosophy">{initialPhase.philosophyRu}</p>
+			</section>
+
+			<div class="inspection-islands-stack">
+				<div id="layer2-metrics-root"></div>
+				<div id="layer3-topology-root"></div>
+				<div id="layer4-terminal-root"></div>
 			</div>
-		</div>
-	</div>
+		</header>
 
-	<div class="bottom-bar">
-		<div class="hud-panel cinema-dock" data-ui-panel="true">
-			<button class="phase-pill active" data-phase-btn="01_VOID">01. ПУСТОТА</button>
-			<button class="phase-pill" data-phase-btn="02_GENESIS">02. ГАЛАКТИКА</button>
-			<button class="phase-pill" data-phase-btn="03_EVOLUTION">03. НЕЙРО-МОЗГ</button>
-			<button class="phase-pill" data-phase-btn="04_COLLAPSE">04. РАЗЛОМ</button>
-			<button class="phase-pill" data-phase-btn="05_SINGULARITY">05. СИНГУЛЯРНОСТЬ</button>
-
-			<div class="divider"></div>
-
-			<button class="phase-pill" id="btn-toggle-xray">РЕНТГЕН КОДА (X-RAY)</button>
-			<button class="phase-pill" id="btn-layer-metrics">ДАТЧИКИ</button>
-			<button class="phase-pill" id="btn-toggle-pause">ПАУЗА</button>
-
-			<div class="divider"></div>
-
-			<div class="audio-group">
-				<button class="phase-pill active" id="btn-toggle-audio">🔊 МУЗЫКА</button>
-				<input type="range" id="slider-volume" min="0" max="1" step="0.05" value="0.8" />
-			</div>
-		</div>
-	</div>
-</div>
-
-<script>
-	import { UniverseRenderer } from '../engine/renderer';
-	import { universeStore, type PhaseId } from '../store/universeState';
-	import { audioSync } from '../utils/audioSync';
-
-	const canvas = document.getElementById('universe-canvas') as HTMLCanvasElement | null;
-	if (canvas) {
-		const renderer = new UniverseRenderer(canvas);
-		renderer.start();
-
-		const codeEl = document.getElementById('hud-phase-code');
-		const titleEl = document.getElementById('hud-phase-title');
-		const philEl = document.getElementById('hud-phase-philosophy');
-		const fpsEl = document.getElementById('metric-fps');
-		const partEl = document.getElementById('metric-particles');
-		const edgesEl = document.getElementById('metric-edges');
-		const pulsesEl = document.getElementById('metric-pulses');
-		const metricsPanel = document.getElementById('layer-metrics-panel');
-		const finaleActions = document.getElementById('finale-counter-actions');
-		const hudOverlay = document.getElementById('hud-overlay');
-
-		const phaseButtons = document.querySelectorAll<HTMLButtonElement>('[data-phase-btn]');
-		const btnXRay = document.getElementById('btn-toggle-xray');
-		const btnMetrics = document.getElementById('btn-layer-metrics');
-		const btnPause = document.getElementById('btn-toggle-pause');
-		const btnAudio = document.getElementById('btn-toggle-audio');
-		const sliderVolume = document.getElementById('slider-volume') as HTMLInputElement | null;
-		const btnRestart = document.getElementById('btn-restart-universe');
-
-		// Эффект перебора символов на кнопках при наведении (Scramble Counter Effect)
-		const cipherPool = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆Ωλ∞';
-		const attachScrambleHover = (el: HTMLElement | null) => {
-			if (!el) return;
-			const original = el.getAttribute('data-target-label') || el.textContent || '';
-			el.addEventListener('mouseenter', () => {
-				let iter = 0;
-				const timer = window.setInterval(() => {
-					el.textContent = original
-						.split('')
-						.map((ch, idx) => {
-							if (ch === ' ' || ch === '[' || ch === ']' || idx < iter) return ch;
-							return cipherPool[Math.floor(Math.random() * cipherPool.length)];
-						})
-						.join('');
-					iter += 1.5;
-					if (iter >= original.length) {
-						el.textContent = original;
-						clearInterval(timer);
+		<!-- НИЖНИЙ БАР: Навигация по 5 фазам (108 с) и переключение режимов инспекции -->
+		<footer class="hud-bottom-bar">
+			<nav
+				class="hud-panel phase-timeline-dock"
+				data-ui-panel="true"
+				aria-label="Шкала 5 фаз эволюции Вселенной (108 секунд)"
+			>
+				<div class="timeline-progress-track">
+					<div class="timeline-progress-fill" id="ui-phase-progress"></div>
+				</div>
+				<div class="phase-buttons-row" id="ui-phase-buttons">
+					{
+						PHASE_ORDER.map((phaseKey, idx) => (
+							<button
+								type="button"
+								class={`phase-pill ${idx === 0 ? 'active' : ''}`}
+								data-phase-id={phaseKey}
+								title={UNIVERSE_PHASES[phaseKey].subtitleRu}
+							>
+								0{idx + 1}.{phaseKey.split('_')[1]}
+							</button>
+						))
 					}
-				}, 24);
-			});
-		};
+				</div>
+			</nav>
 
-		attachScrambleHover(document.getElementById('link-open-repo'));
-		attachScrambleHover(btnRestart);
+			<section
+				class="hud-panel controls-dock"
+				data-ui-panel="true"
+				aria-label="Управление звуком и инженерными оптиками"
+			>
+				<button type="button" class="btn-cyber" id="btn-toggle-pause" title="Пауза / Продолжить (Клавиша P)">
+					⏸ PAUSE
+				</button>
+				<button type="button" class="btn-cyber active-toggle" id="btn-toggle-autocycle" title="Автоматический 108-секундный цикл">
+					🔄 AUTO: ON
+				</button>
+				<button type="button" class="btn-cyber" id="btn-toggle-audio" title="Включить / Выключить звук (Клавиша M)">
+					🔊 AUDIO: WAIT
+				</button>
+				<button type="button" class="btn-cyber" id="btn-toggle-metrics" title="Телеметрия полиглот-ядра (Клавиша 2)">
+					📊 METRICS
+				</button>
+				<button type="button" class="btn-cyber" id="btn-toggle-topology" title="Топология графа NEXUS (Клавиша 3)">
+					🕸 TOPOLOGY
+				</button>
+				<button type="button" class="btn-cyber" id="btn-toggle-terminal" title="Терминал и IntegrationRegistry (Клавиша 4)">
+					⌨ TERMINAL
+				</button>
+				<button type="button" class="btn-cyber" id="btn-toggle-xray" title="Глобальный инженерный рентген X-RAY (Клавиша 5)">
+					🔬 X-RAY
+				</button>
+			</section>
+		</footer>
+	</div>
+</main>
 
-		universeStore.subscribe((state) => {
-			if (codeEl) codeEl.textContent = state.phaseMeta.codeName;
-			if (titleEl) titleEl.textContent = state.phaseMeta.titleRu;
-			if (philEl) philEl.textContent = state.phaseMeta.philosophyRu;
-
-			phaseButtons.forEach((btn) => {
-				btn.classList.toggle('active', btn.getAttribute('data-phase-btn') === state.currentPhase);
-			});
-
-			btnXRay?.classList.toggle('active', state.layers.layer5_truthXRayMode);
-			btnMetrics?.classList.toggle('active', state.layers.layer2_metricsHud);
-			metricsPanel?.classList.toggle('layer-hidden', !state.layers.layer2_metricsHud);
-
-			if (btnPause) {
-				btnPause.textContent = state.isPaused ? '▶ ПУСК' : 'ПАУЗА';
-				btnPause.classList.toggle('active', state.isPaused);
-			}
-
-			if (btnAudio) {
-				const playing = state.audioEnabled;
-				btnAudio.textContent = playing ? '🔊 МУЗЫКА: ВКЛ' : '🔇 МУЗЫКА';
-				btnAudio.classList.toggle('active', playing);
-			}
-		});
-
-		setInterval(() => {
-			const state = universeStore.getState();
-			if (fpsEl) fpsEl.textContent = `${state.telemetry.fps} FPS`;
-			if (partEl) partEl.textContent = String(state.telemetry.activeParticles);
-			if (edgesEl) edgesEl.textContent = String(state.telemetry.activeConnections);
-			if (pulsesEl) pulsesEl.textContent = String(state.telemetry.activePulses);
-
-			const showActions =
-				state.singularityAct === 'ACT_D_GITHUB_CARD' && state.githubCardAssemblyProgress > 0.72;
-			finaleActions?.classList.toggle('visible', showActions);
-
-			if (hudOverlay) {
-				hudOverlay.style.opacity =
-					state.singularityAct === 'ACT_D_GITHUB_CARD' ? '0.25' : '1';
-			}
-		}, 120);
-
-		phaseButtons.forEach((btn) => {
-			btn.addEventListener('click', () => {
-				const targetPhase = btn.getAttribute('data-phase-btn') as PhaseId | null;
-				if (targetPhase) {
-					universeStore.setPhase(targetPhase);
-				}
-			});
-		});
-
-		btnXRay?.addEventListener('click', () => universeStore.toggleLayer('layer5_truthXRayMode'));
-		btnMetrics?.addEventListener('click', () => universeStore.toggleLayer('layer2_metricsHud'));
-		btnPause?.addEventListener('click', () => universeStore.togglePause());
-
-		btnAudio?.addEventListener('click', () => {
-			const nextState = !universeStore.getState().audioEnabled;
-			audioSync.setEnabled(nextState);
-		});
-
-		sliderVolume?.addEventListener('input', () => {
-			audioSync.setVolume(parseFloat(sliderVolume.value));
-		});
-
-		btnRestart?.addEventListener('click', () => {
-			universeStore.triggerUniverseRestart();
-		});
-	}
-</script>
+<script src="../engine/renderer.ts"></script>
 </body>
 </html>

@@ -1,201 +1,377 @@
+/* noinspection CssUnusedSymbol */
 /* ============================================================================
  * ФАЙЛ: frontend/src/styles/universe.css
- * НАЗНАЧЕНИЕ: Кинематографический интерфейс и кнопки под матрицей счётчика букв
+ * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.0 (MASTER 00–06)
+ * ЗАДАЧИ ФАЙЛА:
+ * 1. Зафиксировать каноническую палитру MASTER 00 (#020308, #03050A, #060B19,
+ *    #7DD3FC, #38BDF8, #1E1B4B, #6366F1, #F8FAFC, #F59E0B).
+ * 2. Обеспечить исчезающий в покое HUD (opacity: 0.14 -> 0.96 при наведении/фокусе),
+ *    чтобы сцена проходила «Тест без интерфейса» (MASTER 00 раздел 0).
+ * 3. Стилизовать реактивные острова инспекции Layer2 (METRICS), Layer3 (TOPOLOGY),
+ *    Layer4 (TERMINAL) и Layer5 (CIPHER FINALE + sr-only для скринридеров).
+ * 4. Обеспечить адаптивность на мобильных экранах (320px..1920px) и видимый фокус.
  * ============================================================================ */
 
 :root {
-    --void-bg: #020308;
-    --panel-bg: rgba(6, 11, 25, 0.72);
-    --panel-border: rgba(56, 189, 248, 0.24);
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
+    --void-obsidian: #020308;
+    --void-graphite: #03050a;
+    --void-indigo: #060b19;
+    --glass-surface: rgba(3, 5, 10, 0.48);
+    --glass-surface-hover: rgba(6, 11, 25, 0.84);
+    --glass-border: rgba(125, 211, 252, 0.14);
+    --glass-border-bright: rgba(56, 189, 248, 0.48);
+
+    --accent-ice: #7dd3fc;
     --accent-cyan: #38bdf8;
-    --accent-aqua: #00f5d4;
+    --accent-ultramarine: #1e1b4b;
+    --accent-violet: #6366f1;
+    --accent-pearl: #f8fafc;
     --accent-amber: #f59e0b;
-    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+    --text-primary: rgba(248, 250, 252, 0.94);
+    --text-secondary: rgba(125, 211, 252, 0.72);
+    --text-muted: rgba(125, 211, 252, 0.44);
+
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }
 
-html, body {
-    width: 100%;
-    height: 100%;
+html,
+body {
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
-    background-color: var(--void-bg);
+    background-color: var(--void-obsidian);
     color: var(--text-primary);
-    font-family: var(--font-sans);
+    font-family: var(--font-display);
     user-select: none;
     -webkit-font-smoothing: antialiased;
 }
 
-#universe-canvas {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    cursor: crosshair;
+/* ============================================================================
+ * 1. ГЛАВНАЯ СЦЕНА И ХОЛСТ БЕСШОВНОЙ СИМУЛЯЦИИ (100% VIEWPORT)
+ * ============================================================================ */
+.universe-viewport {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 50%, var(--void-indigo) 0%, var(--void-obsidian) 100%);
 }
 
+#universe-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* Мягкая кинематографическая виньетка (MASTER 00 раздел 3) */
+.optical-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background: radial-gradient(
+            circle at 50% 50%,
+            transparent 62%,
+            rgba(2, 3, 8, 0.64) 100%
+    );
+}
+
+/* ============================================================================
+ * 2. ИСЧЕЗАЮЩИЙ В ПОКОЕ КОНТЕЙНЕР ИНТЕРФЕЙСА (ТЕСТ БЕЗ ИНТЕРФЕЙСА)
+ * ============================================================================ */
 .hud-overlay {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 10;
     pointer-events: none;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 20px 26px;
-    transition: opacity 0.5s ease;
+    padding: 0.75rem 1.15rem;
+    transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* В режиме живой тишины (Акт C, 2500 мс) и финала (Акт D) панели полностью скрыты */
+.hud-overlay.act-silence-hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 .hud-panel {
     pointer-events: auto;
-    background: var(--panel-bg);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    padding: 12px 16px;
-    opacity: 0.18;
-    transition: opacity 0.4s ease, border-color 0.25s ease, transform 0.3s ease;
+    background: var(--glass-surface);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 9px;
+    box-shadow: 0 6px 24px rgba(2, 3, 8, 0.6);
+    opacity: 0.16;
+    transition:
+            opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            background-color 0.35s ease,
+            border-color 0.35s ease,
+            transform 0.35s ease;
 }
 
 .hud-panel:hover,
 .hud-panel:focus-within {
-    opacity: 1;
-    border-color: rgba(56, 189, 248, 0.55);
+    opacity: 0.96;
+    background: var(--glass-surface-hover);
+    border-color: var(--glass-border-bright);
 }
 
-.hud-panel.layer-hidden {
+.layer-hidden {
     opacity: 0 !important;
-    pointer-events: none;
-    transform: translateY(8px);
+    pointer-events: none !important;
+    transform: translateY(6px);
 }
 
-.top-bar {
+/* Видимый клавиатурный фокус (правило 9 MASTER 00) */
+.btn-cyber:focus-visible,
+.phase-pill:focus-visible,
+.btn-cipher-action:focus-visible {
+    outline: 1.5px solid var(--accent-ice);
+    outline-offset: 2px;
+}
+
+/* ============================================================================
+ * 3. ВЕРХНИЙ БАР ФАЗЫ И РЕАКТИВНЫЕ ОСТРОВА ИНСПЕКЦИИ (LAYER 2, 3, 4)
+ * ============================================================================ */
+.hud-top-bar {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 16px;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 
-.brand-block {
-    max-width: 460px;
+.brand-card {
+    padding: 0.48rem 0.82rem;
+    max-width: 390px;
 }
 
 .phase-codename {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 0.58rem;
     letter-spacing: 0.14em;
-    color: var(--accent-aqua);
     text-transform: uppercase;
+    color: var(--accent-cyan);
+    display: block;
+    margin-bottom: 0.12rem;
 }
 
-.brand-block h1 {
-    font-size: 16px;
+.phase-title {
+    font-size: 0.86rem;
     font-weight: 600;
-    margin-top: 3px;
+    letter-spacing: 0.02em;
+    color: var(--accent-pearl);
+    margin-bottom: 0.1rem;
+}
+
+.phase-subtitle {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    line-height: 1.28;
+}
+
+.phase-philosophy {
+    display: none;
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(125, 211, 252, 0.14);
+    font-size: 0.66rem;
+    line-height: 1.38;
     color: var(--text-primary);
 }
 
-.brand-block p {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 4px;
-    line-height: 1.45;
+.brand-card:hover .phase-philosophy,
+.brand-card:focus-within .phase-philosophy {
+    display: block;
+}
+
+/* Слои инспекции справа вверху и по центру */
+.inspection-islands-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+    max-width: 540px;
+}
+
+.metrics-inspector-v2,
+.topology-inspector-v2,
+.terminal-inspector-v2 {
+    padding: 0.48rem 0.72rem;
+    opacity: 0.88;
+}
+
+.inspector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.32rem;
+    padding-bottom: 0.22rem;
+    border-bottom: 1px solid rgba(125, 211, 252, 0.14);
+}
+
+.digest-badge,
+.source-tag {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    color: var(--accent-amber);
+    letter-spacing: 0.06em;
 }
 
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(4, auto);
-    gap: 14px;
+    grid-template-columns: repeat(3, auto);
+    gap: 0.36rem 0.72rem;
     font-family: var(--font-mono);
 }
 
-.metric-box span.label {
-    display: block;
-    font-size: 9px;
-    color: var(--text-secondary);
-}
-
-.metric-box span.value {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--accent-aqua);
-}
-
-.bottom-bar {
+.metric-box {
     display: flex;
-    justify-content: center;
-    align-items: flex-end;
+    flex-direction: column;
 }
 
-.cinema-dock {
+.metric-box .label {
+    font-size: 0.52rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-box .value {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent-pearl);
+}
+
+.metric-box .value small {
+    font-size: 0.58rem;
+    color: var(--accent-ice);
+    font-weight: 400;
+}
+
+.topology-stats-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
     flex-wrap: wrap;
+    gap: 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-secondary);
+    margin-top: 0.2rem;
 }
 
-.phase-pill {
-    background: rgba(15, 23, 42, 0.8);
-    color: #cbd5e1;
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 8px;
-    padding: 7px 12px;
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
+.topology-stats-row strong {
+    color: var(--accent-pearl);
 }
 
-.phase-pill:hover {
-    color: #ffffff;
-    border-color: var(--accent-cyan);
+/* Таблица модулей IntegrationRegistry в Layer4_Terminal */
+.registry-mini-table {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(195px, 1fr));
+    gap: 0.22rem 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    margin-bottom: 0.32rem;
 }
 
-.phase-pill.active {
-    color: #ffffff;
-    border-color: var(--accent-aqua);
-    background: rgba(0, 245, 212, 0.14);
-}
-
-.divider {
-    width: 1px;
-    height: 22px;
-    background: rgba(148, 163, 184, 0.22);
-    margin: 0 4px;
-}
-
-.audio-group {
+.registry-row {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
+    justify-content: space-between;
+    gap: 0.35rem;
+    padding: 0.12rem 0.28rem;
+    background: rgba(2, 3, 8, 0.55);
+    border-radius: 4px;
 }
 
-.audio-group input[type='range'] {
-    width: 72px;
-    accent-color: var(--accent-aqua);
-    cursor: pointer;
+.mod-id {
+    color: var(--accent-pearl);
+    font-weight: 600;
 }
 
-/* Бесшовные интерактивные кнопки под выстроенными строками счётчика в финале */
+.mod-lang {
+    color: var(--text-muted);
+}
+
+.mod-status.status-ready {
+    color: var(--accent-ice);
+}
+
+.mod-status.status-fallback,
+.mod-status.status-loading {
+    color: var(--accent-amber);
+}
+
+.mod-status.status-inactive {
+    color: var(--text-muted);
+}
+
+.ledger-bar {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    color: var(--accent-ice);
+    padding: 0.18rem 0;
+    border-top: 1px solid rgba(125, 211, 252, 0.12);
+    border-bottom: 1px solid rgba(125, 211, 252, 0.12);
+    margin-bottom: 0.25rem;
+}
+
+.terminal-log-box {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    color: var(--text-secondary);
+    max-height: 78px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.14rem;
+}
+
+/* ============================================================================
+ * 4. LAYER 5: КНОПКИ КОДОВОГО ОДОМЕТРА И СКРЫТЫЙ ARIA-LIVE БЛОК (MASTER 05)
+ * ============================================================================ */
+.sr-only-manifesto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .finale-counter-actions {
-    position: fixed;
-    top: calc(50% + 118px);
+    position: absolute;
     left: 50%;
-    transform: translate(-50%, 10px);
+    top: calc(50% + 128px);
+    transform: translate(-50%, 8px);
     z-index: 25;
     display: flex;
-    gap: 18px;
+    gap: 0.85rem;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.6s ease, transform 0.6s ease;
+    transition:
+            opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+            transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .finale-counter-actions.visible {
@@ -205,23 +381,161 @@ html, body {
 }
 
 .btn-cipher-action {
+    pointer-events: auto;
     font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    padding: 10px 20px;
-    border-radius: 6px;
-    background: rgba(6, 18, 36, 0.72);
-    border: 1px solid rgba(0, 245, 212, 0.48);
-    color: #f8fafc;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     text-decoration: none;
+    padding: 0.56rem 1.15rem;
+    border-radius: 6px;
+    background: rgba(6, 11, 25, 0.82);
+    color: var(--accent-ice);
+    border: 1px solid rgba(125, 211, 252, 0.38);
     cursor: pointer;
-    box-shadow: 0 0 24px rgba(0, 245, 212, 0.15);
+    box-shadow: 0 6px 22px rgba(2, 3, 8, 0.75);
     transition: all 0.25s ease;
 }
 
-.btn-cipher-action:hover {
-    background: rgba(0, 245, 212, 0.22);
-    border-color: #fde047;
-    color: #ffffff;
-    box-shadow: 0 0 30px rgba(253, 224, 71, 0.32);
+.btn-cipher-action:hover:not(:disabled) {
+    background: rgba(56, 189, 248, 0.16);
+    color: var(--accent-pearl);
+    border-color: var(--accent-pearl);
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.32);
+}
+
+.btn-cipher-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* ============================================================================
+ * 5. НИЖНИЙ ПУЛЬТ НАВИГАЦИИ ПО 5 ФАЗАМ И 5 ОПТИКАМ ИНСПЕКЦИИ
+ * ============================================================================ */
+.hud-bottom-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.phase-timeline-dock {
+    padding: 0.38rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+}
+
+.timeline-progress-track {
+    width: 100%;
+    height: 2px;
+    background: rgba(125, 211, 252, 0.12);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.timeline-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent-ice), var(--accent-violet), var(--accent-amber));
+    transition: width 0.15s linear;
+}
+
+.phase-buttons-row {
+    display: flex;
+    gap: 0.28rem;
+    flex-wrap: wrap;
+}
+
+.phase-pill {
+    background: rgba(2, 3, 8, 0.45);
+    border: 1px solid rgba(125, 211, 252, 0.14);
+    color: var(--text-secondary);
+    padding: 0.26rem 0.52rem;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.phase-pill:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-pearl);
+}
+
+.phase-pill.active {
+    background: rgba(56, 189, 248, 0.16);
+    border-color: var(--accent-ice);
+    color: var(--accent-pearl);
+}
+
+.controls-dock {
+    padding: 0.38rem 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+    flex-wrap: wrap;
+}
+
+.btn-cyber {
+    background: rgba(2, 3, 8, 0.5);
+    border: 1px solid rgba(125, 211, 252, 0.16);
+    color: var(--text-primary);
+    padding: 0.26rem 0.52rem;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-cyber:hover {
+    border-color: var(--accent-ice);
+    color: var(--accent-ice);
+}
+
+.btn-cyber.active-toggle {
+    background: rgba(99, 102, 241, 0.22);
+    border-color: var(--accent-ice);
+    color: var(--accent-pearl);
+}
+
+/* ============================================================================
+ * 6. АДАПТИВНОСТЬ ДЛЯ МОБИЛЬНЫХ ЭКРАНОВ (320PX..860PX) БЕЗ КЛИППИНГА
+ * ============================================================================ */
+@media (max-width: 860px) {
+    .hud-overlay {
+        padding: 0.45rem 0.55rem;
+    }
+
+    .brand-card {
+        max-width: 260px;
+        padding: 0.36rem 0.58rem;
+    }
+
+    .phase-subtitle {
+        display: none;
+    }
+
+    .registry-mini-table {
+        grid-template-columns: 1fr;
+    }
+
+    .finale-counter-actions {
+        top: auto;
+        bottom: 4.5rem;
+        flex-direction: column;
+        gap: 0.45rem;
+        width: min(300px, 88vw);
+    }
+
+    .btn-cipher-action {
+        width: 100%;
+        text-align: center;
+        font-size: 0.64rem;
+        padding: 0.48rem 0.75rem;
+    }
 }

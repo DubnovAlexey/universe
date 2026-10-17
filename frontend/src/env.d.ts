@@ -1,14 +1,22 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/env.d.ts
-// НАЗНАЧЕНИЕ: Глобальные декларации типов Astro, WebGPU и JSX.IntrinsicElements (v2.0)
+// НАЗНАЧЕНИЕ: Глобальные декларации типов окружения, CSS/WGSL модулей и JSX (v2.0)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Подключить стандартные типы сборщика Astro (astro/client).
+// 1. Разрешить side-effect импорт таблиц стилей (*.css) и шейдеров (*.wgsl) без ошибок TS.
 // 2. Описать переменные окружения ImportMetaEnv (BASE_URL, PUBLIC_WS_URL).
-// 3. Согласовать тип JSX.Element со стандартным DOM Element (без ошибки TS2322).
+// 3. Согласовать тип JSX.Element со стандартным DOM Element для слоёв Layer2-Layer5.tsx.
 // ============================================================================
 
-/// <reference types="astro/client" />
+declare module '*.css';
+declare module '*.wgsl' {
+    const content: string;
+    export default content;
+}
+declare module '*.wasm' {
+    const url: string;
+    export default url;
+}
 
 interface ImportMetaEnv {
     readonly BASE_URL: string;

@@ -1,23 +1,24 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/renderer.ts
-// НАЗНАЧЕНИЕ: Главный режиссёрский композитор UNIVERSE v2.0 (MASTER 00–05)
+// НАЗНАЧЕНИЕ: Главный режиссёрский композитор и клиентский загрузчик UNIVERSE v2.0
 // ЗАДАЧИ ФАЙЛА:
 // 1. Выполнять фиксированный шаг физики (FIXED_DT = 1/120 с) через accumulator
 //    и плавно интерполировать координаты рендера между prevX/prevY и x/y.
 // 2. Соблюдать строгую палитру MASTER 00 (#020308, #03050A, #060B19, #7DD3FC,
 //    #38BDF8, #1E1B4B, #6366F1, #8B5CF6, #F8FAFC, #F59E0B) и Blue-Noise дизеринг.
-// 3. Рисовать 4 эшелона глубины (Z0..Z3), тёмные пылевые каньоны поглощения,
+// 3. Рисовать 4 эшелона глубины (Z0-Z3), тёмные пылевые каньоны поглощения,
 //    5 кеплеровских колец в полушариях мозга, сплайны Мюррея и LUT-импульсы.
 // 4. Выводить в X-RAY неперекрывающиеся выноски с гистерезисом и тегом языка-владельца.
-// 5. Исполнять Акт C (2500 мс живой тишины D-1) и Акт D (3D-барабаны Odometer
-//    через cipherOdometerEngine со 100%-ной фиксацией всех 5 строк).
+// 5. Исполнять Акт C (2500 мс живой тишины D-1), Акт D (3D-барабаны Odometer)
+//    и монтировать все 4 реактивных острова Layer2-Layer5 при загрузке страницы.
 // ============================================================================
 
-import { universeStore, type PhaseId } from '../store/universeState';
+import { universeStore, type PhaseId, type UniverseState } from '../store/universeState';
 import { stressStore } from '../store/stressState';
 import { integrationRegistry } from '../core/integrationRegistry';
 import { cipherOdometerEngine } from '../bridge/cipherOdometerEngine';
+import { pythonSocketClient } from '../bridge/pythonSocketClient';
 import {
     VoidPhaseSimulation,
     BRAIN_HEMISPHERE_LOBES,
@@ -27,6 +28,10 @@ import {
 } from '../phases/01_void';
 import { RenderPipeline } from './pipeline';
 import { audioSync } from '../utils/audioSync';
+import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
+import { mountLayer3Topology } from '../layers/Layer3_Topology';
+import { mountLayer4Terminal } from '../layers/Layer4_Terminal';
+import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
 
 // ----------------------------------------------------------------------------
 // 1. СТРОГАЯ ЦВЕТОВАЯ КОНСТИТУЦИЯ MASTER 00 (БЕЗ КОРИЧНЕВЫХ И КИСЛОТНЫХ ТОНОВ)
@@ -119,7 +124,6 @@ const PHASE_VISUAL_THEMES: Record<PhaseId, PhaseVisualTheme> = {
     },
 };
 
-// Кеплеровские радиусы 5 встречных колец для визуализации каркаса D-3
 const KEPLER_RINGS_NORMS: ReadonlyArray<number> = [0.22, 0.36, 0.52, 0.70, 0.88];
 
 export class UniverseRenderer {
@@ -128,7 +132,6 @@ export class UniverseRenderer {
     private animationFrameId: number | null = null;
     private lastTimestamp = 0;
 
-    // Фиксированный шаг физики (dt = 1/120 с) и аккумулятор для независимости от FPS (MASTER 00)
     private readonly fixedPhysicsDt = 1 / 120;
     private physicsAccumulator = 0;
     private renderInterpAlpha = 1.0;
@@ -141,7 +144,6 @@ export class UniverseRenderer {
     private lastTrackedCycle = universeStore.getState().cycleCount;
     private restartCollapseElapsed = 0;
 
-    // Кэш позиций выносок X-RAY для гистерезиса (чтобы подписи не прыгали между кадрами)
     private calloutHysteresisMap: Map<number, { x: number; y: number }> = new Map();
 
     constructor(canvas: HTMLCanvasElement) {
@@ -273,7 +275,6 @@ export class UniverseRenderer {
         const uState = universeStore.getState();
         if (uState.isTabHidden) return;
 
-        // Ограничение кадрового deltaTime <= 0.1 с по правилу 3 MASTER 00
         const frameDtSec = Math.min(rawDeltaMs / 1000, 0.1);
 
         if (
@@ -320,7 +321,6 @@ export class UniverseRenderer {
             );
         }
 
-        // Фиксированный шаг физики через accumulator (MASTER 00 правило 3)
         if (!uState.isPaused) {
             const scaledFrameDt = frameDtSec * uState.timeScale;
             this.simulationTimeSec += scaledFrameDt;
@@ -372,7 +372,7 @@ export class UniverseRenderer {
     }
 
     // --------------------------------------------------------------------------
-    // 4. ГЛАВНЫЙ КОНВЕЙЕР ОТРИСОВКИ СЦЕНЫ (4 ЭШЕЛОНА ГЛУБИНЫ Z0..Z3)
+    // 4. ГЛАВНЫЙ КОНВЕЙЕР ОТРИСОВКИ СЦЕНЫ (4 ЭШЕЛОНА ГЛУБИНЫ Z0-Z3)
     // --------------------------------------------------------------------------
     private renderScene(): void {
         const ctx = this.pipeline.getContext();
@@ -385,7 +385,6 @@ export class UniverseRenderer {
         const cx = width * 0.5;
         const cy = height * 0.5;
 
-        // 1. Глубокий вакуум (#060B19 -> #03050A -> #020308) + Blue-Noise дизеринг против banding
         const bgGrad = ctx.createRadialGradient(cx, cy, 12, cx, cy, Math.max(width, height) * 0.75);
         bgGrad.addColorStop(0, theme.bgCenter);
         bgGrad.addColorStop(0.54, theme.bgMid);
@@ -401,15 +400,11 @@ export class UniverseRenderer {
             ctx.restore();
         }
 
-        // АКТ C (93.0–95.5 с): РОВНО 2,5 СЕКУНДЫ ЖИВОЙ ТИШИНЫ ПО РЕШЕНИЮ D-1
-        // Звук отсутствует полностью; частицы, панели и хвосты неподвижны.
-        // Видны только статичное тонкое кольцо горизонта и медленное дыхание ядра (<= 0.2 Гц, <= 3%).
         if (uState.singularityAct === 'ACT_C_ZERO_SILENCE') {
             this.renderLivingSilenceHorizonD1(ctx, cx, cy, uState.zeroSilenceElapsedMs / 1000, theme);
             return;
         }
 
-        // АКТ D (95.5–108 с): 3D-БАРАБАНЫ ODOMETER И ГЕОДЕЗИЧЕСКАЯ РАМКА КАРТОЧКИ GITHUB
         if (
             uState.singularityAct === 'ACT_D_GITHUB_CARD' ||
             uState.singularityAct === 'RESTART_COLLAPSE'
@@ -431,10 +426,8 @@ export class UniverseRenderer {
         const edges = this.simulation.getEdges();
         const pulses = this.simulation.getPulses();
 
-        // 2. ЭШЕЛОН Z3 (DEEP LAYER): Координатная сетка X-RAY (внутри BREACH LENS, в LOGIC или X-RAY)
         this.renderTruthCoordinateGrid(ctx, width, height, theme.axonColor, fullXRay);
 
-        // 3. ЭШЕЛОН Z2 (BACKGROUND): Cross-fade фоновых образов предыдущей и текущей фазы
         const smoothMix =
             this.phaseTransitionBlend *
             this.phaseTransitionBlend *
@@ -460,19 +453,14 @@ export class UniverseRenderer {
         this.renderPhaseSignatureBackdrop(ctx, width, height, cx, cy, uState.currentPhase, theme);
         ctx.restore();
 
-        // 4. FX 01: Объёмные FBM-туманности с тёмными пылевыми каньонами поглощения и rim light #7DD3FC
         this.renderAnisotropicNebulaeWithCanyons(ctx, width, height, particles, theme);
         this.renderCosmicStreamlineFilaments(ctx, width, height, theme);
 
-        // 5. ЭШЕЛОН Z1 (MIDGROUND): 3 класса сплайнов Безье по закону Мюррея и LUT-пакеты импульсов
         if (uState.layers.layer3_topologyGraph || fullXRay) {
             this.renderSynapticBrainNetworkAndComets(ctx, edges, pulses, theme, fullXRay);
         }
 
-        // 6. ЭШЕЛОН Z1 и Z0 (FOREGROUND BOKEH): Сомы нейронов, дендриты и кольца интерференции #F59E0B
         this.renderNeuronsAndSynapticRings(ctx, particles, theme, fullXRay);
-
-        // 7. FX 03: Оптическая мембрана BREACH LENS, микротрещины, подсказка 60с и выноски с владельцем
         this.renderBreachLensAndCallouts(ctx, sState, particles, theme.axonColor, fullXRay);
 
         ctx.restore();
@@ -489,18 +477,15 @@ export class UniverseRenderer {
         theme: PhaseVisualTheme
     ): void {
         ctx.save();
-        // Медленное дыхание ядра <= 0.2 Гц с амплитудой <= 3% (Решение D-1 MASTER 00)
         const breathScale = 1.0 + Math.sin(silenceSec * Math.PI * 2 * 0.2) * 0.028;
         const horizonRadius = 38 * breathScale;
 
-        // Статичное тонкое кольцо горизонта событий (hairline 0.8 px)
         ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, 0.34);
         ctx.lineWidth = 0.85;
         ctx.beginPath();
         ctx.arc(cx, cy, horizonRadius, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Крошечное жемчужное ядро в центре
         const coreGrad = ctx.createRadialGradient(cx, cy, 0.5, cx, cy, 14 * breathScale);
         coreGrad.addColorStop(0, '#f8fafc');
         coreGrad.addColorStop(0.4, RenderPipeline.hexToRgba('#7dd3fc', 0.28));
@@ -510,7 +495,6 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, 14 * breathScale, 0, Math.PI * 2);
         ctx.fill();
 
-        // В последние 0.45 с тишины (2.05–2.50 с) из остаточного свечения рождаются первые тихие глифы
         if (silenceSec > 2.05) {
             const glyphAlpha = ((silenceSec - 2.05) / 0.45) * 0.28;
             const seedGlyphs = ['U', 'N', 'V', 'S', '0', '1'];
@@ -521,14 +505,17 @@ export class UniverseRenderer {
 
             for (let i = 0; i < seedGlyphs.length; i++) {
                 const a = (i / seedGlyphs.length) * Math.PI * 2;
-                ctx.fillText(seedGlyphs[i], cx + Math.cos(a) * (horizonRadius + 14), cy + Math.sin(a) * (horizonRadius + 14));
+                ctx.fillText(
+                    seedGlyphs[i],
+                    cx + Math.cos(a) * (horizonRadius + 14),
+                    cy + Math.sin(a) * (horizonRadius + 14)
+                );
             }
         }
 
         ctx.restore();
     }
 
-    // АКТ D: Отрисовка 3D-барабанов Odometer через cipherOdometerEngine (100% фиксация всех 5 строк!)
     private renderOdometerReelsAndGeodesicCard(
         ctx: CanvasRenderingContext2D,
         width: number,
@@ -543,17 +530,14 @@ export class UniverseRenderer {
 
         ctx.save();
 
-        // 1. Геодезическая сборка голографической рамки карточки из световых линий (MASTER 05)
         const cardW = Math.min(760, width * 0.92);
         const cardH = Math.min(310, height * 0.62);
         const left = cx - cardW * 0.5;
         const top = cy - cardH * 0.5 - 12;
 
-        // Мягкая графитово-индиговая подложка карточки
         ctx.fillStyle = RenderPipeline.hexToRgba('#060b19', 0.68 * p);
         ctx.fillRect(left, top, cardW, cardH * p);
 
-        // Геодезические контурные линии (hairline 0.9 px)
         ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, 0.38 * p);
         ctx.lineWidth = 0.9;
         ctx.beginPath();
@@ -563,7 +547,6 @@ export class UniverseRenderer {
         ctx.lineTo(cx + cardW * 0.5 * p, top + cardH);
         ctx.stroke();
 
-        // 2. Вычисление и отрисовка ячеек 3D-барабанов Odometer (cipherOdometerEngine)
         const cells = cipherOdometerEngine.evaluateCells(width, height, p, reducedMotion);
 
         ctx.textAlign = 'center';
@@ -580,7 +563,6 @@ export class UniverseRenderer {
                 ctx.save();
                 ctx.translate(cell.currentX, cell.currentY);
 
-                // Тонкая рамка окна барабана счётчика во время вращения
                 ctx.fillStyle = 'rgba(3, 5, 10, 0.72)';
                 ctx.strokeStyle = RenderPipeline.hexToRgba('#38bdf8', 0.35);
                 ctx.lineWidth = 0.65;
@@ -591,11 +573,9 @@ export class UniverseRenderer {
                 ctx.rect(-cell.stepWidthPx * 0.48, -slotH * 0.54, cell.stepWidthPx * 0.96, slotH * 1.08);
                 ctx.clip();
 
-                // Верхняя грань барабана в перспективе
                 ctx.fillStyle = RenderPipeline.hexToRgba('#7dd3fc', 0.32 * spinFade);
                 ctx.fillText(cell.upperChar, 0, (cell.wheelPhaseFrac - 0.82) * slotH);
 
-                // Текущая центральная грань барабана с перспективным 3D-сжатием
                 ctx.save();
                 ctx.translate(0, cell.wheelPhaseFrac * slotH * 0.42);
                 ctx.scale(1.0, cell.verticalScale);
@@ -603,13 +583,11 @@ export class UniverseRenderer {
                 ctx.fillText(cell.primaryChar, 0, 0);
                 ctx.restore();
 
-                // Нижняя грань барабана в перспективе
                 ctx.fillStyle = RenderPipeline.hexToRgba('#38bdf8', 0.32 * spinFade);
                 ctx.fillText(cell.lowerChar, 0, (cell.wheelPhaseFrac + 0.82) * slotH);
 
                 ctx.restore();
             } else {
-                // Зафиксированная буква (без дрожи!) с коротким янтарно-циановым импульсом в момент lock
                 ctx.save();
                 ctx.translate(cell.targetX, cell.targetY);
 
@@ -651,13 +629,12 @@ export class UniverseRenderer {
         if (phase === '01_VOID') {
             const phaseSec = uState.telemetry.phaseElapsedSec;
 
-            // Наклонные 3D-фронты ряби с гравитационным чирпом после 3.0 с (Решение D-6)
             if (phaseSec >= 2.8) {
                 const fade = Math.min(1.0, (phaseSec - 2.8) / 1.5);
                 for (let r = 0; r < 6; r++) {
                     const waveProg = (t * 0.24 + r / 6) % 1.0;
                     const rx = width * 0.46 * waveProg;
-                    const ry = height * 0.36 * waveProg; // Наклон ~62°
+                    const ry = height * 0.36 * waveProg;
                     const alpha = Math.sin(waveProg * Math.PI) * 0.22 * fade;
 
                     ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, alpha);
@@ -668,7 +645,6 @@ export class UniverseRenderer {
                 }
             }
 
-            // Жемчужно-янтарная Точка Нуля с тонкой короной и анаморфным горизонтальным штрихом
             const zeroGrad = ctx.createRadialGradient(cx, cy, 1, cx, cy, 64);
             zeroGrad.addColorStop(0, '#f8fafc');
             zeroGrad.addColorStop(0.22, RenderPipeline.hexToRgba('#f59e0b', 0.65));
@@ -679,7 +655,6 @@ export class UniverseRenderer {
             ctx.arc(cx, cy, 64, 0, Math.PI * 2);
             ctx.fill();
 
-            // Тонкий анаморфный штрих Точки Нуля (MASTER 00 раздел 3)
             const streakW = Math.min(280, width * 0.24);
             const streakGrad = ctx.createLinearGradient(cx - streakW, cy, cx + streakW, cy);
             streakGrad.addColorStop(0, 'rgba(125, 211, 252, 0)');
@@ -712,7 +687,6 @@ export class UniverseRenderer {
                 ctx.stroke();
             }
         } else if (phase === '03_EVOLUTION') {
-            // 1. Внутренний кинематический каркас из 5 встречных кеплеровских колец (Решение D-3)
             for (let k = 0; k < KEPLER_RINGS_NORMS.length; k++) {
                 const ratio = KEPLER_RINGS_NORMS[k];
                 ctx.strokeStyle = RenderPipeline.hexToRgba(theme.axonColor, 0.11);
@@ -722,7 +696,6 @@ export class UniverseRenderer {
                 ctx.stroke();
             }
 
-            // 2. Объёмная скульптурная оболочка двух полушарий вокруг 5 колец с бороздами извилин
             for (let h = -1; h <= 1; h += 2) {
                 const hx = cx + h * (width * 0.19);
                 const rx = width * 0.235;
@@ -761,7 +734,6 @@ export class UniverseRenderer {
                 }
             }
         } else if (phase === '04_COLLAPSE') {
-            // 5 наклонных колец как носители упругого натяжения в фазе TENSION / BREACH (Решение D-3)
             const tilts = [-0.46, -0.22, 0.0, 0.22, 0.46];
             for (let g = 0; g < 5; g++) {
                 ctx.save();
@@ -783,7 +755,6 @@ export class UniverseRenderer {
                     ? Math.max(0.04, Math.pow(1.0 - (uState.singularityActProgress - 0.55) / 0.45, 2.4))
                     : 1.0;
 
-            // Полярные джеты с лёгкой прецессией
             const precession = Math.sin(t * 0.9) * 0.045;
             const jetLen = height * 0.45 * collapseScale;
             ctx.save();
@@ -803,7 +774,6 @@ export class UniverseRenderer {
             ctx.stroke();
             ctx.restore();
 
-            // Гравитационно-линзированное гало и тонкое фотонное кольцо вокруг чёрной сферы (MASTER 05)
             const haloR = Math.min(width, height) * 0.23 * collapseScale;
             const diskGrad = ctx.createRadialGradient(cx, cy, haloR * 0.22, cx, cy, haloR * 1.48);
             diskGrad.addColorStop(0, '#020308');
@@ -817,16 +787,15 @@ export class UniverseRenderer {
             ctx.arc(cx, cy, haloR * 1.48, 0, Math.PI * 2);
             ctx.fill();
 
-            // Наклонный экваториальный диск с допплеровским усилением (левое крыло ярче правого)
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(-0.14);
             const diskW = width * 0.42 * collapseScale;
             const dopplerGrad = ctx.createLinearGradient(-diskW, 0, diskW, 0);
             dopplerGrad.addColorStop(0, 'rgba(125, 211, 252, 0)');
-            dopplerGrad.addColorStop(0.28, RenderPipeline.hexToRgba('#f8fafc', 0.72)); // Яркое приближающееся крыло
+            dopplerGrad.addColorStop(0.28, RenderPipeline.hexToRgba('#f8fafc', 0.72));
             dopplerGrad.addColorStop(0.5, RenderPipeline.hexToRgba('#f59e0b', 0.65));
-            dopplerGrad.addColorStop(0.76, RenderPipeline.hexToRgba('#38bdf8', 0.24)); // Тусклое удаляющееся крыло
+            dopplerGrad.addColorStop(0.76, RenderPipeline.hexToRgba('#38bdf8', 0.24));
             dopplerGrad.addColorStop(1, 'rgba(30, 27, 75, 0)');
 
             ctx.fillStyle = dopplerGrad;
@@ -835,7 +804,6 @@ export class UniverseRenderer {
             ctx.fill();
             ctx.restore();
 
-            // Тёмная сфера горизонта событий и тонкое фотонное кольцо
             const eventHorizonR = Math.max(4, 34 * collapseScale);
             ctx.fillStyle = '#020308';
             ctx.beginPath();
@@ -882,7 +850,6 @@ export class UniverseRenderer {
             const rx = width * 0.22;
             const ry = height * 0.155;
 
-            // Анизотропное внутреннее освещение I / (1 + k1*d + k2*d²) только для соседнего облака
             let internalLight = 0;
             if (activeNode) {
                 const d = Math.hypot(activeNode.x - lx, activeNode.y - ly);
@@ -905,14 +872,12 @@ export class UniverseRenderer {
             ctx.arc(0, 0, rx, 0, Math.PI * 2);
             ctx.fill();
 
-            // Холодный контровой свет (#7DD3FC / #38BDF8) на перепаде плотности газовой складки
             ctx.strokeStyle = RenderPipeline.hexToRgba(theme.rimLightColor, 0.07 + internalLight * 0.11);
             ctx.lineWidth = 1.6;
             ctx.beginPath();
             ctx.arc(0, 0, rx * 0.62, -0.68, 0.68);
             ctx.stroke();
 
-            // Тёмный пылевой каньон поглощения света (#020308, никаких коричневых полос!)
             const canyonGrad = ctx.createLinearGradient(0, -26, 0, 26);
             canyonGrad.addColorStop(0, 'rgba(2, 3, 8, 0)');
             canyonGrad.addColorStop(0.5, RenderPipeline.hexToRgba(theme.canyonShadow, 0.56));
@@ -968,7 +933,6 @@ export class UniverseRenderer {
         theme: PhaseVisualTheme,
         fullXRay: boolean
     ): void {
-        // 1. Отрисовка 3 классов кривых с толщиной по закону Мюррея и afterglow
         for (let i = 0; i < edges.length; i++) {
             const edge = edges[i];
             const glow = edge.afterglow;
@@ -990,7 +954,6 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // 2. Движение пакетов импульсов строго по таблице длины дуги (samplePulsePoint LUT)
         for (let i = 0; i < pulses.length; i++) {
             const pulse = pulses[i];
             const tHead = pulse.progress;
@@ -1001,7 +964,6 @@ export class UniverseRenderer {
             const midPt = this.simulation.samplePulsePoint(pulse, tMid);
             const tailPt = this.simulation.samplePulsePoint(pulse, tTail);
 
-            // Затухающий хвост (10–22% длины ребра)
             ctx.strokeStyle = RenderPipeline.hexToRgba(theme.pulseTailColor, 0.52);
             ctx.lineWidth = 1.8;
             ctx.beginPath();
@@ -1009,7 +971,6 @@ export class UniverseRenderer {
             ctx.lineTo(midPt.x, midPt.y);
             ctx.stroke();
 
-            // Узкое яркое тело (6–14% длины ребра)
             ctx.strokeStyle = RenderPipeline.hexToRgba(theme.pulseHeadColor, 0.94);
             ctx.lineWidth = 2.6;
             ctx.beginPath();
@@ -1017,7 +978,6 @@ export class UniverseRenderer {
             ctx.lineTo(headPt.x, headPt.y);
             ctx.stroke();
 
-            // Ореол фронта импульса
             const pulseGlow = ctx.createRadialGradient(headPt.x, headPt.y, 0.5, headPt.x, headPt.y, 9);
             pulseGlow.addColorStop(0, '#f8fafc');
             pulseGlow.addColorStop(0.45, RenderPipeline.hexToRgba(theme.pulseTailColor, 0.68));
@@ -1043,7 +1003,6 @@ export class UniverseRenderer {
             const p = particles[i];
             if (p.energy <= 0.03) continue;
 
-            // Гладкая межкадровая интерполяция между prevX/prevY и x/y
             const interpX = p.prevX + (p.x - p.prevX) * alphaInterp;
             const interpY = p.prevY + (p.y - p.prevY) * alphaInterp;
 
@@ -1051,7 +1010,6 @@ export class UniverseRenderer {
             const drawX = interpX + refraction.dx;
             const drawY = interpY + refraction.dy;
 
-            // Эшелон Z0 (Foreground Bokeh): крупная расфокусированная пыль у объектива
             if (p.depthTier === 'FOREGROUND' && !fullXRay) {
                 const bokehR = p.radius * 4.4;
                 const grad = ctx.createRadialGradient(drawX, drawY, 0.5, drawX, drawY, bokehR);
@@ -1070,7 +1028,6 @@ export class UniverseRenderer {
 
             if (truthFactor < 0.85 || logicW > 0.2) {
                 const alpha = Math.min(1.0, 0.34 + p.energy * 0.54 + charge * 0.4);
-                // Янтарь #F59E0B используется ТОЛЬКО при интерференции сигналов в соме (MASTER 00 раздел 4)
                 const haloColor = flash > 0.2 ? '#f59e0b' : theme.somaHaloColor;
 
                 if (flash > 0.05) {
@@ -1098,11 +1055,10 @@ export class UniverseRenderer {
                 ctx.fill();
             }
 
-            // Инженерное представление в X-RAY и LOGIC: логарифмическое масштабирование векторов скорости
             if (truthFactor >= 0.35 || logicW > 0.35) {
                 const xrayAlpha = Math.max(truthFactor, logicW) * 0.84;
                 ctx.strokeStyle = RenderPipeline.hexToRgba(theme.axonColor, xrayAlpha);
-                ctx.lineWidth = 0.75; // Инженерные оси 0.5–0.8 px по MASTER 00
+                ctx.lineWidth = 0.75;
                 const s = p.radius * 2.1;
                 ctx.strokeRect(interpX - s * 0.5, interpY - s * 0.5, s, s);
 
@@ -1192,13 +1148,18 @@ export class UniverseRenderer {
         truthHex: string,
         fullXRay: boolean
     ): void {
-        // Однократная призрачная подсказка об интерактивности около 60 с (без текста, MASTER 00)
         if (sState.ghostHintAlpha > 0.01 && !fullXRay) {
             ctx.save();
             ctx.strokeStyle = RenderPipeline.hexToRgba('#7dd3fc', sState.ghostHintAlpha);
             ctx.lineWidth = 0.9;
             ctx.beginPath();
-            ctx.arc(sState.lensX, sState.lensY, 34 + Math.sin(this.simulationTimeSec * 3.0) * 6, 0, Math.PI * 2);
+            ctx.arc(
+                sState.lensX,
+                sState.lensY,
+                34 + Math.sin(this.simulationTimeSec * 3.0) * 6,
+                0,
+                Math.PI * 2
+            );
             ctx.stroke();
             ctx.restore();
         }
@@ -1220,7 +1181,6 @@ export class UniverseRenderer {
             ctx.lineWidth = sState.isBreaching ? 1.2 : 0.8;
             ctx.stroke();
 
-            // Детерминированные микротрещины (0.5–1.0 px) с вторичными ответвлениями
             for (let c = 0; c < sState.microCracks.length; c++) {
                 const crack = sState.microCracks[c];
                 const rimR = stressStore.getDeformedLensRadiusAtAngle(crack.anchorAngle, this.simulationTimeSec);
@@ -1271,7 +1231,6 @@ export class UniverseRenderer {
         }
     }
 
-    // Выноски X-RAY с гистерезисом, защитой от пересечений и меткой языка-владельца (Тест инженера)
     private renderOpticalCalloutsWithOwnerTags(
         ctx: CanvasRenderingContext2D,
         particles: ReadonlyArray<QuantumParticle>,
@@ -1299,7 +1258,6 @@ export class UniverseRenderer {
                 const targetLx = p.x + (dx >= 0 ? 18 : -168);
                 const targetLy = p.y - 10;
 
-                // Гистерезис позиции выноски (плавная привязка без межфреймового дрожания)
                 const prevPos = this.calloutHysteresisMap.get(p.id);
                 const lx = prevPos ? prevPos.x + (targetLx - prevPos.x) * 0.25 : targetLx;
                 const ly = prevPos ? prevPos.y + (targetLy - prevPos.y) * 0.25 : targetLy;
@@ -1334,5 +1292,160 @@ export class UniverseRenderer {
                 );
             }
         }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 9. АВТОМАТИЧЕСКАЯ ИНИЦИАЛИЗАЦИЯ СЦЕНЫ И ОСТРОВОВ ИНСПЕКЦИИ НА КЛИЕНТЕ
+// ----------------------------------------------------------------------------
+export function bootstrapUniverseV2(): void {
+    if (typeof document === 'undefined') return;
+    const canvas = document.getElementById('universe-canvas') as HTMLCanvasElement | null;
+    if (!canvas || canvas.getAttribute('data-bootstrapped') === 'true') return;
+    canvas.setAttribute('data-bootstrapped', 'true');
+
+    const renderer = new UniverseRenderer(canvas);
+    renderer.start();
+
+    pythonSocketClient.connect();
+
+    mountLayer2Metrics(document.getElementById('layer2-metrics-root'));
+    mountLayer3Topology(document.getElementById('layer3-topology-root'));
+    mountLayer4Terminal(document.getElementById('layer4-terminal-root'));
+    mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
+
+    const elHudRoot = document.getElementById('hud-overlay-root');
+    const elCodename = document.getElementById('ui-phase-codename');
+    const elTitle = document.getElementById('ui-phase-title');
+    const elSubtitle = document.getElementById('ui-phase-subtitle');
+    const elPhilosophy = document.getElementById('ui-phase-philosophy');
+    const elProgress = document.getElementById('ui-phase-progress');
+
+    const btnPause = document.getElementById('btn-toggle-pause');
+    const btnAutoCycle = document.getElementById('btn-toggle-autocycle');
+    const btnAudio = document.getElementById('btn-toggle-audio');
+    const btnMetrics = document.getElementById('btn-toggle-metrics');
+    const btnTopology = document.getElementById('btn-toggle-topology');
+    const btnTerminal = document.getElementById('btn-toggle-terminal');
+    const btnXRay = document.getElementById('btn-toggle-xray');
+    const phaseButtons = document.querySelectorAll<HTMLButtonElement>('[data-phase-id]');
+
+    let lastPhase: PhaseId = universeStore.getState().currentPhase;
+    let kioskRestartTimer: number | null = null;
+
+    universeStore.subscribe((state: Readonly<UniverseState>) => {
+        if (elCodename) elCodename.textContent = state.phaseMeta.codeName;
+        if (elTitle) elTitle.textContent = state.phaseMeta.titleRu;
+        if (elSubtitle) elSubtitle.textContent = state.phaseMeta.subtitleRu;
+        if (elPhilosophy) elPhilosophy.textContent = state.phaseMeta.philosophyRu;
+
+        if (elProgress) {
+            elProgress.style.width = `${Math.min(100, Math.round(state.telemetry.phaseProgress * 100))}%`;
+        }
+
+        const hideHudForFinale =
+            state.singularityAct === 'ACT_C_ZERO_SILENCE' ||
+            state.singularityAct === 'ACT_D_GITHUB_CARD' ||
+            state.singularityAct === 'RESTART_COLLAPSE';
+        elHudRoot?.classList.toggle('act-silence-hidden', hideHudForFinale);
+
+        if (
+            state.kioskMode &&
+            state.singularityAct === 'ACT_D_GITHUB_CARD' &&
+            state.githubCardAssemblyProgress >= 1.0 &&
+            kioskRestartTimer === null
+        ) {
+            kioskRestartTimer = window.setTimeout(() => {
+                kioskRestartTimer = null;
+                universeStore.triggerUniverseRestart();
+            }, 12000);
+        }
+
+        phaseButtons.forEach((btn) => {
+            const id = btn.getAttribute('data-phase-id');
+            btn.classList.toggle('active', id === state.currentPhase);
+        });
+
+        if (btnPause) {
+            btnPause.textContent = state.isPaused ? '▶ RESUME' : '⏸ PAUSE';
+            btnPause.classList.toggle('active-toggle', state.isPaused);
+        }
+        if (btnAutoCycle) {
+            btnAutoCycle.textContent = state.autoCyclePhases ? '🔄 AUTO: ON' : '🔄 AUTO: OFF';
+            btnAutoCycle.classList.toggle('active-toggle', state.autoCyclePhases);
+        }
+        if (btnAudio) {
+            const aStatus = state.telemetry.audioStatus;
+            btnAudio.textContent =
+                aStatus === 'PLAYING_MP3' || aStatus === 'PLAYING_SYNTH'
+                    ? '🔊 AUDIO: ON'
+                    : aStatus === 'MUTED'
+                        ? '🔇 AUDIO: OFF'
+                        : '🔊 AUDIO: CLICK';
+            btnAudio.classList.toggle('active-toggle', state.audioEnabled);
+        }
+        if (btnMetrics) {
+            btnMetrics.classList.toggle('active-toggle', state.layers.layer2_metricsHud);
+        }
+        if (btnTopology) {
+            btnTopology.classList.toggle('active-toggle', state.inspectionLevel === 'TOPOLOGY');
+        }
+        if (btnTerminal) {
+            btnTerminal.classList.toggle('active-toggle', state.layers.layer4_architectTerminal);
+        }
+        if (btnXRay) {
+            btnXRay.classList.toggle('active-toggle', state.layers.layer5_truthXRayMode);
+        }
+
+        if (state.currentPhase !== lastPhase) {
+            lastPhase = state.currentPhase;
+            audioSync.transitionToPhase(state.currentPhase);
+        }
+    });
+
+    phaseButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const phaseId = btn.getAttribute('data-phase-id') as PhaseId | null;
+            if (phaseId) universeStore.setPhase(phaseId);
+        });
+    });
+
+    btnPause?.addEventListener('click', () => universeStore.togglePause());
+    btnAutoCycle?.addEventListener('click', () => universeStore.toggleAutoCycle());
+    btnAudio?.addEventListener('click', () => {
+        const nextAudio = !universeStore.getState().audioEnabled;
+        audioSync.setEnabled(nextAudio);
+    });
+    btnMetrics?.addEventListener('click', () => universeStore.toggleLayer('layer2_metricsHud'));
+    btnTopology?.addEventListener('click', () => {
+        const current = universeStore.getState().inspectionLevel;
+        universeStore.setInspectionLevel(current === 'TOPOLOGY' ? 'COSMOS' : 'TOPOLOGY');
+    });
+    btnTerminal?.addEventListener('click', () =>
+        universeStore.toggleLayer('layer4_architectTerminal')
+    );
+    btnXRay?.addEventListener('click', () => universeStore.toggleLayer('layer5_truthXRayMode'));
+
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        if (e.key === '1') universeStore.setInspectionLevel('COSMOS');
+        else if (e.key === '2') universeStore.toggleLayer('layer2_metricsHud');
+        else if (e.key === '3') universeStore.setInspectionLevel('TOPOLOGY');
+        else if (e.key === '4') universeStore.toggleLayer('layer4_architectTerminal');
+        else if (e.key === '5') universeStore.toggleLayer('layer5_truthXRayMode');
+        else if (e.key.toLowerCase() === 'p') universeStore.togglePause();
+        else if (e.key.toLowerCase() === 'm') {
+            audioSync.setEnabled(!universeStore.getState().audioEnabled);
+        } else if (e.key.toLowerCase() === 'r' && e.shiftKey) {
+            universeStore.triggerUniverseRestart();
+        }
+    });
+}
+
+if (typeof window !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrapUniverseV2);
+    } else {
+        bootstrapUniverseV2();
     }
 }
