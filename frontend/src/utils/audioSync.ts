@@ -1,13 +1,14 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/utils/audioSync.ts
-// НАЗНАЧЕНИЕ: Гибридный аудио-движок MASTER 06 v2.1 (Бесшовный cosmic_ambient.mp3 + Плейлист)
+// НАЗНАЧЕНИЕ: Гибридный аудио-движок MASTER 06 v2.2 (Мгновенный старт без задержки)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Воспроизводить основной трек владельца '/audio/cosmic_ambient.mp3' непрерывно
-//    и без затянутых пауз/обрывов в 5-й фазе и в финале.
-// 2. Поддерживать массив-плейлист со слотами-заглушками для подключения будущих треков.
-// 3. Маршрутизировать звук через 4 шины Web Audio -> компрессор -> masterGain -> AnalyserNode.
-// 4. Вычислять сглаженные FFT-признаки (low, mid, high, rmsDb) с внутренним LFO при mute.
+// 1. Запускать основной трек '/audio/cosmic_ambient.mp3' с первых мгновений сцены
+//    без задержки и медленного раскачивания громкости.
+// 2. Разблокировать AudioContext при первом же движении мыши (pointermove),
+//    клике, касании экрана или нажатии клавиши.
+// 3. Непрерывно вести звук через все 5 фаз и финальный одометр без провалов в тишину.
+// 4. Вычислять сглаженные FFT-признаки (low, mid, high, rmsDb) для телеметрии.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -15,12 +16,9 @@ import { resourceLedger } from '../core/resourceLedger';
 import { DeterministicPRNG } from '../core/prng';
 import { universeStore, type PhaseId } from '../store/universeState';
 
-// ----------------------------------------------------------------------------
-// 1. ПЛЕЙЛИСТ ПРОЕКТА: ОСНОВНОЙ ТРЕК COSMIC_AMBIENT.MP3 + ЗАГЛУШКИ ДЛЯ БУДУЩИХ ТРЕКОВ
-// ----------------------------------------------------------------------------
 export const COSMIC_AUDIO_PLAYLIST: ReadonlyArray<string> = [
-    'audio/cosmic_ambient.mp3', // Активный основной трек проекта
-    // --- СЛОТЫ-ЗАГЛУШКИ ДЛЯ БУДУЩЕГО РАСШИРЕНИЯ ПЛЕЙЛИСТА (по кругу) ---
+    'audio/cosmic_ambient.mp3',
+    // Слоты-заглушки для расширения плейлиста:
     // 'audio/cosmic_genesis_02.mp3',
     // 'audio/cosmic_nexus_03.mp3',
     // 'audio/cosmic_singularity_04.mp3',
@@ -34,9 +32,6 @@ export interface SmoothedAudioFeatures {
     isUsingInternalLfo: boolean;
 }
 
-// ----------------------------------------------------------------------------
-// 2. КЛАСС ГИБРИДНОГО АУДИО-СИНТЕЗАТОРА И МЕНЕДЖЕРА ПЛЕЙЛИСТА (V2.1)
-// ----------------------------------------------------------------------------
 class CosmicAudioSynthesizer {
     private ctx: AudioContext | null = null;
     private masterGain: GainNode | null = null;
@@ -66,13 +61,14 @@ class CosmicAudioSynthesizer {
     };
 
     private isInitialized = false;
+    private isPlaying = false;
     private isMutedByUser = false;
-    private currentVolume = 0.82;
+    private currentVolume = 0.85;
     private lfoClockSec = 0;
 
     constructor() {
         if (typeof window !== 'undefined') {
-            this.setupPlaylistAndAutoUnlock();
+            this.setupPlaylistAndInstantUnlock();
         }
     }
 
@@ -83,12 +79,13 @@ class CosmicAudioSynthesizer {
         return `${cleanBase}${cleanRel}`;
     }
 
-    private setupPlaylistAndAutoUnlock(): void {
+    private setupPlaylistAndInstantUnlock(): void {
         const firstTrackUrl = this.resolveAssetUrl(COSMIC_AUDIO_PLAYLIST[0]);
         this.mp3Audio = new Audio(firstTrackUrl);
         this.mp3Audio.loop = COSMIC_AUDIO_PLAYLIST.length <= 1;
         this.mp3Audio.volume = this.currentVolume;
         this.mp3Audio.preload = 'auto';
+        this.mp3Audio.load();
 
         this.mp3Audio.addEventListener('ended', () => {
             if (COSMIC_AUDIO_PLAYLIST.length > 1) {
@@ -98,8 +95,8 @@ class CosmicAudioSynthesizer {
 
         universeStore.setAudioEnabled(false, 'AWAITING_GESTURE');
 
-        const unlockAndPlay = () => {
-            if (this.isMutedByUser || !this.mp3Audio) return;
+        const unlockAndPlayImmediately = () => {
+            if (this.isMutedByUser || this.isPlaying || !this.mp3Audio) return;
 
             this.initWebAudioGraph();
             if (this.ctx && this.ctx.state === 'suspended') {
@@ -109,10 +106,13 @@ class CosmicAudioSynthesizer {
             this.mp3Audio
                 .play()
                 .then(() => {
+                    this.isPlaying = true;
                     if (this.masterGain && this.ctx) {
                         const now = this.ctx.currentTime;
-                        this.masterGain.gain.setValueAtTime(0.05, now);
-                        this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 1.5);
+                        // Быстрый старт звука за 0.25 с без долгой паузы в начале 1-го акта
+                        this.masterGain.gain.cancelScheduledValues(now);
+                        this.masterGain.gain.setValueAtTime(0.38, now);
+                        this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 0.25);
                     }
                     universeStore.setAudioEnabled(true, 'PLAYING_MP3');
                     removeUnlockListeners();
@@ -123,22 +123,24 @@ class CosmicAudioSynthesizer {
         };
 
         const removeUnlockListeners = () => {
-            window.removeEventListener('pointerdown', unlockAndPlay);
-            window.removeEventListener('keydown', unlockAndPlay);
-            window.removeEventListener('touchstart', unlockAndPlay);
+            window.removeEventListener('pointerdown', unlockAndPlayImmediately);
+            window.removeEventListener('pointermove', unlockAndPlayImmediately);
+            window.removeEventListener('mousemove', unlockAndPlayImmediately);
+            window.removeEventListener('wheel', unlockAndPlayImmediately);
+            window.removeEventListener('keydown', unlockAndPlayImmediately);
+            window.removeEventListener('touchstart', unlockAndPlayImmediately);
         };
 
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-            setTimeout(unlockAndPlay, 120);
-        } else {
-            window.addEventListener('DOMContentLoaded', () => setTimeout(unlockAndPlay, 120), {
-                once: true,
-            });
-        }
+        // Попытка мгновенного автозапуска в 0 мс (если разрешено политикой браузера)
+        unlockAndPlayImmediately();
 
-        window.addEventListener('pointerdown', unlockAndPlay, { passive: true });
-        window.addEventListener('keydown', unlockAndPlay, { passive: true });
-        window.addEventListener('touchstart', unlockAndPlay, { passive: true });
+        // Разблокировка при малейшем движении мыши или касании
+        window.addEventListener('pointerdown', unlockAndPlayImmediately, { passive: true });
+        window.addEventListener('pointermove', unlockAndPlayImmediately, { passive: true });
+        window.addEventListener('mousemove', unlockAndPlayImmediately, { passive: true });
+        window.addEventListener('wheel', unlockAndPlayImmediately, { passive: true });
+        window.addEventListener('keydown', unlockAndPlayImmediately, { passive: true });
+        window.addEventListener('touchstart', unlockAndPlayImmediately, { passive: true });
     }
 
     public advanceToNextTrackInPlaylist(): void {
@@ -178,10 +180,10 @@ class CosmicAudioSynthesizer {
             this.timeDomainArray = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
 
             this.bedBus = this.ctx.createGain();
-            this.bedBus.gain.value = 0.94;
+            this.bedBus.gain.value = 0.96;
             this.bedFilter = this.ctx.createBiquadFilter();
             this.bedFilter.type = 'lowpass';
-            this.bedFilter.frequency.value = 2600;
+            this.bedFilter.frequency.value = 3200;
             this.bedBus.connect(this.bedFilter);
             this.bedFilter.connect(this.compressor);
 
@@ -248,16 +250,20 @@ class CosmicAudioSynthesizer {
             }
             this.mp3Audio.volume = this.currentVolume;
             if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.15);
+                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.08);
             }
             this.mp3Audio
                 .play()
-                .then(() => universeStore.setAudioEnabled(true, 'PLAYING_MP3'))
+                .then(() => {
+                    this.isPlaying = true;
+                    universeStore.setAudioEnabled(true, 'PLAYING_MP3');
+                })
                 .catch(() => universeStore.setAudioEnabled(false, 'AWAITING_GESTURE'));
         } else {
             this.mp3Audio.pause();
+            this.isPlaying = false;
             if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(0.0, this.ctx.currentTime, 0.08);
+                this.masterGain.gain.setTargetAtTime(0.0, this.ctx.currentTime, 0.06);
             }
             universeStore.setAudioEnabled(false, 'MUTED');
         }
@@ -269,16 +275,15 @@ class CosmicAudioSynthesizer {
             this.mp3Audio.volume = this.currentVolume;
         }
         if (this.masterGain && this.ctx) {
-            this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.1);
+            this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.08);
         }
         universeStore.setAudioVolume(this.currentVolume);
     }
 
     public transitionToPhase(_phase: PhaseId): void {
-        // Основной трек cosmic_ambient.mp3 звучит непрерывно через все 5 фаз и финал
+        // Трек звучит непрерывно без перезапусков и пауз между фазами
     }
 
-    // Бесшовная модуляция без принудительного глушения музыки в финале
     public updateRealtimeModulation(
         breachRadius: number,
         isBreaching: boolean,
@@ -291,15 +296,15 @@ class CosmicAudioSynthesizer {
         if (this.mp3Audio && !this.isMutedByUser) {
             this.mp3Audio.volume = this.currentVolume;
             if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.15);
+                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.12);
             }
         }
 
         if (this.isInitialized && this.ctx && this.bedFilter && this.analyser && !this.isMutedByUser) {
-            const baseFreq = 2200;
+            const baseFreq = 2600;
             const boost = fullXRay ? 2000 : breachRadius * (isBreaching ? 4.4 : 1.5) + globalStress * 480;
             this.bedFilter.frequency.setTargetAtTime(
-                Math.min(5800, baseFreq + boost),
+                Math.min(6200, baseFreq + boost),
                 this.ctx.currentTime,
                 0.12
             );

@@ -1,0 +1,71 @@
+# ============================================================================
+# ФАЙЛ: .github/workflows/deploy.yml
+# НАЗНАЧЕНИЕ: Автоматическая проверка паритета (Python/TS) и деплой на GitHub Pages
+# ЗАДАЧИ ФАЙЛА:
+# 1. Проверить побитовый паритет Golden-векторов и пакетов 'UNVS' в Python-ядре.
+# 2. Установить зависимости фронтенда и собрать продакшен-бандл Astro/TypeScript.
+# 3. Опубликовать статический артефакт frontend/dist на GitHub Pages.
+# ============================================================================
+
+name: Deploy UNIVERSE to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11 for Backend Parity Verification
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify Python Core Golden PRNG & Binary Packet Parity
+        run: python -m backend.main --verify
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Build Astro Production Bundle
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./frontend/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
