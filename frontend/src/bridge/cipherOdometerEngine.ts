@@ -1,17 +1,18 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
-// НАЗНАЧЕНИЕ: Движок квантового одометра v2.3 (монохромно-теневая гамма,
-//             хаотичная скорость центральной строки и кардио-дыхание визитки)
+// НАЗНАЧЕНИЕ: Движок квантового одометра v2.4 (монохромно-теневая гамма без рыжего цвета,
+//             хаотичная скорость центральной строки и C∞-гладкое кардио-дыхание визитки)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
 // 1. Канонический манифест (CANONICAL_FINALE_LINES) и палитра полутонов
-//    (MONOCHROME_NEBULA_PALETTE): серо-чёрно-бело-голубоватые оттенки с тенями.
+//    (MONOCHROME_NEBULA_PALETTE): серо-чёрно-бело-голубоватые оттенки с тенями
+//    (полностью исключен ржаво-рыжий цвет).
 // 2. Контракт ячейки барабана (OdometerGlyphCellState): геометрия, фаза колеса,
-//    верхний/основной/нижний глифы, параметры свечения, теней и дыхания.
-// 3. Стохастический интегратор скорости: некратные гармоники для хаотичного
-//    ускорения и замедления центральной бегущей строки (индекс 2).
-// 4. Интерактивный отклик при наведении (notifyPointerHover) и кардио-пульсация
-//    зафиксированных строк (0, 1, 3, 4) в такт музыкальной теме.
+//    параметры свечения, теней и дыхания.
+// 3. Стохастический интегратор скорости (Ornstein-Uhlenbeck / хаотичные гармоники)
+//    и устранение скачков через гладкую суперпозицию синусоид C∞.
+// 4. Интерактивный отклик при наведении (notifyPointerHover) и плавное
+//    кардио-дыхание зафиксированных строк в такт музыкальной теме.
 // ============================================================================
 
 import { DeterministicPRNG } from '../core/prng';
@@ -37,7 +38,7 @@ const QUANTUM_STREAM_GLYPHS =
 
 /**
  * Благородная серо-чёрно-бело-голубоватая палитра с полутонами и глубокими тенями
- * для центральной бегущей строки и перебора символов при наведении курсора.
+ * (полностью заменен ржаво-рыжий цвет на холодные стальные и жемчужные полутона).
  */
 const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
     colorHex: string;
@@ -46,23 +47,23 @@ const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
 }> = [
     {
         colorHex: '#f8fafc',
-        shadowColor: 'rgba(186, 230, 253, 0.52)',
-        shadowBlur: 12,
+        shadowColor: 'rgba(186, 230, 253, 0.58)',
+        shadowBlur: 14,
     },
     {
         colorHex: '#cbd5e1',
         shadowColor: 'rgba(15, 23, 42, 0.95)',
-        shadowBlur: 9,
+        shadowBlur: 10,
     },
     {
         colorHex: '#94a3b8',
         shadowColor: 'rgba(2, 6, 23, 0.96)',
-        shadowBlur: 10,
+        shadowBlur: 11,
     },
     {
         colorHex: '#bae6fd',
-        shadowColor: 'rgba(125, 211, 252, 0.42)',
-        shadowBlur: 14,
+        shadowColor: 'rgba(125, 211, 252, 0.45)',
+        shadowBlur: 15,
     },
     {
         colorHex: '#64748b',
@@ -70,19 +71,19 @@ const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
         shadowBlur: 8,
     },
     {
-        colorHex: '#475569',
-        shadowColor: 'rgba(0, 0, 0, 0.98)',
-        shadowBlur: 7,
+        colorHex: '#38bdf8',
+        shadowColor: 'rgba(56, 189, 248, 0.42)',
+        shadowBlur: 13,
     },
     {
         colorHex: '#7dd3fc',
-        shadowColor: 'rgba(56, 189, 248, 0.38)',
-        shadowBlur: 11,
+        shadowColor: 'rgba(125, 211, 252, 0.48)',
+        shadowBlur: 14,
     },
     {
         colorHex: '#e2e8f0',
         shadowColor: 'rgba(30, 41, 59, 0.92)',
-        shadowBlur: 10,
+        shadowBlur: 11,
     },
 ];
 
@@ -123,18 +124,11 @@ export class CipherOdometerEngine {
     private pointerY = -9999;
     private readonly hoverExcitedUntilMs: Map<number, number> = new Map();
 
-    /**
-     * Обновляет координаты указателя мыши для возбуждения короткой прокрутки (0.85 с)
-     * при наведении на зафиксированные буквы манифеста.
-     */
     public notifyPointerHover(clientX: number, clientY: number): void {
         this.pointerX = clientX;
         this.pointerY = clientY;
     }
 
-    /**
-     * Вычисляет адаптивную типографику строки в зависимости от ширины экрана.
-     */
     private getLineTypography(
         lineIndex: number,
         charCount: number,
@@ -181,11 +175,6 @@ export class CipherOdometerEngine {
         return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
 
-    /**
-     * Вычисляет нелинейный интеграл фазы для хаотичной скорости вращения барабана:
-     * сочетает базовый дрейф и несоизмеримые гармоники, чтобы символы двигались
-     * то быстрее, то медленнее, с плавными замираниями и всплесками.
-     */
     private computeChaoticWheelPosition(
         liveTimeSec: number,
         r1: number,
@@ -205,9 +194,6 @@ export class CipherOdometerEngine {
         return liveTimeSec * baseRate + slowChaos + midChaos + fastFlutter + r2 * 14.0;
     }
 
-    /**
-     * Вычисляет состояние всех символьных барабанов для текущего кадра.
-     */
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
@@ -221,13 +207,10 @@ export class CipherOdometerEngine {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
-        // Двухфазное кардио-дыхание всей карточки в такт музыке после остановки перебора
-        const beatPhase = (liveTimeSec * 0.45) % 1.0;
-        const systole = Math.exp(-Math.pow((beatPhase - 0.18) / 0.055, 2));
-        const diastole = 0.55 * Math.exp(-Math.pow((beatPhase - 0.35) / 0.075, 2));
+        // C∞-гладкое кардио-дыхание визитки (устранены скачки и резкие пики систолы)
         const cardHeartbeat =
             p >= 0.82 && !reducedMotion
-                ? 1.0 + 0.012 * (systole + diastole) + 0.005 * Math.sin(liveTimeSec * 1.15)
+                ? 1.0 + 0.011 * Math.sin(liveTimeSec * 1.85) + 0.005 * Math.cos(liveTimeSec * 3.7)
                 : 1.0;
 
         const lineOffsetsY = [-94, -50, -4, 42, 82];
@@ -249,7 +232,6 @@ export class CipherOdometerEngine {
                 const targetChar = lineStr[cIdx];
                 const baseTargetX = startX + cIdx * typo.stepWidthPx;
 
-                // Применяем мягкое дыхание карточки относительно центра экрана
                 const targetX = cx + (baseTargetX - cx) * cardHeartbeat;
                 const targetY = cy + (baseTargetY - cy) * cardHeartbeat;
 
@@ -267,7 +249,6 @@ export class CipherOdometerEngine {
                 const currentX = originX + (targetX - originX) * easeOut;
                 const currentY = originY + (targetY - originY) * easeOut;
 
-                // Проверка наведения курсора мыши для короткой прокрутки (0.85 сек)
                 const distToPointer = Math.hypot(this.pointerX - targetX, this.pointerY - targetY);
                 if (distToPointer < 32 && p > 0.5) {
                     this.hoverExcitedUntilMs.set(globalIdx, nowMs + 850);
@@ -292,7 +273,6 @@ export class CipherOdometerEngine {
                 const baseGlyphIdx = Math.floor(chaoticWheelPos) % nGlyphs;
                 const wheelPhaseFrac = isLocked ? 0 : (chaoticWheelPos % 1.0) - 0.5;
 
-                // Индивидуальное дыхание каждого символа в центральной строке
                 const individualBreath = isEndlessLine
                     ? 0.90 + 0.16 * Math.sin(liveTimeSec * 2.4 + cIdx * 0.48 + r1 * 5.0)
                     : 1.0;
@@ -327,11 +307,12 @@ export class CipherOdometerEngine {
                         0.62 + 0.36 * (0.5 + 0.5 * Math.sin(liveTimeSec * 2.1 + cIdx * 0.65 + r2 * 4.0));
                 }
 
+                // Исправлено: при переборе мыши используется чистый сине-белый акцент вместо ржаво-рыжего
                 let lockFlash = 0;
                 if (!isEndlessLine && p >= lockThreshold && p <= lockThreshold + 0.12) {
                     lockFlash = 1.0 - (p - lockThreshold) / 0.12;
                 } else if (isHoverSpinning) {
-                    lockFlash = 0.38;
+                    lockFlash = 0.42;
                 }
 
                 cells.push({
@@ -351,7 +332,7 @@ export class CipherOdometerEngine {
                     targetY,
                     fontSizePx: typo.fontSizePx * cardHeartbeat,
                     stepWidthPx: typo.stepWidthPx,
-                    colorHex: cellColor,
+                    colorHex: lockFlash > 0.1 ? '#bae6fd' : cellColor,
                     fontWeight: typo.fontWeight,
                     shadowColor,
                     shadowBlur,

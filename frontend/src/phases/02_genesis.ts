@@ -1,15 +1,20 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/02_genesis.ts
-// НАЗНАЧЕНИЕ: MASTER 02 v2.0 — Галактика N-тел, 4 логарифмических рукава и Курамото (17–39 с)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Закручивать дуги VOID в 4 логарифмических спиральных рукава r(θ) = a·exp(b·θ)
-//    с углом закрутки pitch angle φ = atan(b) ≈ 18° на весь экран 16:9.
-// 2. Вращать два массивных барицентра (Tier A) и строить между ними приливный световой мост.
-// 3. На 32–39 с проводить волну фазовой синхронизации Курамото и формировать тройные узлы.
+// НАЗНАЧЕНИЕ: MASTER 02 v2.3 — Галактика N-тел, 4 непрерывных логарифмических рукава
+//             и синхронизация Курамото (17–39 с) без дискретных колец.
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Плавный непрерывный закон спирали: замена дискретных индексов modulo на
+//    детерминированный хэш (DeterministicPRNG.hashFloat), полностью убирающая
+//    эффект «концентрических колец» и выстраивающая гладкие логарифмические
+//    рукава r(θ) = a * exp(b * θ) с углом закрутки pitch angle φ ≈ 18°.
+// 2. Двухцентровый барицентр (Tier A) и приливный световой мост между ними.
+// 3. Волна фазовой синхронизации Курамото (на 32–39 с) и формирование стабильных
+//    тройных узлов — будущих сом нейронов для фазы EVOLUTION.
 // ============================================================================
 
 import type { MorphTargetPoint, QuantumParticle } from './01_void';
+import { DeterministicPRNG } from '../core/prng';
 
 export function computeGenesisTarget(
     p: QuantumParticle,
@@ -23,7 +28,7 @@ export function computeGenesisTarget(
     const unfold = Math.min(1.0, 0.42 + phaseProgress * 0.65);
     const rotSpeed = simTimeSec * 0.34;
 
-    // 1. Приливный световой мост между двумя массивными центрами Tier A (будущее мозолистое тело NEXUS)
+    // 1. Приливный световой мост между двумя массивными центрами Tier A
     if (p.id % 8 === 0) {
         const coreSepX = width * 0.17 * unfold;
         const coreSepY = height * 0.105 * unfold;
@@ -41,31 +46,32 @@ export function computeGenesisTarget(
         };
     }
 
-    // 2. Четыре логарифмических спиральных рукава r(θ) = a · exp(b · θ), pitch angle φ ≈ 18° (b ≈ 0.325)
+    // 2. Непрерывные логарифмические рукава (устранен баг дискретных колец за счет хэша)
     const armIndex = p.id % 4;
     const armBaseAngle = (armIndex * Math.PI) / 2;
-    const radialIndex = (p.id % 36) / 35;
+
+    // Детерминированный хэш вместо дискретного modulo, дающий непрерывное заполнение рукавов
+    const radialRand = DeterministicPRNG.hashFloat(p.id + 104729, 31);
+    const radialIndex = Math.pow(radialRand, 0.75);
 
     const pitchB = 0.325;
-    const theta = radialIndex * 2.95;
-    const logSpiralRadiusFrac = Math.min(1.0, 0.08 + 0.34 * Math.exp(pitchB * theta) - 0.32);
+    const theta = radialIndex * 3.15;
+    const logSpiralRadiusFrac = Math.min(1.0, 0.06 + 0.38 * Math.exp(pitchB * theta) - 0.28);
 
-    // Асимметрия плотности между главными и вторичными рукавами
     const armSpread =
         Math.sin(p.phaseOffset * 3.0 + simTimeSec * 0.8) *
-        (armIndex % 2 === 0 ? 0.11 : 0.16) *
+        (armIndex % 2 === 0 ? 0.12 : 0.18) *
         (1.1 - logSpiralRadiusFrac * 0.35);
 
     const totalAngle = armBaseAngle + theta - rotSpeed + armSpread;
 
-    // 3. Волна синхронизации Курамото на 32–39 с (phaseProgress > 0.68):
-    // часть звёзд организуется в компактные стабильные трёхчастные узлы (tripleGroupId)
+    // 3. Волна синхронизации Курамото на 32–39 с (phaseProgress > 0.68)
     const syncWaveEnvelope = Math.max(0, Math.min(1, (phaseProgress - 0.65) / 0.35));
     const tripleSubIndex = p.id % 3;
     const tripleOffsetAngle = (tripleSubIndex * Math.PI * 2) / 3 + p.kuramotoPhase;
     const tripleTightening = syncWaveEnvelope * 9.5;
 
-    const rx = width * 0.45 * logSpiralRadiusFrac * unfold;
+    const rx = width * 0.46 * logSpiralRadiusFrac * unfold;
     const ry = height * 0.39 * logSpiralRadiusFrac * unfold;
 
     const rawX = Math.cos(totalAngle) * rx + Math.cos(tripleOffsetAngle) * tripleTightening;
