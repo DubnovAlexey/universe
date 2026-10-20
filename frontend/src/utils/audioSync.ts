@@ -1,18 +1,18 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/utils/audioSync.ts
-// НАЗНАЧЕНИЕ: Акустический движок синхронизации MP3 и спектрального анализа FFT (v2.4)
+// НАЗНАЧЕНИЕ: Непрерывный аудио-движок синхронизации cosmic_ambient.mp3 и
+//             спектрального анализа ритма/дыхания сцены (UNIVERSE v2.5)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Загрузка аудиопотока с учётом import.meta.env.BASE_URL: корректное
-//    формирование пути `${baseUrl}audio/cosmic_ambient.mp3` для GitHub Pages
-//    и локального окружения без ошибок 404.
+// 1. Загрузка аудиопотока через import.meta.env.BASE_URL: бесшовное непрерывное
+//    воспроизведение трека cosmic_ambient.mp3 без пауз при переключении фаз
+//    или нажатии кнопки паузы симуляции (пользователь изучает сцену под музыку).
 // 2. Граф Web Audio API (MediaElementAudioSourceNode -> GainNode -> AnalyserNode):
-//    измерение реального уровня сигнала RMS в dBFS и частотных полос в герцах.
-// 3. Синхронизация с паузой симуляции и Актом C (2.5 с Живой Тишины):
-//    плавное S-образное сведение звука в 0 (RMS < -80 dBFS) на интервале
-//    93.0–95.5 с и мягкое возвращение темы на старте Акта D (95.5 с).
-// 4. Честная регистрация состояния и времени шага в IntegrationRegistry
-//    и учёт узлов в ResourceLedger.
+//    точный размер временного буфера Float32Array(fftSize) для расчёта RMS dBFS
+//    и разделение спектра на Sub-Bass (20–90 Гц), Low (90–250 Гц), Mid и High.
+// 3. Детектор музыкального дыхания (heartbeat и pulse): извлечение плавной
+//    низкочастотной волны из реального аудиопотока для синхронизации дыхания
+//    колец, туманностей, цифр водопада и финальной визитки с музыкой.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -38,7 +38,7 @@ export interface AudioModulationSnapshot {
 }
 
 // ============================================================================
-// РАЗДЕЛ 1. КЛАСС АУДИО-ДВИЖКА И СПЕКТРАЛЬНОГО АНАЛИЗАТОРА (AudioSyncEngine)
+// РАЗДЕЛ 1. КЛАСС НЕПРЕРЫВНОГО АУДИО-ДВИЖКА И СПЕКТРАЛЬНОГО АНАЛИЗАТОРА
 // ============================================================================
 
 export class AudioSyncEngine {
@@ -53,8 +53,6 @@ export class AudioSyncEngine {
 
     private enabled = true;
     private isPlayingMp3 = false;
-    private pausedBySim = false;
-    private inZeroSilenceAct = false;
     private unlockBound = false;
     private currentPhase: PhaseId = '01_VOID';
 
@@ -63,16 +61,17 @@ export class AudioSyncEngine {
     private readonly TARGET_VOLUME = 0.85;
 
     private smoothedRmsDb = -60.0;
-    private smoothedLow = 0.18;
-    private smoothedMid = 0.14;
-    private smoothedHigh = 0.10;
+    private smoothedSubBass = 0.2;
+    private smoothedLow = 0.2;
+    private smoothedMid = 0.16;
+    private smoothedHigh = 0.12;
+    private smoothedHeartbeat = 0.35;
     private shockwaveBoost = 0.0;
 
     constructor() {
         if (typeof window !== 'undefined') {
             this.prepareAudioElement();
             this.bindAutoStartListeners();
-            this.bindStorePauseSync();
         }
     }
 
@@ -87,8 +86,8 @@ export class AudioSyncEngine {
     }
 
     /**
-     * Предварительная загрузка оригинального трека cosmic_ambient.mp3
-     * с установкой стартовой позиции сразу после тихого вступления.
+     * Предварительная загрузка оригинального трека cosmic_ambient.mp3.
+     * Трек играет непрерывно и не прерывается при паузе визуальной симуляции.
      */
     private prepareAudioElement(): void {
         const t0 = performance.now();
@@ -99,7 +98,7 @@ export class AudioSyncEngine {
             el.loop = true;
             el.preload = 'auto';
             el.crossOrigin = 'anonymous';
-            el.volume = this.TARGET_VOLUME;
+            el.volume = 1.0; // Уровень громкости регулируется единым GainNode
 
             el.addEventListener('loadedmetadata', () => {
                 integrationRegistry.updateModuleStatus(
@@ -114,17 +113,18 @@ export class AudioSyncEngine {
                     try {
                         el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
                     } catch {
-                        // Безопасное ожидание буферизации
+                        // Ожидание буферизации
                     }
                 }
             });
 
+            // Мягкий бесшовный возврат перед самым концом дорожки без попадания в начальную тишину
             el.addEventListener('timeupdate', () => {
-                if (el.duration > 12 && el.currentTime > el.duration - 0.35) {
+                if (el.duration > 12 && el.currentTime > el.duration - 0.28) {
                     try {
                         el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
                     } catch {
-                        // Безопасный цикл
+                        // Штатный loop
                     }
                 }
             });
@@ -138,27 +138,6 @@ export class AudioSyncEngine {
     }
 
     /**
-     * Подписка на паузу симуляции и скрытие вкладки: при нажатии PAUSE звук
-     * также аккуратно ставится на паузу и возобновляется при RESUME.
-     */
-    private bindStorePauseSync(): void {
-        universeStore.subscribe((state) => {
-            const shouldSuspendAudio = state.isPaused || state.isTabHidden;
-            if (shouldSuspendAudio && !this.pausedBySim) {
-                this.pausedBySim = true;
-                if (this.audioEl && !this.audioEl.paused) {
-                    this.audioEl.pause();
-                }
-            } else if (!shouldSuspendAudio && this.pausedBySim) {
-                this.pausedBySim = false;
-                if (this.enabled && !this.inZeroSilenceAct) {
-                    this.startPlayback();
-                }
-            }
-        });
-    }
-
-    /**
      * Автоматический старт звука при загрузке страницы или первом разрешённом жесте пользователя.
      */
     private bindAutoStartListeners(): void {
@@ -166,7 +145,7 @@ export class AudioSyncEngine {
         this.unlockBound = true;
 
         const tryStart = (): void => {
-            if (this.enabled && !this.isPlayingMp3 && !this.pausedBySim) {
+            if (this.enabled && !this.isPlayingMp3) {
                 this.startPlayback();
             }
             if (this.isPlayingMp3) {
@@ -181,7 +160,7 @@ export class AudioSyncEngine {
         window.addEventListener('touchstart', tryStart, { passive: true });
 
         setTimeout(() => {
-            if (this.enabled && !this.pausedBySim) {
+            if (this.enabled) {
                 this.startPlayback();
             }
         }, 25);
@@ -202,7 +181,7 @@ export class AudioSyncEngine {
 
             this.analyser = this.ctx.createAnalyser();
             this.analyser.fftSize = 1024;
-            this.analyser.smoothingTimeConstant = 0.82;
+            this.analyser.smoothingTimeConstant = 0.84;
 
             this.gainNode = this.ctx.createGain();
             this.gainNode.gain.setValueAtTime(this.TARGET_VOLUME, this.ctx.currentTime);
@@ -212,8 +191,13 @@ export class AudioSyncEngine {
             this.gainNode.connect(this.analyser);
             this.analyser.connect(this.ctx.destination);
 
-            this.freqBuffer = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
-            this.timeBuffer = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
+            // Длина timeBuffer строго равна fftSize отсчётов Float32 (по 4 байта на отсчёт)
+            this.freqBuffer = new Uint8Array(
+                new ArrayBuffer(this.analyser.frequencyBinCount)
+            );
+            this.timeBuffer = new Float32Array(
+                new ArrayBuffer(this.analyser.fftSize * 4)
+            );
             resourceLedger.trackAllocation('audioNodes', 3);
         } catch {
             // При повторной привязке воспроизводим через HTMLAudioElement
@@ -224,7 +208,7 @@ export class AudioSyncEngine {
         if (!this.audioEl) {
             this.prepareAudioElement();
         }
-        if (!this.audioEl || !this.enabled || this.pausedBySim) return;
+        if (!this.audioEl || !this.enabled) return;
 
         this.ensureAnalyserGraph();
         if (this.ctx && this.ctx.state === 'suspended') {
@@ -244,13 +228,12 @@ export class AudioSyncEngine {
         }
 
         this.audioEl.muted = false;
-        const targetVol = this.inZeroSilenceAct ? 0.0 : this.TARGET_VOLUME;
-        this.audioEl.volume = targetVol;
+        this.audioEl.volume = 1.0;
 
         if (this.gainNode && this.ctx) {
             const now = this.ctx.currentTime;
             this.gainNode.gain.cancelScheduledValues(now);
-            this.gainNode.gain.setTargetAtTime(targetVol, now, 0.14);
+            this.gainNode.gain.setTargetAtTime(this.TARGET_VOLUME, now, 0.22);
         }
 
         if (this.audioEl.paused) {
@@ -303,82 +286,58 @@ export class AudioSyncEngine {
         _arg3?: number | string | boolean
     ): void {
         const intensity = typeof arg1 === 'number' ? arg1 : 0.5;
-        this.shockwaveBoost = Math.min(1.0, this.shockwaveBoost + Math.max(0.1, intensity) * 0.45);
+        this.shockwaveBoost = Math.min(
+            1.0,
+            this.shockwaveBoost + Math.max(0.1, intensity) * 0.45
+        );
     }
 
     // ============================================================================
-    // РАЗДЕЛ 3. УПРАВЛЕНИЕ ФАЗОВЫМИ ПЕРЕХОДАМИ И АКТОМ C (2.5 С ЖИВОЙ ТИШИНЫ)
+    // РАЗДЕЛ 3. НЕПРЕРЫВНОЕ ЗВУЧАНИЕ МЕЖДУ ФАЗАМИ И СИНХРОНИЗАЦИЯ ДЫХАНИЯ С ТРЕКОМ
     // ============================================================================
 
+    /**
+     * Переход между фазами и подактами: музыка играет непрерывно без пауз и без обрывов.
+     */
     public transitionToPhase(
         phase: PhaseId | string | number | boolean,
-        act?: string | number | boolean
+        _act?: string | number | boolean
     ): void {
         if (typeof phase === 'string') {
             this.currentPhase = phase as PhaseId;
         }
-
-        const isSilence = act === 'ACT_C_ZERO_SILENCE';
-        this.applyZeroSilenceEnvelope(isSilence);
-
-        if (this.enabled && !this.isPlayingMp3 && !this.pausedBySim && !isSilence) {
+        if (this.enabled && !this.isPlayingMp3) {
             this.startPlayback();
         }
     }
 
-    private applyZeroSilenceEnvelope(isSilence: boolean): void {
-        if (this.inZeroSilenceAct === isSilence) return;
-        this.inZeroSilenceAct = isSilence;
-
-        if (this.gainNode && this.ctx) {
-            const now = this.ctx.currentTime;
-            this.gainNode.gain.cancelScheduledValues(now);
-            this.gainNode.gain.setTargetAtTime(
-                isSilence ? 0.0 : this.TARGET_VOLUME,
-                now,
-                isSilence ? 0.07 : 0.25
-            );
-        }
-
-        if (this.audioEl) {
-            this.audioEl.volume = isSilence ? 0.0 : this.TARGET_VOLUME;
-        }
-    }
-
     /**
-     * Обновляет спектральную модуляцию в реальном времени и возвращает честный
-     * снимок частот и измеренного RMS dBFS.
+     * Извлекает реальные частотные полосы из играющего трека cosmic_ambient.mp3
+     * и формирует плавные кривые heartbeat и pulse в такт низким частотам музыки.
      */
     public updateRealtimeModulation(
         arg1: number | PhaseId | boolean = 0,
         arg2?: number | PhaseId | boolean,
-        arg3?: boolean
+        _arg3?: boolean
     ): AudioModulationSnapshot {
         const t0 = performance.now();
         const simTimeSec =
             typeof arg1 === 'number' ? arg1 : typeof arg2 === 'number' ? arg2 : 0;
-        const isSilenceAct = Boolean(arg3);
 
-        this.applyZeroSilenceEnvelope(isSilenceAct);
         this.shockwaveBoost *= 0.9;
 
         const isActuallyPlaying = Boolean(
             this.enabled && this.audioEl && !this.audioEl.paused && this.isPlayingMp3
         );
 
+        let rawSubBass = 0.0;
         let rawLow = 0.0;
         let rawMid = 0.0;
         let rawHigh = 0.0;
-        let measuredRmsDb = -84.2;
+        let measuredRmsDb = -78.0;
         let rmsLinear = 0.0;
 
-        if (isSilenceAct) {
-            // В Акте C (2.5 с живой тишины) гейн сведён в 0, реальный выходной сигнал < -80 dBFS
-            this.smoothedLow *= 0.82;
-            this.smoothedMid *= 0.82;
-            this.smoothedHigh *= 0.82;
-            this.smoothedRmsDb = this.smoothedRmsDb * 0.75 + -84.2 * 0.25;
-        } else if (
+        if (
             isActuallyPlaying &&
             this.analyser &&
             this.freqBuffer &&
@@ -391,10 +350,24 @@ export class AudioSyncEngine {
             const binHz = sampleRate / this.analyser.fftSize;
             const nBins = this.freqBuffer.length;
 
-            // Расчёт полос по реальным герцам: Low (20–250 Гц), Mid (250–2500 Гц), High (2500–12000 Гц)
-            const lowEndBin = Math.min(nBins, Math.max(2, Math.round(250 / binHz)));
-            const midEndBin = Math.min(nBins, Math.max(lowEndBin + 2, Math.round(2500 / binHz)));
-            const highEndBin = Math.min(nBins, Math.max(midEndBin + 2, Math.round(12000 / binHz)));
+            // Sub-Bass (20–90 Гц) — основа глубокого дыхания космического эмбиента
+            const subEndBin = Math.min(nBins, Math.max(2, Math.round(90 / binHz)));
+            const lowEndBin = Math.min(
+                nBins,
+                Math.max(subEndBin + 2, Math.round(250 / binHz))
+            );
+            const midEndBin = Math.min(
+                nBins,
+                Math.max(lowEndBin + 2, Math.round(2500 / binHz))
+            );
+            const highEndBin = Math.min(
+                nBins,
+                Math.max(midEndBin + 2, Math.round(12000 / binHz))
+            );
+
+            let sumSub = 0;
+            for (let i = 1; i < subEndBin; i++) sumSub += this.freqBuffer[i];
+            rawSubBass = sumSub / (Math.max(1, subEndBin - 1) * 255.0);
 
             let sumLow = 0;
             for (let i = 1; i < lowEndBin; i++) sumLow += this.freqBuffer[i];
@@ -408,39 +381,47 @@ export class AudioSyncEngine {
             for (let i = midEndBin; i < highEndBin; i++) sumHigh += this.freqBuffer[i];
             rawHigh = sumHigh / (Math.max(1, highEndBin - midEndBin) * 255.0);
 
+            const validSamples = this.analyser.fftSize;
             let sumSq = 0;
-            for (let i = 0; i < this.timeBuffer.length; i++) {
+            for (let i = 0; i < validSamples; i++) {
                 const sample = this.timeBuffer[i];
                 sumSq += sample * sample;
             }
-            rmsLinear = Math.sqrt(sumSq / this.timeBuffer.length);
+            rmsLinear = Math.sqrt(sumSq / Math.max(1, validSamples));
             measuredRmsDb =
                 rmsLinear > 0.00001
                     ? Math.max(-84.2, 20.0 * Math.log10(rmsLinear))
                     : -84.2;
 
-            this.smoothedLow = this.smoothedLow * 0.82 + rawLow * 0.18;
-            this.smoothedMid = this.smoothedMid * 0.82 + rawMid * 0.18;
-            this.smoothedHigh = this.smoothedHigh * 0.82 + rawHigh * 0.18;
-            this.smoothedRmsDb = this.smoothedRmsDb * 0.84 + measuredRmsDb * 0.16;
+            this.smoothedSubBass = this.smoothedSubBass * 0.86 + rawSubBass * 0.14;
+            this.smoothedLow = this.smoothedLow * 0.85 + rawLow * 0.15;
+            this.smoothedMid = this.smoothedMid * 0.85 + rawMid * 0.15;
+            this.smoothedHigh = this.smoothedHigh * 0.85 + rawHigh * 0.15;
+            this.smoothedRmsDb = this.smoothedRmsDb * 0.86 + measuredRmsDb * 0.14;
+
+            // Музыкальное дыхание (heartbeat) следует за реальной волной суб-баса и середины трека
+            const targetBeat = Math.min(
+                1.0,
+                this.smoothedSubBass * 0.75 + this.smoothedMid * 0.35
+            );
+            this.smoothedHeartbeat =
+                this.smoothedHeartbeat * 0.9 + targetBeat * 0.1;
         } else {
-            // До первого жеста или при выключенном звуке поддерживаем мягкий визуальный LFO,
-            // но честно показываем реальную тишину в dBFS
             const lfo1 = 0.5 + 0.5 * Math.sin(simTimeSec * 1.15);
             const lfo2 = 0.5 + 0.5 * Math.cos(simTimeSec * 0.72);
-            this.smoothedLow = 0.14 + lfo1 * 0.12;
-            this.smoothedMid = 0.11 + lfo2 * 0.10;
+            this.smoothedSubBass = 0.16 + lfo1 * 0.12;
+            this.smoothedLow = 0.15 + lfo1 * 0.12;
+            this.smoothedMid = 0.12 + lfo2 * 0.1;
             this.smoothedHigh = 0.08 + lfo1 * 0.06;
+            this.smoothedHeartbeat = 0.3 + lfo1 * 0.25;
             this.smoothedRmsDb = -78.0;
         }
 
-        const heartbeat =
-            isSilenceAct
-                ? 0.0
-                : 0.5 + 0.5 * Math.sin(simTimeSec * 1.85);
         const pulse = Math.min(
             1.0,
-            this.smoothedLow * 0.65 + heartbeat * 0.25 + this.shockwaveBoost * 0.5
+            this.smoothedLow * 0.62 +
+            this.smoothedHeartbeat * 0.28 +
+            this.shockwaveBoost * 0.45
         );
 
         const status: AudioPlaybackStatus = !this.enabled
@@ -457,17 +438,17 @@ export class AudioSyncEngine {
             low: Number(this.smoothedLow.toFixed(3)),
             mid: Number(this.smoothedMid.toFixed(3)),
             high: Number(this.smoothedHigh.toFixed(3)),
-            subBass: Number(Math.min(1.0, this.smoothedLow * 1.12).toFixed(3)),
+            subBass: Number(this.smoothedSubBass.toFixed(3)),
             brilliance: Number(this.smoothedHigh.toFixed(3)),
             pulse: Number(pulse.toFixed(3)),
-            heartbeat: Number(heartbeat.toFixed(3)),
+            heartbeat: Number(this.smoothedHeartbeat.toFixed(3)),
             isPlaying: isActuallyPlaying,
             status,
         };
     }
 
     public getSnapshot(simTimeSec = 0): AudioModulationSnapshot {
-        return this.updateRealtimeModulation(simTimeSec, this.currentPhase, this.inZeroSilenceAct);
+        return this.updateRealtimeModulation(simTimeSec, this.currentPhase, false);
     }
 }
 

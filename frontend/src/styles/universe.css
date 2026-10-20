@@ -1,7 +1,7 @@
 /* noinspection CssUnusedSymbol */
 /* ============================================================================
  * ФАЙЛ: frontend/src/styles/universe.css
- * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.3
+ * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.4
  * АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
  * 1. Каноническая палитра и типографика (MASTER 00): обсидиан #020308,
  *    графит #03050A, полуночный индиго #060B19, серебристо-голубой #7DD3FC,
@@ -9,12 +9,10 @@
  *    жемчуг #F8FAFC и редкий янтарь #F59E0B.
  * 2. Полноэкранный каркас сцены (#universe-canvas, .optical-vignette,
  *    .hud-overlay): жёсткая фиксация 100vw x 100vh без полос прокрутки.
- * 3. Полноразмерная правая колонка телеметрии (.inspection-islands-stack):
- *    вертикальное размещение каскадов LAYER_02, LAYER_03, LAYER_04 сверху донизу,
- *    мягкая бесшовная вуаль водопада без полосатости («жалюзи»), чёткая
- *    стабильная типографика и плавный 60-FPS слой «Звездопада / Капель».
- * 4. Стили финальной визитки одометра (.finale-counter-actions), нижней
- *    шкалы 5 фаз (.phase-timeline-dock) и адаптивности (320px..1920px).
+ * 3. Органический волновой дизайн трёх угловых панелей (.brand-card,
+ *    .phase-timeline-dock, .controls-dock) и полноразмерная правая колонка
+ *    телеметрии (.inspection-islands-stack) с 60-FPS слоем «Звездопада».
+ * 4. Стили финальной визитки одометра (.finale-counter-actions) и адаптивности.
  * ============================================================================ */
 
 /* ----------------------------------------------------------------------------
@@ -24,10 +22,10 @@
     --void-obsidian: #020308;
     --void-graphite: #03050a;
     --void-indigo: #060b19;
-    --glass-surface: rgba(3, 6, 15, 0.42);
-    --glass-surface-hover: rgba(6, 12, 28, 0.74);
-    --glass-border: rgba(125, 211, 252, 0.16);
-    --glass-border-bright: rgba(56, 189, 248, 0.45);
+    --glass-surface: rgba(3, 7, 18, 0.48);
+    --glass-surface-hover: rgba(6, 13, 30, 0.76);
+    --glass-border: rgba(125, 211, 252, 0.18);
+    --glass-border-bright: rgba(56, 189, 248, 0.46);
 
     --accent-ice: #7dd3fc;
     --accent-cyan: #38bdf8;
@@ -37,8 +35,8 @@
     --accent-amber: #f59e0b;
 
     --text-primary: rgba(248, 250, 252, 0.96);
-    --text-secondary: rgba(186, 230, 253, 0.86);
-    --text-muted: rgba(148, 163, 184, 0.78);
+    --text-secondary: rgba(186, 230, 253, 0.88);
+    --text-muted: rgba(148, 163, 184, 0.80);
 
     --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
@@ -72,7 +70,11 @@ body {
     width: 100vw;
     height: 100vh;
     overflow: hidden;
-    background: radial-gradient(circle at 50% 50%, var(--void-indigo) 0%, var(--void-obsidian) 100%);
+    background: radial-gradient(
+            circle at 50% 50%,
+            var(--void-indigo) 0%,
+            var(--void-obsidian) 100%
+    );
 }
 
 #universe-canvas {
@@ -121,9 +123,9 @@ body {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid var(--glass-border);
-    border-radius: 10px;
-    box-shadow: 0 6px 24px rgba(2, 3, 8, 0.52);
-    opacity: 0.86;
+    border-radius: 18px 26px 20px 24px;
+    box-shadow: 0 8px 28px rgba(2, 3, 8, 0.58);
+    opacity: 0.88;
     transition:
             opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
             background-color 0.35s ease,
@@ -163,21 +165,35 @@ body {
     width: 100%;
 }
 
+/* Органическая левая верхняя мембрана паспорта фазы без жёстких углов */
 .brand-card {
-    padding: 0.55rem 0.8rem;
-    max-width: 440px;
-    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.56) 0%, transparent 88%);
-    border: none;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    text-shadow: 0 2px 12px rgba(2, 3, 8, 0.96), 0 0 10px rgba(56, 189, 248, 0.24);
+    padding: 0.65rem 1.05rem;
+    max-width: 455px;
+    background: radial-gradient(
+            ellipse at 24% 34%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.32) 68%,
+            transparent 96%
+    );
+    border: 1px solid rgba(125, 211, 252, 0.14);
+    border-radius: 22px 34px 28px 18px;
+    box-shadow: 0 10px 32px rgba(2, 3, 8, 0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    text-shadow:
+            0 2px 12px rgba(2, 3, 8, 0.96),
+            0 0 10px rgba(56, 189, 248, 0.24);
 }
 
 .brand-card:hover,
 .brand-card:focus-within {
-    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.78) 0%, transparent 92%);
-    border: none;
+    background: radial-gradient(
+            ellipse at 24% 34%,
+            rgba(8, 17, 38, 0.82) 0%,
+            rgba(4, 9, 22, 0.48) 74%,
+            transparent 98%
+    );
+    border-color: rgba(125, 211, 252, 0.32);
 }
 
 .phase-codename {
@@ -190,6 +206,7 @@ body {
     display: block;
     margin-bottom: 0.14rem;
     text-shadow: 0 0 10px rgba(125, 211, 252, 0.38);
+    transition: color 0.28s ease, text-shadow 0.28s ease;
 }
 
 .phase-title {
@@ -198,12 +215,14 @@ body {
     letter-spacing: 0.02em;
     color: var(--accent-pearl);
     margin-bottom: 0.16rem;
+    transition: color 0.28s ease, text-shadow 0.28s ease;
 }
 
 .phase-subtitle {
     font-size: 0.76rem;
     color: var(--text-secondary);
     line-height: 1.34;
+    transition: color 0.28s ease, text-shadow 0.28s ease;
 }
 
 .phase-philosophy {
@@ -214,6 +233,7 @@ body {
     font-size: 0.72rem;
     line-height: 1.42;
     color: var(--text-primary);
+    transition: color 0.28s ease, text-shadow 0.28s ease;
 }
 
 .brand-card:hover .phase-philosophy,
@@ -296,7 +316,7 @@ body {
     background-image: linear-gradient(
             180deg,
             rgba(125, 211, 252, 0.0) 0%,
-            rgba(125, 211, 252, 0.028) 50%,
+            rgba(125, 211, 252, 0.026) 50%,
             rgba(125, 211, 252, 0.0) 100%
     );
     background-size: 100% 120px;
@@ -348,7 +368,7 @@ body {
     font-family: var(--font-mono);
     font-size: 0.68rem;
     font-weight: 600;
-    color: var(--accent-amber);
+    color: var(--accent-ice);
     letter-spacing: 0.05em;
 }
 
@@ -378,6 +398,7 @@ body {
     font-size: 0.92rem;
     font-weight: 700;
     color: var(--accent-pearl);
+    will-change: transform;
 }
 
 .metric-box .value small {
@@ -406,6 +427,7 @@ body {
 .topology-stats-row strong {
     font-size: 0.88rem;
     color: var(--accent-pearl);
+    will-change: transform;
 }
 
 .registry-mini-table {
@@ -440,7 +462,7 @@ body {
 
 .mod-status.status-fallback,
 .mod-status.status-loading {
-    color: var(--accent-amber);
+    color: #bae6fd;
     font-weight: 600;
 }
 
@@ -460,7 +482,7 @@ body {
     color: var(--accent-ice);
     padding: 0.22rem 0.45rem;
     background: rgba(15, 23, 42, 0.38);
-    border-radius: 10px;
+    border-radius: 12px;
     text-align: center;
 }
 
@@ -527,20 +549,20 @@ body {
     text-transform: uppercase;
     text-decoration: none;
     padding: 0.58rem 1.2rem;
-    border-radius: 8px;
-    background: rgba(6, 11, 25, 0.72);
+    border-radius: 14px 20px 14px 20px;
+    background: rgba(6, 11, 25, 0.76);
     color: var(--accent-ice);
     border: 1px solid rgba(125, 211, 252, 0.32);
     cursor: pointer;
-    box-shadow: 0 6px 22px rgba(2, 3, 8, 0.78);
-    transition: all 0.25s ease;
+    box-shadow: 0 6px 22px rgba(2, 3, 8, 0.82);
+    transition: all 0.28s ease;
 }
 
 .btn-cipher-action:hover:not(:disabled) {
     background: rgba(56, 189, 248, 0.18);
     color: var(--accent-pearl);
     border-color: var(--accent-pearl);
-    box-shadow: 0 0 18px rgba(125, 211, 252, 0.36);
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.38);
 }
 
 .btn-cipher-action:disabled {
@@ -558,11 +580,18 @@ body {
     z-index: 26;
 }
 
+/* Органическая левая нижняя и правая нижняя мембранные панели без жёстких углов */
 .phase-timeline-dock {
-    padding: 0.42rem 0.62rem;
+    padding: 0.48rem 0.78rem;
     display: flex;
     flex-direction: column;
-    gap: 0.32rem;
+    gap: 0.34rem;
+    border-radius: 24px 18px 28px 16px;
+    background: radial-gradient(
+            ellipse at 50% 60%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.42) 100%
+    );
 }
 
 .timeline-progress-track {
@@ -576,27 +605,36 @@ body {
 .timeline-progress-fill {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, var(--accent-ice), var(--accent-violet), var(--accent-amber));
+    background: linear-gradient(
+            90deg,
+            var(--accent-ice),
+            var(--accent-violet),
+            var(--accent-pearl)
+    );
     transition: width 0.15s linear;
 }
 
 .phase-buttons-row {
     display: flex;
-    gap: 0.32rem;
+    gap: 0.34rem;
     flex-wrap: wrap;
 }
 
 .phase-pill {
-    background: rgba(2, 3, 8, 0.55);
-    border: 1px solid rgba(125, 211, 252, 0.16);
+    background: rgba(2, 5, 14, 0.58);
+    border: 1px solid rgba(125, 211, 252, 0.18);
     color: var(--text-secondary);
-    padding: 0.3rem 0.58rem;
-    border-radius: 6px;
+    padding: 0.32rem 0.64rem;
+    border-radius: 12px 16px 12px 16px;
     font-family: var(--font-mono);
     font-size: 0.66rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition:
+            background-color 0.25s ease,
+            border-color 0.25s ease,
+            color 0.25s ease,
+            text-shadow 0.25s ease;
 }
 
 .phase-pill:hover {
@@ -605,30 +643,40 @@ body {
 }
 
 .phase-pill.active {
-    background: rgba(56, 189, 248, 0.2);
+    background: rgba(56, 189, 248, 0.22);
     border-color: var(--accent-ice);
     color: var(--accent-pearl);
 }
 
 .controls-dock {
-    padding: 0.42rem 0.62rem;
+    padding: 0.48rem 0.78rem;
     display: flex;
     align-items: center;
-    gap: 0.36rem;
+    gap: 0.38rem;
     flex-wrap: wrap;
+    border-radius: 18px 26px 16px 24px;
+    background: radial-gradient(
+            ellipse at 50% 60%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.42) 100%
+    );
 }
 
 .btn-cyber {
-    background: rgba(2, 3, 8, 0.58);
+    background: rgba(2, 5, 14, 0.6);
     border: 1px solid rgba(125, 211, 252, 0.18);
     color: var(--text-primary);
-    padding: 0.3rem 0.58rem;
-    border-radius: 6px;
+    padding: 0.32rem 0.64rem;
+    border-radius: 12px 16px 12px 16px;
     font-family: var(--font-mono);
     font-size: 0.66rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition:
+            background-color 0.25s ease,
+            border-color 0.25s ease,
+            color 0.25s ease,
+            text-shadow 0.25s ease;
 }
 
 .btn-cyber:hover {
@@ -637,7 +685,7 @@ body {
 }
 
 .btn-cyber.active-toggle {
-    background: rgba(99, 102, 241, 0.26);
+    background: rgba(99, 102, 241, 0.28);
     border-color: var(--accent-ice);
     color: var(--accent-pearl);
 }

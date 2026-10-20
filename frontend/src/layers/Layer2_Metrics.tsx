@@ -1,23 +1,23 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer2_Metrics.tsx
-// НАЗНАЧЕНИЕ: Автономная DOM/SVG JSX-фабрика React, плавный движок «Цифрового
-//             водопада / Звездопада» (60 FPS без мерцания) и каскад LAYER_02
+// НАЗНАЧЕНИЕ: Автономная DOM/SVG JSX-фабрика, 60-FPS контроллер «Цифрового
+//             водопада / Звездопада» с синхронизацией от музыки и каскад LAYER_02
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Нативная DOM/SVG фабрика React.createElement: генерация узлов HTML и SVG
-//    (http://www.w3.org/2000/svg) в соответствии с контрактом JSX.Element.
+// 1. Нативная DOM/SVG фабрика React.createElement: создание узлов HTML и SVG
+//    (http://www.w3.org/2000/svg) без сторонних runtime-зависимостей.
 // 2. Генератор спокойного волнового контура (buildLivingBreachContourPath)
-//    и плавной подзаголовочной волны (buildLivingHorizontalWavePath):
-//    медленные длинноволновые гармоники с умеренно увеличенной амплитудой
-//    без высокочастотной ряби и без пересечения строк текста.
-// 3. Контроллер 60-FPS анимации (TelemetryWaterfallAnimator): прямое обновление
-//    SVG-контуров и падающих буковок «Звездопада» в DOM без пересоздания узлов
-//    и без искажения субпиксельного сглаживания шрифтов.
-// 4. Представление и монтировщик верхнего каскада (renderLayer2MetricsView,
-//    mountLayer2Metrics): вывод метрик FPS, P95, ΔE/E0, Курамото r(t) и Digest.
+//    и плавной подзаголовочной волны (buildLivingHorizontalWavePath) с модуляцией
+//    амплитуды от низкочастотной огибающей музыки (audioSync).
+// 3. Контроллер 60-FPS анимации (TelemetryWaterfallAnimator): непрерывное
+//    обновление контуров, падающих буковок и дыхания цифр ([data-breath-slot])
+//    в такт треку cosmic_ambient.mp3 без пересоздания DOM (без replaceChildren).
+// 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
+//    mountLayer2Metrics): инкрементальное обновление текстовых узлов без мерцания.
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
+import { audioSync } from '../utils/audioSync';
 
 // ============================================================================
 // РАЗДЕЛ 1. АВТОНОМНАЯ ФАБРИКА JSX -> DOM/SVG ELEMENT (БЕЗ ОШИБКИ TS2322)
@@ -96,7 +96,10 @@ export const React = {
                         const sKey = styleKeys[s];
                         const sVal = styleRecord[sKey];
                         if (sVal !== undefined) {
-                            const cssProp = sKey.replace(/[A-Z]/g, (m: string) => `-${m.toLowerCase()}`);
+                            const cssProp = sKey.replace(
+                                /[A-Z]/g,
+                                (m: string) => `-${m.toLowerCase()}`
+                            );
                             (el as HTMLElement).style.setProperty(cssProp, String(sVal));
                         }
                     }
@@ -117,7 +120,7 @@ export const React = {
 };
 
 // ============================================================================
-// РАЗДЕЛ 2. ГЕНЕРАТОР ПЛАВНОГО ВОЛНОВОГО КОНТУРА (БЕЗ ВЫСОКОЧАСТОТНОЙ РЯБИ)
+// РАЗДЕЛ 2. ГЕНЕРАТОР ПЛАВНОГО ВОЛНОВОГО КОНТУРА С МУЗЫКАЛЬНОЙ ОГИБАЮЩЕЙ
 // ============================================================================
 
 export interface StarfallDroplet {
@@ -139,14 +142,14 @@ const STARFALL_GLYPH_POOL = '0123456789ABCDEF.+-xΔr∑';
 
 /**
  * Вычисляет замкнутый SVG-путь живого контура панели:
- * сохраняет плавность первого варианта, но с чуть большей амплитудой (6.4 px + 3.1 px),
- * чтобы мягкое волновое движение считывалось глазом спокойно и комфортно.
+ * плавная длинноволновая форма мягко дышит в такт низким частотам музыки (audioBoost).
  */
 export function buildLivingBreachContourPath(
     width: number,
     height: number,
     timeSec: number,
-    phaseOffset = 0
+    phaseOffset = 0,
+    audioBoost = 0
 ): string {
     const padX = 12;
     const padY = 9;
@@ -155,16 +158,17 @@ export function buildLivingBreachContourPath(
     const vSteps = 28;
     const hSteps = 16;
     const pts: Array<[number, number]> = [];
+    const musicScale = 1.0 + Math.min(0.35, audioBoost * 0.28);
 
     // 1. Левая волновая граница (сверху вниз — плавная длинная волна)
     for (let i = 0; i <= vSteps; i++) {
         const u = i / vSteps;
         const y = padY + u * h;
-        const env = 0.22 + 0.78 * Math.sin(u * Math.PI);
+        const env = (0.22 + 0.78 * Math.sin(u * Math.PI)) * musicScale;
         const wave =
             env *
-            (6.4 * Math.sin(u * 7.5 - timeSec * 1.35 + phaseOffset) +
-                3.1 * Math.cos(u * 13.0 + timeSec * 1.75));
+            (5.8 * Math.sin(u * 7.2 - timeSec * 1.15 + phaseOffset) +
+                2.7 * Math.cos(u * 12.5 + timeSec * 1.45));
         pts.push([padX + wave, y]);
     }
 
@@ -172,11 +176,11 @@ export function buildLivingBreachContourPath(
     for (let i = 1; i <= hSteps; i++) {
         const u = i / hSteps;
         const x = padX + u * w;
-        const env = 0.22 + 0.78 * Math.sin(u * Math.PI);
+        const env = (0.22 + 0.78 * Math.sin(u * Math.PI)) * musicScale;
         const wave =
             env *
-            (4.2 * Math.sin(u * 6.5 + timeSec * 1.4 + phaseOffset) +
-                1.8 * Math.cos(u * 11.0 - timeSec * 1.65));
+            (3.8 * Math.sin(u * 6.2 + timeSec * 1.2 + phaseOffset) +
+                1.6 * Math.cos(u * 10.5 - timeSec * 1.4));
         pts.push([x, padY + h + wave]);
     }
 
@@ -184,11 +188,11 @@ export function buildLivingBreachContourPath(
     for (let i = 1; i <= vSteps; i++) {
         const u = 1.0 - i / vSteps;
         const y = padY + u * h;
-        const env = 0.22 + 0.78 * Math.sin(u * Math.PI);
+        const env = (0.22 + 0.78 * Math.sin(u * Math.PI)) * musicScale;
         const wave =
             env *
-            (5.4 * Math.cos(u * 7.5 + timeSec * 1.25 + phaseOffset) +
-                2.6 * Math.sin(u * 13.0 - timeSec * 1.6));
+            (4.9 * Math.cos(u * 7.2 + timeSec * 1.1 + phaseOffset) +
+                2.3 * Math.sin(u * 12.5 - timeSec * 1.38));
         pts.push([padX + w + wave, y]);
     }
 
@@ -196,11 +200,11 @@ export function buildLivingBreachContourPath(
     for (let i = 1; i < hSteps; i++) {
         const u = 1.0 - i / hSteps;
         const x = padX + u * w;
-        const env = 0.22 + 0.78 * Math.sin(u * Math.PI);
+        const env = (0.22 + 0.78 * Math.sin(u * Math.PI)) * musicScale;
         const wave =
             env *
-            (3.9 * Math.cos(u * 6.5 - timeSec * 1.35 + phaseOffset) +
-                1.7 * Math.sin(u * 11.0 + timeSec * 1.55));
+            (3.5 * Math.cos(u * 6.2 - timeSec * 1.15 + phaseOffset) +
+                1.5 * Math.sin(u * 10.5 + timeSec * 1.32));
         pts.push([x, padY + wave]);
     }
 
@@ -213,15 +217,14 @@ export function buildLivingBreachContourPath(
 }
 
 /**
- * Вычисляет плавно изгибающуюся линию под заголовком панели (y = 42),
- * чтобы она мягко дышала в такт контуру без резких частых изломов.
+ * Вычисляет плавно изгибающуюся линию под заголовком панели (y = 42).
  */
 export function buildLivingHorizontalWavePath(
     width: number,
     yCenter: number,
     timeSec: number,
     phaseOffset = 0,
-    amplitude = 2.9
+    amplitude = 2.6
 ): string {
     const padX = 18;
     const spanW = Math.max(80, width - padX * 2);
@@ -235,24 +238,26 @@ export function buildLivingHorizontalWavePath(
         const y =
             yCenter +
             env *
-            (amplitude * Math.sin(u * 7.0 - timeSec * 1.45 + phaseOffset) +
-                amplitude * 0.42 * Math.cos(u * 13.0 + timeSec * 1.85 - phaseOffset));
+            (amplitude * Math.sin(u * 6.8 - timeSec * 1.22 + phaseOffset) +
+                amplitude * 0.4 * Math.cos(u * 12.4 + timeSec * 1.55 - phaseOffset));
         d += i === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
     }
     return d;
 }
 
 // ============================================================================
-// РАЗДЕЛ 3. КОНТРОЛЛЕР ПЛАВНОЙ 60-FPS АНИМАЦИИ КОНТУРА И «ЗВЕЗДОПАДА / КАПЕЛЬ»
+// РАЗДЕЛ 3. КОНТРОЛЛЕР ПЛАВНОЙ 60-FPS АНИМАЦИИ В ТАКТ МУЗЫКЕ (БЕЗ СКАЧКОВ)
 // ============================================================================
 
 class TelemetryWaterfallAnimator {
     private droplets: StarfallDroplet[] = [];
     private ignitedSlots: Map<string, number> = new Map();
-    private nextSpawnSec: Record<2 | 3 | 4, number> = { 2: 0.5, 3: 0.8, 4: 1.1 };
+    private nextSpawnSec: Record<2 | 3 | 4, number> = { 2: 0.5, 3: 0.85, 4: 1.2 };
     private dropCounter = 1;
     private rafId = 0;
     private lastMs = 0;
+    private smoothedMusicPulse = 0.22;
+    private smoothedMusicLow = 0.2;
 
     public getTimeSec(): number {
         return typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
@@ -265,20 +270,28 @@ class TelemetryWaterfallAnimator {
     }
 
     private tick = (nowMs: number): void => {
-        const dt = Math.min(0.06, Math.max(0.001, (nowMs - this.lastMs) / 1000));
+        const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
         this.lastMs = nowMs;
         const timeSec = nowMs * 0.001;
 
-        this.stepDroplets(dt, timeSec);
-        this.updateLiveDomElements(timeSec);
+        const uState = universeStore.getState();
+        if (!uState.isTabHidden && !uState.reducedMotion) {
+            const audioSnap = audioSync.getSnapshot(timeSec);
+            // Мягкое экспоненциальное сглаживание музыкальной огибающей для плавного дыхания
+            this.smoothedMusicPulse =
+                this.smoothedMusicPulse * 0.92 + audioSnap.pulse * 0.08;
+            this.smoothedMusicLow =
+                this.smoothedMusicLow * 0.92 + audioSnap.low * 0.08;
+
+            if (!uState.isPaused) {
+                this.stepDroplets(dt, timeSec);
+            }
+            this.updateLiveDomElements(timeSec);
+        }
 
         this.rafId = window.requestAnimationFrame(this.tick);
     };
 
-    /**
-     * Обновляет траектории падающих буковок: скорость падения чуть увеличена
-     * (начальная 32..56 px/s и ускорение 46 px/s^2), чтобы падение было плавным и заметным.
-     */
     private stepDroplets(dt: number, timeSec: number): void {
         const cascades: ReadonlyArray<2 | 3 | 4> = [2, 3, 4];
         const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
@@ -290,7 +303,8 @@ class TelemetryWaterfallAnimator {
         for (let c = 0; c < cascades.length; c++) {
             const cId = cascades[c];
             if (timeSec >= this.nextSpawnSec[cId]) {
-                const interval = 0.52 + Math.abs(Math.sin(timeSec * 1.45 + cId * 1.7)) * 0.95;
+                const interval =
+                    0.58 + Math.abs(Math.sin(timeSec * 1.35 + cId * 1.7)) * 0.92;
                 this.nextSpawnSec[cId] = timeSec + interval;
 
                 const pool = slotPools[cId];
@@ -311,11 +325,11 @@ class TelemetryWaterfallAnimator {
                     startYPercent: 22 + ((this.dropCounter * 19) % 54),
                     yOffsetPx: 0,
                     xDriftPx: 0,
-                    velocityPx: 32 + ((this.dropCounter * 13) % 24),
-                    opacity: 0.88,
-                    scale: 1.04,
+                    velocityPx: 30 + ((this.dropCounter * 13) % 22),
+                    opacity: 0.86,
+                    scale: 1.03,
                     life: 0,
-                    maxLife: 1.42 + ((this.dropCounter * 7) % 8) * 0.1,
+                    maxLife: 1.48 + ((this.dropCounter * 7) % 8) * 0.1,
                 });
             }
         }
@@ -326,8 +340,8 @@ class TelemetryWaterfallAnimator {
             const nextLife = d.life + dt;
             if (nextLife >= d.maxLife) continue;
             const prog = nextLife / d.maxLife;
-            const nextVel = d.velocityPx + 46 * dt;
-            const nextOpacity = Math.max(0, (1 - prog) * (1 - prog * 0.55) * 0.88);
+            const nextVel = d.velocityPx + 42 * dt;
+            const nextOpacity = Math.max(0, (1 - prog) * (1 - prog * 0.55) * 0.86);
             if (nextOpacity <= 0.02) continue;
 
             active.push({
@@ -335,29 +349,78 @@ class TelemetryWaterfallAnimator {
                 life: nextLife,
                 velocityPx: nextVel,
                 yOffsetPx: d.yOffsetPx + nextVel * dt,
-                xDriftPx: Math.sin(nextLife * 3.1 + d.id) * 4.5 * prog,
+                xDriftPx: Math.sin(nextLife * 2.9 + d.id) * 4.2 * prog,
                 opacity: nextOpacity,
-                scale: 1.04 - prog * 0.22,
+                scale: 1.03 - prog * 0.2,
             });
         }
         this.droplets = active.slice(-28);
     }
 
     /**
-     * Плавно на 60 FPS обновляет контуры, линию под заголовком и падающие буковки
-     * напрямую в DOM без пересоздания элементов и без дрожания текста.
+     * Вычисляет C∞-гладкий стиль дыхания слота в такт музыке без резких ступенек.
+     */
+    public computeSlotBreathCss(
+        slotKey: string,
+        phaseSeed: number,
+        timeSec: number
+    ): { transform: string; color: string; textShadow: string } {
+        const ignitedAt = this.ignitedSlots.get(slotKey) ?? -10;
+        const elapsed = timeSec - ignitedAt;
+        // Плавный синусоидальный импульс при отрыве капли вместо линейного скачка
+        const reigniteWave =
+            elapsed >= 0 && elapsed < 0.55
+                ? Math.sin((elapsed / 0.55) * Math.PI)
+                : 0.0;
+
+        const musicMod = 1.0 + this.smoothedMusicPulse * 0.35;
+        const breathScale =
+            1.0 +
+            0.016 * musicMod * Math.sin(timeSec * 1.25 + phaseSeed) +
+            reigniteWave * 0.032;
+        const gentleY =
+            0.75 * Math.cos(timeSec * 1.05 + phaseSeed * 0.8) - reigniteWave * 2.2;
+
+        return {
+            transform: `translate3d(0, ${gentleY.toFixed(2)}px, 0) scale(${breathScale.toFixed(
+                4
+            )})`,
+            color: reigniteWave > 0.35 ? '#f8fafc' : '#e0f2fe',
+            textShadow:
+                reigniteWave > 0.35
+                    ? '0 0 11px rgba(186, 230, 253, 0.78), 0 0 18px rgba(56, 189, 248, 0.45)'
+                    : `0 0 ${(6 + this.smoothedMusicLow * 6).toFixed(
+                        1
+                    )}px rgba(56, 189, 248, ${(0.26 + this.smoothedMusicPulse * 0.22).toFixed(
+                        2
+                    )})`,
+        };
+    }
+
+    /**
+     * На 60 FPS плавно обновляет волновые контуры, падающие буковки и дыхание всех
+     * элементов [data-breath-slot] напрямую в DOM (без пересоздания узлов).
      */
     private updateLiveDomElements(timeSec: number): void {
         if (typeof document === 'undefined') return;
 
-        // 1. Плавное обновление внешнего волнового контура
+        // 1. Плавное обновление внешнего волнового контура с музыкальной огибающей
         const contourPaths = document.querySelectorAll<SVGPathElement>(
             'path[data-breach-contour]'
         );
         contourPaths.forEach((pathEl: SVGPathElement) => {
             const cId = Number(pathEl.getAttribute('data-breach-contour') || '2');
             const offset = (cId - 2) * 1.25;
-            pathEl.setAttribute('d', buildLivingBreachContourPath(418, 280, timeSec, offset));
+            pathEl.setAttribute(
+                'd',
+                buildLivingBreachContourPath(
+                    418,
+                    280,
+                    timeSec,
+                    offset,
+                    this.smoothedMusicLow
+                )
+            );
         });
 
         // 2. Плавное обновление волнистой линии под заголовком
@@ -367,7 +430,9 @@ class TelemetryWaterfallAnimator {
         dividerPaths.forEach((lineEl: SVGPathElement) => {
             const cId = Number(lineEl.getAttribute('data-breach-wave-line') || '2');
             const yPos = Number(lineEl.getAttribute('data-wave-y') || '42');
-            const amp = Number(lineEl.getAttribute('data-wave-amp') || '2.9');
+            const amp =
+                Number(lineEl.getAttribute('data-wave-amp') || '2.6') *
+                (1.0 + this.smoothedMusicPulse * 0.25);
             const offset = (cId - 2) * 1.3;
             lineEl.setAttribute(
                 'd',
@@ -380,16 +445,29 @@ class TelemetryWaterfallAnimator {
             '.waterfall-stream-overlay'
         );
         streamOverlays.forEach((el: HTMLElement, idx: number) => {
-            const yPos = (timeSec * (12.0 + idx * 1.5)) % 120;
+            const yPos = (timeSec * (11.0 + idx * 1.4)) % 120;
             el.style.backgroundPosition = `0px ${yPos.toFixed(1)}px`;
         });
 
-        // 4. Плавная 60-FPS отрисовка падающих буковок в контейнерах .starfall-drops-layer
+        // 4. Непрерывное 60-FPS дыхание всех цифр и показателей в такт музыке
+        const breathNodes = document.querySelectorAll<HTMLElement>('[data-breath-slot]');
+        breathNodes.forEach((el: HTMLElement) => {
+            const slotKey = el.getAttribute('data-breath-slot') || 'slot';
+            const seed = Number(el.getAttribute('data-breath-seed') || '0');
+            const css = this.computeSlotBreathCss(slotKey, seed, timeSec);
+            el.style.transform = css.transform;
+            el.style.color = css.color;
+            el.style.textShadow = css.textShadow;
+        });
+
+        // 5. Плавная 60-FPS отрисовка падающих буковок в контейнерах .starfall-drops-layer
         const dropContainers = document.querySelectorAll<HTMLElement>(
             '.starfall-drops-layer[data-cascade-drops]'
         );
         dropContainers.forEach((container: HTMLElement) => {
-            const cId = Number(container.getAttribute('data-cascade-drops') || '2') as 2 | 3 | 4;
+            const cId = Number(
+                container.getAttribute('data-cascade-drops') || '2'
+            ) as 2 | 3 | 4;
             const drops = this.getDropletsForCascade(cId);
             const existingMap = new Map<number, HTMLElement>();
 
@@ -431,33 +509,17 @@ class TelemetryWaterfallAnimator {
         return this.droplets.filter((d: StarfallDroplet) => d.cascadeId === cascadeId);
     }
 
-    /**
-     * Спокойное, комфортное для глаз дыхание цифр (чуть заметнее первого варианта,
-     * но без резкого дрожания и без потери чёткости шрифта).
-     */
     public getBreathingSlotStyle(
         slotKey: string,
         phaseSeed: number
     ): Record<string, string | number> {
         const timeSec = this.getTimeSec();
-        const ignitedAt = this.ignitedSlots.get(slotKey) ?? -10;
-        const elapsed = timeSec - ignitedAt;
-        const isReigniting = elapsed >= 0 && elapsed < 0.42;
-
-        const breathScale = 1.0 + 0.028 * Math.sin(timeSec * 1.55 + phaseSeed);
-        const gentleY = 1.15 * Math.cos(timeSec * 1.35 + phaseSeed * 0.8);
-
+        const css = this.computeSlotBreathCss(slotKey, phaseSeed, timeSec);
         return {
             display: 'inline-block',
-            transform: isReigniting
-                ? `translateY(${((0.42 - elapsed) * -7.5 + gentleY).toFixed(1)}px) scale(${(
-                    breathScale * 1.07
-                ).toFixed(3)})`
-                : `translateY(${gentleY.toFixed(1)}px) scale(${breathScale.toFixed(3)})`,
-            color: isReigniting ? '#f8fafc' : '#e0f2fe',
-            textShadow: isReigniting
-                ? '0 0 12px rgba(125, 211, 252, 0.92), 0 0 20px rgba(56, 189, 248, 0.58)'
-                : '0 0 8px rgba(56, 189, 248, 0.32)',
+            transform: css.transform,
+            color: css.color,
+            textShadow: css.textShadow,
         };
     }
 }
@@ -471,17 +533,17 @@ export const waterfallAnimator = new TelemetryWaterfallAnimator();
 export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
     const timeSec = waterfallAnimator.getTimeSec();
     const phaseOffset = (cascadeId - 2) * 1.25;
-    const contourD = buildLivingBreachContourPath(418, 280, timeSec, phaseOffset);
+    const contourD = buildLivingBreachContourPath(418, 280, timeSec, phaseOffset, 0.2);
     const headerWaveD = buildLivingHorizontalWavePath(
         418,
         42,
         timeSec,
         phaseOffset + 0.4,
-        2.9
+        2.6
     );
 
     const drops = waterfallAnimator.getDropletsForCascade(cascadeId);
-    const shiftY = (timeSec * (12.0 + (cascadeId - 2) * 1.5)) % 120;
+    const shiftY = (timeSec * (11.0 + (cascadeId - 2) * 1.4)) % 120;
 
     const bgGradId = `breachWaterfallBg_${cascadeId}`;
     const strokeGradId = `breachWaterfallStroke_${cascadeId}`;
@@ -514,7 +576,7 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
             <path
                 data-breach-wave-line={String(cascadeId)}
                 data-wave-y="42"
-                data-wave-amp="2.9"
+                data-wave-amp="2.6"
                 d={headerWaveD}
                 fill="none"
                 stroke="rgba(125, 211, 252, 0.34)"
@@ -546,7 +608,7 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
                         opacity: drop.opacity.toFixed(3),
                         transform: `translate3d(${drop.xDriftPx.toFixed(
                             1
-                        )}px, ${drop.yOffsetPx.toFixed(1)}px, 0) scale(${drop.scale.toFixed(2)})`,
+                        )}px, drop.yOffsetPx.toFixed(1)}px, 0) scale(${drop.scale.toFixed(2)})`,
                     }}
                 >
                     {drop.glyph}
@@ -559,7 +621,7 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
 }
 
 // ============================================================================
-// РАЗДЕЛ 4. ПРЕДСТАВЛЕНИЕ И МОНТИРОВЩИК ВЕРХНЕГО КАСКАДА LAYER 2: METRICS
+// РАЗДЕЛ 4. ПРЕДСТАВЛЕНИЕ И MOUNT-ONCE МОНТИРОВЩИК LAYER 2: METRICS
 // ============================================================================
 
 export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element {
@@ -567,8 +629,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
     const isVisible =
         snap.layers.layer2_metricsHud ||
         snap.layers.layer5_truthXRayMode ||
-        snap.inspectionLevel === 'METRICS' ||
-        snap.debugMode;
+        snap.inspectionLevel === 'METRICS';
     const hiddenClass = isVisible ? '' : ' layer-hidden';
     const decor = renderWaterfallMembraneDecor(2);
 
@@ -585,6 +646,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                     <span className="phase-codename">LAYER_02 // POLYGLOT TELEMETRY</span>
                     <span
                         className="digest-badge"
+                        data-bind="l2-digest"
                         title="32-bit FNV-1a State Digest (ILLUSION == NEXUS == X-RAY)"
                     >
                         DIGEST: {t.stateDigestHex}
@@ -596,10 +658,12 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">FPS / P95 [ts/renderer.ts]</span>
                         <span
                             className="value"
+                            data-breath-slot="l2_fps"
+                            data-breath-seed="0.4"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_fps', 0.4)}
                         >
-                            {t.fps} FPS{' '}
-                            <small>
+                            <span data-bind="l2-fps">{t.fps} FPS </span>
+                            <small data-bind="l2-frametime">
                                 ({t.frameTimeMs}/{t.frameTimeP95Ms}ms)
                             </small>
                         </span>
@@ -609,6 +673,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">ΔE/E₀ [rust/gravity.rs]</span>
                         <span
                             className="value"
+                            data-bind="l2-drift"
+                            data-breath-slot="l2_drift"
+                            data-breath-seed="1.2"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_drift', 1.2)}
                         >
                             {t.energyDriftRatio.toExponential(2)}
@@ -619,6 +686,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">KURAMOTO r(t) [rust/gravity.rs]</span>
                         <span
                             className="value"
+                            data-bind="l2-kuramoto"
+                            data-breath-slot="l2_kuramoto"
+                            data-breath-seed="2.1"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_kuramoto', 2.1)}
                         >
                             {t.kuramotoOrderR.toFixed(3)}
@@ -629,6 +699,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">NODES / EDGES [python/graph_logic.py]</span>
                         <span
                             className="value"
+                            data-bind="l2-nodes"
+                            data-breath-slot="l2_nodes"
+                            data-breath-seed="2.9"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_nodes', 2.9)}
                         >
                             {t.activeParticles} / {t.activeConnections}
@@ -639,6 +712,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">CORE STATUS [IntegrationRegistry]</span>
                         <span
                             className="value"
+                            data-bind="l2-core"
+                            data-breath-slot="l2_core"
+                            data-breath-seed="3.7"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_core', 3.7)}
                         >
                             {t.wasmStatus} · {t.pythonBackendStatus}
@@ -649,6 +725,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                         <span className="label">AUDIO RMS [web-audio]</span>
                         <span
                             className="value"
+                            data-bind="l2-audio"
+                            data-breath-slot="l2_audio"
+                            data-breath-seed="4.5"
                             style={waterfallAnimator.getBreathingSlotStyle('l2_audio', 4.5)}
                         >
                             {t.audioStatus} ({t.silenceRmsDb.toFixed(1)} dBFS)
@@ -660,12 +739,62 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
     );
 }
 
+/**
+ * Монтирует DOM-дерево Layer 2 один раз и обновляет только текстовые узлы и класс видимости,
+ * полностью исключая 10-герцовое пересоздание DOM через replaceChildren.
+ */
 export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();
 
+    let rootEl: HTMLElement | null = null;
+    let elDigest: HTMLElement | null = null;
+    let elFps: HTMLElement | null = null;
+    let elFrameTime: HTMLElement | null = null;
+    let elDrift: HTMLElement | null = null;
+    let elKuramoto: HTMLElement | null = null;
+    let elNodes: HTMLElement | null = null;
+    let elCore: HTMLElement | null = null;
+    let elAudio: HTMLElement | null = null;
+
     const update = (state: Readonly<UniverseState>): void => {
-        container.replaceChildren(renderLayer2MetricsView(state));
+        if (!rootEl || !container.contains(rootEl)) {
+            rootEl = renderLayer2MetricsView(state) as HTMLElement;
+            container.replaceChildren(rootEl);
+            elDigest = rootEl.querySelector<HTMLElement>('[data-bind="l2-digest"]');
+            elFps = rootEl.querySelector<HTMLElement>('[data-bind="l2-fps"]');
+            elFrameTime = rootEl.querySelector<HTMLElement>('[data-bind="l2-frametime"]');
+            elDrift = rootEl.querySelector<HTMLElement>('[data-bind="l2-drift"]');
+            elKuramoto = rootEl.querySelector<HTMLElement>('[data-bind="l2-kuramoto"]');
+            elNodes = rootEl.querySelector<HTMLElement>('[data-bind="l2-nodes"]');
+            elCore = rootEl.querySelector<HTMLElement>('[data-bind="l2-core"]');
+            elAudio = rootEl.querySelector<HTMLElement>('[data-bind="l2-audio"]');
+            return;
+        }
+
+        const t = state.telemetry;
+        const isVisible =
+            state.layers.layer2_metricsHud ||
+            state.layers.layer5_truthXRayMode ||
+            state.inspectionLevel === 'METRICS';
+        rootEl.classList.toggle('layer-hidden', !isVisible);
+
+        if (elDigest) elDigest.textContent = `DIGEST: ${t.stateDigestHex}`;
+        if (elFps) elFps.textContent = `${t.fps} FPS `;
+        if (elFrameTime) {
+            elFrameTime.textContent = `(${t.frameTimeMs}/${t.frameTimeP95Ms}ms)`;
+        }
+        if (elDrift) elDrift.textContent = t.energyDriftRatio.toExponential(2);
+        if (elKuramoto) elKuramoto.textContent = t.kuramotoOrderR.toFixed(3);
+        if (elNodes) {
+            elNodes.textContent = `${t.activeParticles} / ${t.activeConnections}`;
+        }
+        if (elCore) {
+            elCore.textContent = `${t.wasmStatus} · ${t.pythonBackendStatus}`;
+        }
+        if (elAudio) {
+            elAudio.textContent = `${t.audioStatus} (${t.silenceRmsDb.toFixed(1)} dBFS)`;
+        }
     };
 
     return universeStore.subscribe(update);

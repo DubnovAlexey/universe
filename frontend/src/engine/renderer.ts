@@ -1479,12 +1479,10 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
-
     /**
-     * Отрисовывает 7-оболочечную корону туманности «Кошачий глаз» (NGC 6543),
+     * Отрисовывает 7-оболочечную корону туманности «Кошачьего глаза» (NGC 6543),
      * допплеровский аккреционный диск и тень горизонта событий Чёрной дыры в фазе 05_SINGULARITY.
-     * ИСПРАВЛЕНО: В начале Акта A (79.0 с) Чёрная дыра и корона плавно вырастают из микроскопической
-     * Точки Нуля (smootherstep 0.0 -> 0.45), а в Акте B сжимаются более тягуче и плавно.
+     * В Акте A вырастает из Точки Нуля, а в Акте B полностью сжимается обратно в точку и исчезает.
      */
     private renderSingularityCoronaAndBlackHole(
         ctx: CanvasRenderingContext2D,
@@ -1496,26 +1494,36 @@ export class UniverseRenderer {
         actProgress: number,
         audioSnap: AudioModulationSnapshot
     ): void {
+        // Когда открывается финальная визитка (Акт D), Чёрная дыра уже полностью ушла в точку и исчезла
+        if (act === 'ACT_D_GITHUB_CARD') {
+            return;
+        }
+
         ctx.save();
 
-        // Плавная кривая рождения из микроскопической Точки Нуля (0.015 -> 1.0) в Акте A
-        // и более медленное, тягучее схлопывание в Акте B
         let volumeEnvelope = 1.0;
         let opacityEnvelope = 1.0;
 
         if (act === 'ACT_A_ACCRETION' || act === 'NONE' || act === 'INACTIVE') {
             const birthCurve = smootherstep(0.0, 0.46, actProgress);
-            volumeEnvelope = 0.015 + 0.985 * birthCurve;
+            volumeEnvelope = 0.012 + 0.988 * birthCurve;
             opacityEnvelope = smootherstep(0.0, 0.25, actProgress);
         } else if (act === 'ACT_B_LOGIC') {
-            if (actProgress > 0.36) {
-                const cNorm = (actProgress - 0.36) / 0.64;
+            if (actProgress > 0.32) {
+                const cNorm = (actProgress - 0.32) / 0.68;
                 const smoothCollapse = smootherstep(0.0, 1.0, cNorm);
-                volumeEnvelope = Math.max(0.012, Math.pow(1.0 - smoothCollapse, 1.65));
+                // Полное сжатие радиуса в 0.0 и растворение к концу Акта B
+                volumeEnvelope = Math.max(0.0, Math.pow(1.0 - smoothCollapse, 2.15));
+                opacityEnvelope = 1.0 - smootherstep(0.72, 1.0, cNorm);
             }
-        } else if (act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE') {
-            volumeEnvelope = 0.26;
-            opacityEnvelope = 0.72;
+        } else if (act === 'RESTART_COLLAPSE') {
+            volumeEnvelope = Math.max(0.0, 0.18 * (1.0 - actProgress));
+            opacityEnvelope = Math.max(0.0, 1.0 - actProgress);
+        }
+
+        if (opacityEnvelope <= 0.005 || volumeEnvelope <= 0.002) {
+            ctx.restore();
+            return;
         }
 
         // 1. 7 лепестковых газовых оболочек звезды Вольфа — Райе («Кошачий глаз» NGC 6543)
@@ -1524,18 +1532,22 @@ export class UniverseRenderer {
             const shellBirthDelay = (l - 1) * 0.04;
             const shellScale =
                 act === 'ACT_A_ACCRETION'
-                    ? smootherstep(shellBirthDelay, Math.min(1.0, shellBirthDelay + 0.48), actProgress)
+                    ? smootherstep(
+                        shellBirthDelay,
+                        Math.min(1.0, shellBirthDelay + 0.48),
+                        actProgress
+                    )
                     : volumeEnvelope;
 
             const baseR = (0.09 + l * 0.055) * scale * shellScale;
-            if (baseR < 1.5) continue;
+            if (baseR < 0.8) continue;
 
             const lobes = 4 + (l % 3) * 2;
             const alpha = clamp(
                 (0.24 - l * 0.024) *
                 (0.85 + 0.25 * audioSnap.pulse) *
                 opacityEnvelope,
-                0.015,
+                0.01,
                 0.32
             );
 
@@ -1564,31 +1576,34 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // 2. Фотонное кольцо и сфера тени горизонта событий Чёрной дыры (вырастает строго из Точки Нуля)
+        // 2. Фотонное кольцо и сфера тени горизонта событий Чёрной дыры (уходит в чистую точку)
         const fullShadowR = scale * 0.068;
-        const shadowR = Math.max(0.8, fullShadowR * volumeEnvelope);
+        const shadowR = fullShadowR * volumeEnvelope;
+        const photonOuterR = Math.max(1.2, shadowR * 2.45);
 
-        const photonOuterR = Math.max(3.5, shadowR * 2.45);
         const photonGrad = ctx.createRadialGradient(
             cx - shadowR * 0.16,
             cy,
-            shadowR * 0.78,
+            Math.max(0.2, shadowR * 0.75),
             cx,
             cy,
             photonOuterR
         );
         photonGrad.addColorStop(0.0, `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`);
-        photonGrad.addColorStop(0.36, `rgba(2, 3, 8, ${(0.98 * opacityEnvelope).toFixed(3)})`);
         photonGrad.addColorStop(
-            0.46,
-            RenderPipeline.hexToRgba('#f8fafc', 0.88 * opacityEnvelope)
+            0.36,
+            `rgba(2, 3, 8, ${(0.98 * opacityEnvelope).toFixed(3)})`
         );
         photonGrad.addColorStop(
-            0.64,
-            RenderPipeline.hexToRgba('#7dd3fc', 0.44 * opacityEnvelope)
+            0.48,
+            RenderPipeline.hexToRgba('#f8fafc', 0.92 * opacityEnvelope)
         );
         photonGrad.addColorStop(
-            0.84,
+            0.68,
+            RenderPipeline.hexToRgba('#7dd3fc', 0.48 * opacityEnvelope)
+        );
+        photonGrad.addColorStop(
+            0.86,
             RenderPipeline.hexToRgba('#6366f1', 0.22 * opacityEnvelope)
         );
         photonGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
@@ -1598,44 +1613,52 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, photonOuterR, 0, TAU);
         ctx.fill();
 
-        // Внутренняя абсолютно чёрная сфера горизонта событий
-        ctx.fillStyle = `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`;
-        ctx.beginPath();
-        ctx.arc(cx, cy, shadowR * 0.92, 0, TAU);
-        ctx.fill();
+        if (shadowR > 0.6) {
+            ctx.fillStyle = `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(cx, cy, shadowR * 0.9, 0, TAU);
+            ctx.fill();
+        }
 
         ctx.restore();
     }
 
     /**
-     * Отрисовывает Акт C (2.5 секунды живой тишины): неподвижное тонкое кольцо горизонта
-     * в глубоком полуночном индиго и спокойное дыхание ядра (<= 0.2 Гц, <= 3%).
+     * Отрисовывает Акт C (93.0–95.5 с): Чёрная дыра уже схлопнулась в крошечную
+     * жемчужную микро-точку в центре экрана, которая замирает и растворяется
+     * непосредственно перед вылетом из неё финальной визитки DUBNOV ALEXEY.
      */
     private renderZeroSilenceActC(
         ctx: CanvasRenderingContext2D,
         cx: number,
         cy: number,
-        minSide: number,
+        _minSide: number,
         simTimeSec: number
     ): void {
-        const slowBreath = 1.0 + 0.024 * Math.sin(simTimeSec * TAU * 0.18);
-        const ringR = minSide * 0.064 * slowBreath;
+        const uState = universeStore.getState();
+        const actProg = clamp(uState.singularityActProgress, 0, 1);
+        // Микро-точка плавно гаснет к концу 2.5 с, уступая место вылетающей из неё визитке
+        const pointFade = 1.0 - smootherstep(0.65, 1.0, actProg);
+        if (pointFade <= 0.01) return;
 
-        const halo = ctx.createRadialGradient(cx, cy, ringR * 0.6, cx, cy, ringR * 2.2);
-        halo.addColorStop(0.0, 'rgba(2, 3, 8, 1.0)');
-        halo.addColorStop(0.45, 'rgba(125, 211, 252, 0.22)');
+        const slowBreath = 1.0 + 0.08 * Math.sin(simTimeSec * TAU * 0.35);
+        const dotR = Math.max(0.8, 2.6 * slowBreath * pointFade);
+        const glowR = dotR * 6.5;
+
+        const halo = ctx.createRadialGradient(cx, cy, 0.2, cx, cy, glowR);
+        halo.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.95 * pointFade));
+        halo.addColorStop(0.35, RenderPipeline.hexToRgba('#7dd3fc', 0.42 * pointFade));
         halo.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
         ctx.fillStyle = halo;
         ctx.beginPath();
-        ctx.arc(cx, cy, ringR * 2.2, 0, TAU);
+        ctx.arc(cx, cy, glowR, 0, TAU);
         ctx.fill();
 
-        ctx.strokeStyle = 'rgba(248, 250, 252, 0.38)';
-        ctx.lineWidth = 0.85;
+        ctx.fillStyle = RenderPipeline.hexToRgba('#f8fafc', pointFade);
         ctx.beginPath();
-        ctx.arc(cx, cy, ringR, 0, TAU);
-        ctx.stroke();
+        ctx.arc(cx, cy, dotR, 0, TAU);
+        ctx.fill();
     }
 
     // ============================================================================
@@ -1935,7 +1958,7 @@ function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): vo
     el.dataset.scrambling = '1';
 
     let step = 0;
-    const totalSteps = Math.max(12, Math.min(24, canonical.length + 6));
+    const totalSteps = 10;
 
     const timerId = window.setInterval(() => {
         const latestCanonical = el.dataset.canonicalText || canonical;
@@ -1957,24 +1980,30 @@ function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): vo
                 ch === '/' ||
                 ch === '(' ||
                 ch === ')' ||
+                ch === '-' ||
                 i < lockBoundary
             ) {
                 out += ch;
-            } else {
+            } else if ((i + step + siblingIndex) % 3 === 0) {
+                // Меняем только часть незафиксированных символов на каждом шаге,
+                // чтобы мелкий шрифт плавно переливался, а не дёргался
                 const gIdx =
-                    (i * 11 + step * 5 + siblingIndex * 7) % CORNER_SCRAMBLE_GLYPHS.length;
+                    (i * 7 + step * 3 + siblingIndex * 5) %
+                    CORNER_SCRAMBLE_GLYPHS.length;
                 out += CORNER_SCRAMBLE_GLYPHS[gIdx];
+            } else {
+                out += ch;
             }
         }
 
         const tone =
-            CORNER_COLD_TONES[(step + siblingIndex * 2) % CORNER_COLD_TONES.length];
+            CORNER_COLD_TONES[(step + siblingIndex) % CORNER_COLD_TONES.length];
         el.style.color = tone.color;
         el.style.textShadow = tone.shadow;
         el.textContent = out;
 
         step++;
-    }, 32);
+    }, 88);
 
     activeScrambleTimers.set(el, timerId);
 }

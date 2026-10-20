@@ -1,10 +1,7 @@
 # ============================================================================
 # ФАЙЛ: .github/workflows/deploy.yml
-# НАЗНАЧЕНИЕ: Автоматическая проверка паритета (Python/TS) и деплой на GitHub Pages
-# ЗАДАЧИ ФАЙЛА:
-# 1. Проверить побитовый паритет Golden-векторов и пакетов 'UNVS' в Python-ядре.
-# 2. Установить зависимости фронтенда и собрать продакшен-бандл Astro/TypeScript.
-# 3. Опубликовать статический артефакт frontend/dist на GitHub Pages.
+# НАЗНАЧЕНИЕ: Автоматическая проверка паритета (Python/TS), проверка типов
+#             и публикация продакшен-сборки на GitHub Pages (Node.js 22)
 # ============================================================================
 
 name: Deploy UNIVERSE to GitHub Pages
@@ -39,16 +36,18 @@ jobs:
       - name: Verify Python Core Golden PRNG & Binary Packet Parity
         run: python -m backend.main --verify
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+          node-version: "22"
 
       - name: Install Frontend Dependencies
         working-directory: ./frontend
         run: npm install
+
+      - name: TypeScript Strict Typecheck
+        working-directory: ./frontend
+        run: npm run typecheck
 
       - name: Build Astro Production Bundle
         working-directory: ./frontend

@@ -3,14 +3,14 @@
 // ФАЙЛ: frontend/src/layers/Layer4_Terminal.tsx
 // НАЗНАЧЕНИЕ: Нижний каскад правой колонки телеметрии (LAYER_04 // TERMINAL & LEDGER)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Импорт нативной DOM/SVG фабрики React и волнового контура мембраны
+// 1. Импорт нативной DOM/SVG фабрики React и декоратора мембраны Водопада
 //    из модуля Layer2_Metrics.tsx.
-// 2. Вывод живой матрицы модулей IntegrationRegistry (язык, статус, перцентили
-//    времени шага p50/p95 мс) и подтверждение эквивалентности трёх оптик
-//    (ILLUSION == NEXUS == X-RAY [StateDigest]).
-// 3. Отображение счётчиков ресурсов ResourceLedger (buf, tex, audio, listeners,
-//    restarts) и потока архитектурных логов с 60-FPS эффектом «Звездопада / Капель».
-// 4. Реактивный монтировщик (mountLayer4Terminal) без лишних таймеров перерисовки.
+// 2. Вывод живой матрицы модулей IntegrationRegistry (язык, статус, реальные
+//    перцентили времени шага p50/p95 мс) и подтверждение эквивалентности трёх
+//    оптик (ILLUSION == NEXUS == X-RAY [StateDigest]).
+// 3. Отображение счётчиков ресурсов ResourceLedger и потока архитектурных логов.
+// 4. Mount-once монтировщик (mountLayer4Terminal): инкрементальное обновление
+//    строк реестра и логов без пересоздания DOM-дерева каждые 95 мс.
 // ============================================================================
 
 import {
@@ -29,14 +29,17 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
     const isVisible =
         state.layers.layer4_architectTerminal ||
         state.layers.layer5_truthXRayMode ||
-        state.inspectionLevel === 'TERMINAL' ||
-        state.debugMode;
+        state.inspectionLevel === 'TERMINAL';
     const hiddenClass = isVisible ? '' : ' layer-hidden';
 
     const modules = integrationRegistry.getAllModules().slice(0, 6);
     const ledger = resourceLedger.getCounters();
     const digest = state.telemetry.stateDigestHex;
-    const recentLogs = state.terminalLogs.slice(0, 3);
+    const recentLogs = [
+        state.terminalLogs[0] ?? '',
+        state.terminalLogs[1] ?? '',
+        state.terminalLogs[2] ?? '',
+    ];
     const decor = renderWaterfallMembraneDecor(4);
 
     return (
@@ -52,7 +55,7 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
                     <span className="phase-codename">
                         LAYER_04 // TERMINAL &amp; REGISTRY
                     </span>
-                    <span className="digest-badge">
+                    <span className="digest-badge" data-bind="l4-digest">
                         ILLUSION==NEXUS==X-RAY [{digest}]
                     </span>
                 </div>
@@ -62,11 +65,17 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
                         <div key={m.id} className="registry-row">
                             <span className="mod-id">{m.id}</span>
                             <span className="mod-lang">[{m.language}]</span>
-                            <span className={`mod-status status-${m.status}`}>
+                            <span
+                                className={`mod-status status-${m.status}`}
+                                data-bind={`l4-status-${idx}`}
+                            >
                                 {m.status.toUpperCase()}
                             </span>
                             <span
                                 className="mod-perf"
+                                data-bind={`l4-perf-${idx}`}
+                                data-breath-slot={idx < 3 ? `l4_mod${idx}` : undefined}
+                                data-breath-seed={idx < 3 ? String(idx * 0.9) : undefined}
                                 style={
                                     idx < 3
                                         ? waterfallAnimator.getBreathingSlotStyle(
@@ -84,9 +93,11 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
 
                 <div
                     className="ledger-bar"
+                    data-breath-slot="l4_ledger"
+                    data-breath-seed="3.5"
                     style={waterfallAnimator.getBreathingSlotStyle('l4_ledger', 3.5)}
                 >
-                    <span>
+                    <span data-bind="l4-ledger">
                         LEDGER: buf={ledger.buffers} | tex={ledger.textures} | audio=
                         {ledger.audioNodes} | listeners={ledger.listeners} | restarts=
                         {ledger.restartCount}
@@ -98,6 +109,9 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
                         <div
                             key={`log_${idx}`}
                             className="terminal-log-line"
+                            data-bind={`l4-log-${idx}`}
+                            data-breath-slot={idx === 0 ? 'l4_log0' : undefined}
+                            data-breath-seed={idx === 0 ? '4.4' : undefined}
                             style={
                                 idx === 0
                                     ? waterfallAnimator.getBreathingSlotStyle('l4_log0', 4.4)
@@ -113,12 +127,81 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
     );
 }
 
+/**
+ * Монтирует DOM-дерево Layer 4 один раз и обновляет только текстовые узлы и статусы,
+ * сохраняя непрерывность 60-FPS анимаций контура и падающих символов.
+ */
 export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();
 
+    let rootEl: HTMLElement | null = null;
+    let elDigest: HTMLElement | null = null;
+    let elLedger: HTMLElement | null = null;
+    const statusEls: Array<HTMLElement | null> = [];
+    const perfEls: Array<HTMLElement | null> = [];
+    const logEls: Array<HTMLElement | null> = [];
+
     const update = (state: Readonly<UniverseState>): void => {
-        container.replaceChildren(renderLayer4TerminalView(state));
+        if (!rootEl || !container.contains(rootEl)) {
+            rootEl = renderLayer4TerminalView(state) as HTMLElement;
+            container.replaceChildren(rootEl);
+            elDigest = rootEl.querySelector<HTMLElement>('[data-bind="l4-digest"]');
+            elLedger = rootEl.querySelector<HTMLElement>('[data-bind="l4-ledger"]');
+            statusEls.length = 0;
+            perfEls.length = 0;
+            logEls.length = 0;
+            for (let i = 0; i < 6; i++) {
+                statusEls.push(
+                    rootEl.querySelector<HTMLElement>(`[data-bind="l4-status-${i}"]`)
+                );
+                perfEls.push(
+                    rootEl.querySelector<HTMLElement>(`[data-bind="l4-perf-${i}"]`)
+                );
+            }
+            for (let i = 0; i < 3; i++) {
+                logEls.push(
+                    rootEl.querySelector<HTMLElement>(`[data-bind="l4-log-${i}"]`)
+                );
+            }
+            return;
+        }
+
+        const isVisible =
+            state.layers.layer4_architectTerminal ||
+            state.layers.layer5_truthXRayMode ||
+            state.inspectionLevel === 'TERMINAL';
+        rootEl.classList.toggle('layer-hidden', !isVisible);
+
+        if (elDigest) {
+            elDigest.textContent = `ILLUSION==NEXUS==X-RAY [${state.telemetry.stateDigestHex}]`;
+        }
+
+        const modules = integrationRegistry.getAllModules().slice(0, 6);
+        for (let i = 0; i < modules.length; i++) {
+            const m = modules[i];
+            const sEl = statusEls[i];
+            if (sEl) {
+                sEl.className = `mod-status status-${m.status}`;
+                sEl.textContent = m.status.toUpperCase();
+            }
+            const pEl = perfEls[i];
+            if (pEl) {
+                pEl.textContent = `${m.stepP50Ms}ms / ${m.stepP95Ms}ms`;
+            }
+        }
+
+        const ledger = resourceLedger.getCounters();
+        if (elLedger) {
+            elLedger.textContent = `LEDGER: buf=${ledger.buffers} | tex=${ledger.textures} | audio=${ledger.audioNodes} | listeners=${ledger.listeners} | restarts=${ledger.restartCount}`;
+        }
+
+        for (let i = 0; i < 3; i++) {
+            const lEl = logEls[i];
+            if (lEl) {
+                lEl.textContent = state.terminalLogs[i] ?? '';
+            }
+        }
     };
 
     return universeStore.subscribe(update);

@@ -5,14 +5,14 @@
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
 // 1. Импорт нативной DOM/SVG фабрики React и декоратора мембраны Водопада
 //    из верхнего каскада Layer2_Metrics.tsx.
-// 2. Отображение 3 классов рёбер графа NEXUS из nexusGraphEngine:
-//    - Class A (MST Trunks): магистральные аксоны минимального остовного дерева;
-//    - Class B (Gabriel Bridges): межкластерные синаптические мосты Габриэля;
-//    - Class C (Murray Dendrites): ветвящиеся дендриты по закону Мюррея r_p^3 = sum r_c^3.
-// 3. Вывод топологических инвариантов (средняя степень узлов, кластеризация,
-//    диаметр в хопах, длина пути и активные синаптические импульсы в полёте)
-//    с плавным дыханием цифр и 60-FPS «Звездопадом / Каплями».
-// 4. Реактивный монтировщик (mountLayer3Topology) без лишних таймеров перерисовки.
+// 2. Независимое управление видимостью: панель LAYER_03 подчиняется кнопке
+//    TOPOLOGY (state.layers.layer3_topologyGraph) без принудительной блокировки
+//    от состояния соседней панели METRICS.
+// 3. Отображение 3 классов рёбер графа NEXUS (Class A MST Trunks, Class B
+//    Gabriel Bridges, Class C Murray Dendrites) и реальных BFS-инвариантов
+//    (средняя степень, кластеризация по треугольникам, диаметр и длина пути).
+// 4. Mount-once монтировщик (mountLayer3Topology): однократное создание DOM
+//    и плавное обновление значений без сброса анимации дыхания и Звездопада.
 // ============================================================================
 
 import {
@@ -32,10 +32,8 @@ export function renderLayer3TopologyView(
 ): Element {
     const isVisible =
         state.layers.layer3_topologyGraph ||
-        state.layers.layer2_metricsHud ||
         state.layers.layer5_truthXRayMode ||
-        state.inspectionLevel === 'TOPOLOGY' ||
-        state.debugMode;
+        state.inspectionLevel === 'TOPOLOGY';
     const hiddenClass = isVisible ? '' : ' layer-hidden';
     const decor = renderWaterfallMembraneDecor(3);
 
@@ -50,13 +48,18 @@ export function renderLayer3TopologyView(
             <div className="waterfall-panel-content">
                 <div className="inspector-header">
                     <span className="phase-codename">LAYER_03 // NEXUS GRAPH TOPOLOGY</span>
-                    <span className="source-tag">{metrics.computeSource}</span>
+                    <span className="source-tag" data-bind="l3-source">
+                        {metrics.computeSource}
+                    </span>
                 </div>
 
                 <div className="topology-stats-row">
                     <div className="topology-stat-line">
                         <span className="label">CLASS A (MST TRUNKS):</span>
                         <strong
+                            data-bind="l3-trunks"
+                            data-breath-slot="l3_trunks"
+                            data-breath-seed="0.8"
                             style={waterfallAnimator.getBreathingSlotStyle('l3_trunks', 0.8)}
                         >
                             {metrics.trunkCount} [MST]
@@ -65,6 +68,9 @@ export function renderLayer3TopologyView(
                     <div className="topology-stat-line">
                         <span className="label">CLASS B (GABRIEL BRIDGES):</span>
                         <strong
+                            data-bind="l3-bridges"
+                            data-breath-slot="l3_bridges"
+                            data-breath-seed="1.6"
                             style={waterfallAnimator.getBreathingSlotStyle('l3_bridges', 1.6)}
                         >
                             {metrics.bridgeCount} [GABRIEL]
@@ -73,7 +79,13 @@ export function renderLayer3TopologyView(
                     <div className="topology-stat-line">
                         <span className="label">CLASS C (MURRAY DENDRITES):</span>
                         <strong
-                            style={waterfallAnimator.getBreathingSlotStyle('l3_dendrites', 2.4)}
+                            data-bind="l3-dendrites"
+                            data-breath-slot="l3_dendrites"
+                            data-breath-seed="2.4"
+                            style={waterfallAnimator.getBreathingSlotStyle(
+                                'l3_dendrites',
+                                2.4
+                            )}
                         >
                             {metrics.dendriteCount} [r_p³=∑r_c³]
                         </strong>
@@ -84,6 +96,9 @@ export function renderLayer3TopologyView(
                     <div className="topology-stat-line">
                         <span className="label">AVG DEGREE / CLUSTERING:</span>
                         <strong
+                            data-bind="l3-deg"
+                            data-breath-slot="l3_deg"
+                            data-breath-seed="3.2"
                             style={waterfallAnimator.getBreathingSlotStyle('l3_deg', 3.2)}
                         >
                             {metrics.avgDegree} / {metrics.clusteringCoeff}
@@ -92,6 +107,9 @@ export function renderLayer3TopologyView(
                     <div className="topology-stat-line">
                         <span className="label">DIAMETER / PATH:</span>
                         <strong
+                            data-bind="l3-diam"
+                            data-breath-slot="l3_diam"
+                            data-breath-seed="4.0"
                             style={waterfallAnimator.getBreathingSlotStyle('l3_diam', 4.0)}
                         >
                             {metrics.diameterHops} hops / {metrics.avgPathLength}
@@ -100,6 +118,9 @@ export function renderLayer3TopologyView(
                     <div className="topology-stat-line">
                         <span className="label">PULSES IN FLIGHT:</span>
                         <strong
+                            data-bind="l3-pulses"
+                            data-breath-slot="l3_pulses"
+                            data-breath-seed="4.8"
                             style={waterfallAnimator.getBreathingSlotStyle('l3_pulses', 4.8)}
                         >
                             {state.telemetry.activePulses}
@@ -111,13 +132,56 @@ export function renderLayer3TopologyView(
     );
 }
 
+/**
+ * Монтирует DOM-дерево Layer 3 один раз и обновляет только текстовые показатели,
+ * сохраняя непрерывность 60-FPS дыхания и падающих глифов.
+ */
 export function mountLayer3Topology(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();
 
+    let rootEl: HTMLElement | null = null;
+    let elSource: HTMLElement | null = null;
+    let elTrunks: HTMLElement | null = null;
+    let elBridges: HTMLElement | null = null;
+    let elDendrites: HTMLElement | null = null;
+    let elDeg: HTMLElement | null = null;
+    let elDiam: HTMLElement | null = null;
+    let elPulses: HTMLElement | null = null;
+
     const update = (state: Readonly<UniverseState>): void => {
         const metrics = nexusGraphEngine.getLastTelemetry();
-        container.replaceChildren(renderLayer3TopologyView(state, metrics));
+
+        if (!rootEl || !container.contains(rootEl)) {
+            rootEl = renderLayer3TopologyView(state, metrics) as HTMLElement;
+            container.replaceChildren(rootEl);
+            elSource = rootEl.querySelector<HTMLElement>('[data-bind="l3-source"]');
+            elTrunks = rootEl.querySelector<HTMLElement>('[data-bind="l3-trunks"]');
+            elBridges = rootEl.querySelector<HTMLElement>('[data-bind="l3-bridges"]');
+            elDendrites = rootEl.querySelector<HTMLElement>('[data-bind="l3-dendrites"]');
+            elDeg = rootEl.querySelector<HTMLElement>('[data-bind="l3-deg"]');
+            elDiam = rootEl.querySelector<HTMLElement>('[data-bind="l3-diam"]');
+            elPulses = rootEl.querySelector<HTMLElement>('[data-bind="l3-pulses"]');
+            return;
+        }
+
+        const isVisible =
+            state.layers.layer3_topologyGraph ||
+            state.layers.layer5_truthXRayMode ||
+            state.inspectionLevel === 'TOPOLOGY';
+        rootEl.classList.toggle('layer-hidden', !isVisible);
+
+        if (elSource) elSource.textContent = metrics.computeSource;
+        if (elTrunks) elTrunks.textContent = `${metrics.trunkCount} [MST]`;
+        if (elBridges) elBridges.textContent = `${metrics.bridgeCount} [GABRIEL]`;
+        if (elDendrites) elDendrites.textContent = `${metrics.dendriteCount} [r_p³=∑r_c³]`;
+        if (elDeg) {
+            elDeg.textContent = `${metrics.avgDegree} / ${metrics.clusteringCoeff}`;
+        }
+        if (elDiam) {
+            elDiam.textContent = `${metrics.diameterHops} hops / ${metrics.avgPathLength}`;
+        }
+        if (elPulses) elPulses.textContent = String(state.telemetry.activePulses);
     };
 
     return universeStore.subscribe(update);

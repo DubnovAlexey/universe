@@ -1,35 +1,28 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
-// НАЗНАЧЕНИЕ: Движок квантового одометра и персональной визитки v2.4 (MASTER 05)
+// НАЗНАЧЕНИЕ: Движок квантового одометра и персональной визитки v2.5 (MASTER 05)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
 // 1. Канонические строки визитки (CANONICAL_FINALE_LINES) с выделенной первой
 //    строкой имени и фамилии автора ('DUBNOV ALEXEY') и 10-тоновая холодная
 //    палитра полутонов и глубоких теней (MONOCHROME_NEBULA_PALETTE).
-// 2. Контракт состояния ячейки барабана (OdometerGlyphCellState): координаты,
-//    фаза вращения колеса, вертикальное перспективное сжатие, цвета и тени.
+// 2. Контракт состояния ячейки барабана (OdometerGlyphCellState).
 // 3. Класс CipherOdometerEngine:
-//    - адаптивная типографика с акцентным заголовком имени (getLineTypography);
-//    - стохастический закон скорости центральной бегущей строки
-//      (computeChaoticWheelPosition — несоизмеримые гармоники Орнштейна — Уленбека);
-//    - C2/C∞-гладкое схождение глифов и бесшовное кардио-дыхание визитки
-//      без пороговых скачков (evaluateCells);
-//    - интерактивный квантовый ре-спин символов при наведении курсора мыши
-//      и верификация отсутствия клиппинга на ширинах 320..1920 px.
+//    - развёртывание всех строк визитки строго из центральной Точки Нуля (cx, cy),
+//      в которую перед этим схлопнулась Чёрная дыра;
+//    - синхронизация дыхания карточки (cardHeartbeat) с реальной музыкальной
+//      огибающей cosmic_ambient.mp3 через audioSync;
+//    - интерактивный квантовый ре-спин символов при наведении курсора мыши.
 // ============================================================================
 
 import { DeterministicPRNG } from '../core/prng';
 import { smootherstep, universeStore } from '../store/universeState';
+import { audioSync } from '../utils/audioSync';
 
 // ============================================================================
 // РАЗДЕЛ 1. КАНОНИЧЕСКИЕ СТРОКИ ВИЗИТКИ И МНОГОСЛОЙНАЯ ТЕНЕВАЯ ПАЛИТРА
 // ============================================================================
 
-/**
- * Пять канонических строк финального манифеста:
- * Первая строка содержит строго Фамилию и Имя автора для чистой презентации
- * перед инженерами, HR и техническими руководителями.
- */
 export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
     'DUBNOV ALEXEY',
     'POLYGLOT ARCHITECTURE : FROM ZERO TO ZERO (108 SEC)',
@@ -38,20 +31,11 @@ export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, s
     'SYMPLECTIC PHYSICS · KURAMOTO SYNC · GABRIEL-MURRAY NEXUS',
 ];
 
-/**
- * Индекс единственной центральной строки, которая продолжает бесконечное
- * квантовое вращение после фиксации остальных строк визитки.
- */
 const ENDLESS_SPIN_LINE_INDEX = 2;
 
 const QUANTUM_STREAM_GLYPHS =
     '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡∷';
 
-/**
- * Десятитоновая серо-чёрно-бело-голубоватая палитра с глубокими тенями
- * для вращающихся барабанов и интерактивного перебора при наведении мыши
- * (полностью исключены ржаво-рыжие оттенки).
- */
 const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
     colorHex: string;
     shadowColor: string;
@@ -146,19 +130,11 @@ export class CipherOdometerEngine {
     private pointerY = -9999;
     private readonly hoverExcitedUntilMs: Map<number, number> = new Map();
 
-    /**
-     * Обновляет координаты указателя мыши для возбуждения квантового перебора
-     * символов на зафиксированных строках визитки.
-     */
     public notifyPointerHover(clientX: number, clientY: number): void {
         this.pointerX = clientX;
         this.pointerY = clientY;
     }
 
-    /**
-     * Вычисляет адаптивные параметры шрифта и шага символов для каждой из 5 строк.
-     * Строка 0 ('DUBNOV ALEXEY') получает увеличенный акцентный размер и широкий шаг.
-     */
     private getLineTypography(
         lineIndex: number,
         charCount: number,
@@ -177,7 +153,6 @@ export class CipherOdometerEngine {
         let fontWeight = '500';
 
         if (lineIndex === 0) {
-            // Главный заголовок визитки — Имя и Фамилия автора
             idealFontPx = 25.5;
             idealStepRatio = 0.78;
             colorHex = '#f8fafc';
@@ -215,10 +190,6 @@ export class CipherOdometerEngine {
         return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
 
-    /**
-     * Нестационарный закон вращения барабанов (процесс Орнштейна — Уленбека
-     * на несоизмеримых гармониках): скорость плавно ускоряется и замедляется без рывков.
-     */
     private computeChaoticWheelPosition(
         liveTimeSec: number,
         r1: number,
@@ -238,11 +209,6 @@ export class CipherOdometerEngine {
         return liveTimeSec * baseRate + slowWave + midWave + fineWave + r2 * 14.0;
     }
 
-    /**
-     * Вычисляет состояние всех символов 5 строк одометра для текущего кадра.
-     * Обеспечивает C2-гладкий прилёт из центра, многотоновый холодный перебор с тенями
-     * и плавное C∞-дыхание всей карточки без скачков.
-     */
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
@@ -256,14 +222,19 @@ export class CipherOdometerEngine {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
-        // C2-гладкое включение дыхания визитки (без скачка в точке p = 0.82)
-        const breathEnvelope = reducedMotion ? 0.0 : smootherstep(0.65, 0.96, p);
+        // Синхронизируем дыхание визитки с реальной музыкальной огибающей cosmic_ambient.mp3
+        const audioSnap = audioSync.getSnapshot(liveTimeSec);
+        const breathEnvelope = reducedMotion ? 0.0 : smootherstep(0.6, 0.95, p);
+        const musicBreathBoost = 1.0 + audioSnap.heartbeat * 0.45;
         const cardHeartbeat =
             1.0 +
             breathEnvelope *
-            (0.011 * Math.sin(liveTimeSec * 1.45) +
-                0.004 * Math.cos(liveTimeSec * 2.9));
-        const cardFloatY = breathEnvelope * Math.cos(liveTimeSec * 1.15) * 1.8;
+            (0.009 * musicBreathBoost * Math.sin(liveTimeSec * 1.35) +
+                0.004 * Math.cos(liveTimeSec * 2.7));
+        const cardFloatY = breathEnvelope * Math.cos(liveTimeSec * 1.1) * 1.6;
+
+        // В самом начале выхода из центральной точки масштаб символов растёт от 0.15 до 1.0
+        const emergeScale = 0.15 + 0.85 * smootherstep(0.0, 0.28, p);
 
         const lineOffsetsY = [-98, -50, -4, 42, 82];
         const cells: OdometerGlyphCellState[] = [];
@@ -287,21 +258,25 @@ export class CipherOdometerEngine {
                 const targetX = cx + (baseTargetX - cx) * cardHeartbeat;
                 const targetY = cy + (baseTargetY - cy) * cardHeartbeat + cardFloatY;
 
-                // Плавный C2-прилёт символов из Точки Нуля к своим позициям в строке
-                const gatherT = smootherstep(0.0, 0.42, p);
-
                 const r1 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 7);
                 const r2 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 13);
+
+                // Все символы визитки выходят строго из центральной Точки Нуля (cx, cy),
+                // куда перед этим схлопнулась Чёрная дыра (радиус зарождения 0..5 px)
                 const startAngle = r1 * Math.PI * 2;
-                const startRadius = 64 + r2 * Math.min(viewportWidth, viewportHeight) * 0.28;
+                const pinpointRadius = r2 * 4.5;
+                const originX = cx + Math.cos(startAngle) * pinpointRadius;
+                const originY = cy + Math.sin(startAngle) * pinpointRadius;
 
-                const originX = cx + Math.cos(startAngle) * startRadius;
-                const originY = cy + Math.sin(startAngle) * startRadius * 0.65;
+                const gatherT = smootherstep(0.0, 0.46, p);
+                const spiralArc =
+                    Math.sin(gatherT * Math.PI) * (r1 - 0.5) * 28.0 * (1.0 - gatherT);
 
-                const currentX = originX + (targetX - originX) * gatherT;
-                const currentY = originY + (targetY - originY) * gatherT;
+                const currentX =
+                    originX + (targetX - originX) * gatherT + spiralArc;
+                const currentY =
+                    originY + (targetY - originY) * gatherT - spiralArc * 0.45;
 
-                // Интерактивное возбуждение барабана при наведении курсора мыши
                 const distToPointer = Math.hypot(
                     this.pointerX - targetX,
                     this.pointerY - targetY
@@ -322,9 +297,8 @@ export class CipherOdometerEngine {
                     !isHoverSpinning &&
                     p >= Math.min(0.82, lockThreshold);
 
-                // Если символ возбуждён наведением мыши, его скорость плавно затухает перед фиксацией
                 const hoverSpeedBoost = isHoverSpinning
-                    ? smootherstep(0, 860, hoverRemainingMs) * 2.4
+                    ? smootherstep(0, 860, hoverRemainingMs) * 1.85
                     : 0.0;
 
                 const chaoticWheelPos =
@@ -340,11 +314,16 @@ export class CipherOdometerEngine {
                 const wheelPhaseFrac = isLocked ? 0 : (chaoticWheelPos % 1.0) - 0.5;
 
                 const individualBreath = isEndlessLine
-                    ? 0.92 + 0.12 * Math.sin(liveTimeSec * 1.95 + cIdx * 0.44 + r1 * 5.0)
+                    ? 0.92 +
+                    0.12 *
+                    musicBreathBoost *
+                    Math.sin(liveTimeSec * 1.85 + cIdx * 0.44 + r1 * 5.0)
                     : 1.0;
-                const verticalScale = isLocked
-                    ? cardHeartbeat
-                    : Math.max(0.52, Math.cos(wheelPhaseFrac * 1.08)) * individualBreath;
+                const verticalScale =
+                    (isLocked
+                        ? cardHeartbeat
+                        : Math.max(0.52, Math.cos(wheelPhaseFrac * 1.08)) *
+                        individualBreath) * emergeScale;
 
                 const primaryChar = isLocked
                     ? targetChar
@@ -359,7 +338,7 @@ export class CipherOdometerEngine {
                         ? 'rgba(125, 211, 252, 0.46)'
                         : 'rgba(2, 6, 23, 0.94)';
                 let shadowBlur = lineIdx === 0 ? 14 : 9;
-                let glyphBreathAlpha = 0.95;
+                let glyphBreathAlpha = 0.95 * smootherstep(0.0, 0.18, p);
 
                 if (isEndlessLine || isHoverSpinning || !isLocked) {
                     const shadeWave =
@@ -376,16 +355,16 @@ export class CipherOdometerEngine {
                     shadowColor = shade.shadowColor;
                     shadowBlur = shade.shadowBlur;
                     glyphBreathAlpha =
-                        0.66 +
-                        0.32 *
-                        (0.5 +
-                            0.5 *
-                            Math.sin(
-                                liveTimeSec * 1.85 + cIdx * 0.55 + r2 * 4.0
-                            ));
+                        (0.66 +
+                            0.32 *
+                            (0.5 +
+                                0.5 *
+                                Math.sin(
+                                    liveTimeSec * 1.85 + cIdx * 0.55 + r2 * 4.0
+                                ))) *
+                        smootherstep(0.0, 0.18, p);
                 }
 
-                // Холодный многотоновый импульс фиксации (без ржаво-рыжего оттенка)
                 let lockFlash = 0;
                 if (
                     !isEndlessLine &&
@@ -418,7 +397,7 @@ export class CipherOdometerEngine {
                     currentY,
                     targetX,
                     targetY,
-                    fontSizePx: typo.fontSizePx * cardHeartbeat,
+                    fontSizePx: typo.fontSizePx * cardHeartbeat * emergeScale,
                     stepWidthPx: typo.stepWidthPx,
                     colorHex: resolvedColor,
                     fontWeight: typo.fontWeight,
@@ -434,10 +413,6 @@ export class CipherOdometerEngine {
         return cells;
     }
 
-    /**
-     * Проверяет, что при полной сборке (assemblyProgress = 1.0) все 4 статичные строки
-     * защёлкнуты, а все координаты укладываются в границы экрана без обрезки.
-     */
     public verifyFinalLockedText(viewportWidth = 1280, viewportHeight = 720): boolean {
         this.pointerX = -9999;
         this.pointerY = -9999;

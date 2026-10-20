@@ -1,17 +1,17 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer5_CipherFinale.tsx
-// НАЗНАЧЕНИЕ: Доступный семантический DOM-слой финальной карточки GitHub и Restart (MASTER 05 v2.3)
+// НАЗНАЧЕНИЕ: Доступный семантический DOM-слой финальной визитки GitHub и Restart (MASTER 05 v2.4)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Эффект квантовой перестановки символов при наведении (triggerButtonScramble):
-//    интерактивная прокрутка букв на кнопках действий с точной фиксацией текста.
+// 1. Замедленный и плавный квантовый перебор символов при наведении (triggerButtonScramble)
+//    с защитой от наложения интервалов (WeakMap<HTMLElement, number>) и холодной
+//    полутоновой подсветкой с тенью.
 // 2. Семантический компонент финала (renderLayer5CipherFinaleView): рендеринг
-//    невидимого блока aria-live="polite" с 5 каноническими строками манифеста,
-//    ссылки на репозиторий DubnovAlexey/universe и кнопки запуска обратной
-//    хореографии Restart Universe.
-// 3. Реактивный монтировщик (mountLayer5CipherFinale): синхронизация видимости
-//    кнопок в подакте ACT_D_GITHUB_CARD (при p >= 0.84) и мгновенное отключение
-//    интерактивности при переходе в состояние RESTART_COLLAPSE.
+//    невидимого блока aria-live="polite" с 5 каноническими строками визитки
+//    ('DUBNOV ALEXEY'), ссылки на репозиторий DubnovAlexey/universe и кнопки
+//    запуска обратной хореографии Restart Universe.
+// 3. Mount-once монтировщик (mountLayer5CipherFinale): обновление атрибутов
+//    видимости и блокировки кнопок без пересоздания DOM-узлов.
 // ============================================================================
 
 import { React } from './Layer2_Metrics';
@@ -19,28 +19,60 @@ import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
 import { universeStore, type UniverseState } from '../store/universeState';
 
 const SCRAMBLE_GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆Ωλ∞';
+const activeButtonTimers = new WeakMap<HTMLElement, number>();
 
+/**
+ * Плавно и неспешно перебирает буквы на кнопке финала (шаг 62 мс вместо 24 мс)
+ * с гарантированной отменой предыдущего таймера при повторном входе курсора.
+ */
 function triggerButtonScramble(el: HTMLElement, originalLabel: string): void {
-    let iter = 0;
+    const prevTimer = activeButtonTimers.get(el);
+    if (prevTimer !== undefined) {
+        window.clearInterval(prevTimer);
+        activeButtonTimers.delete(el);
+    }
+
+    let step = 0;
+    const totalSteps = 14;
+
     const timer = window.setInterval(() => {
+        step++;
+        if (step >= totalSteps) {
+            el.textContent = originalLabel;
+            window.clearInterval(timer);
+            activeButtonTimers.delete(el);
+            return;
+        }
+
+        const lockBoundary = Math.floor((step / totalSteps) * originalLabel.length);
         el.textContent = originalLabel
             .split('')
             .map((ch: string, idx: number): string => {
-                if (ch === ' ' || ch === '[' || ch === ']' || idx < iter) return ch;
-                return SCRAMBLE_GLYPHS[(idx * 7 + Math.floor(iter * 3)) % SCRAMBLE_GLYPHS.length];
+                if (
+                    ch === ' ' ||
+                    ch === '[' ||
+                    ch === ']' ||
+                    ch === '↗' ||
+                    ch === '↻' ||
+                    idx < lockBoundary
+                ) {
+                    return ch;
+                }
+                if ((idx + step) % 3 !== 0) {
+                    return ch;
+                }
+                return SCRAMBLE_GLYPHS[(idx * 5 + step * 3) % SCRAMBLE_GLYPHS.length];
             })
             .join('');
-        iter += 1.6;
-        if (iter >= originalLabel.length) {
-            el.textContent = originalLabel;
-            window.clearInterval(timer);
-        }
-    }, 24);
+    }, 62);
+
+    activeButtonTimers.set(el, timer);
 }
 
 export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): Element {
     const isLockedAndVisible =
-        state.singularityAct === 'ACT_D_GITHUB_CARD' && state.githubCardAssemblyProgress >= 0.84;
+        state.singularityAct === 'ACT_D_GITHUB_CARD' &&
+        state.githubCardAssemblyProgress >= 0.84;
     const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
     const visibleClass = isLockedAndVisible && !isCollapsing ? ' visible' : '';
 
@@ -52,9 +84,14 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
             className={`finale-counter-actions${visibleClass}`}
             data-github-card="true"
             role="region"
-            aria-label="Финальная карточка проекта UNIVERSE — Alexey Dubnov"
+            aria-label="Финальная визитка — Dubnov Alexey"
         >
-            <div className="sr-only-manifesto" aria-live="polite" aria-atomic="true">
+            <div
+                className="sr-only-manifesto"
+                data-bind="l5-manifesto"
+                aria-live="polite"
+                aria-atomic="true"
+            >
                 {isLockedAndVisible ? CANONICAL_FINALE_LINES.join(' — ') : ''}
             </div>
 
@@ -97,17 +134,44 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
 
 export function mountLayer5CipherFinale(container: HTMLElement | null): () => void {
     if (!container) return () => {};
-    let lastVisibleState = false;
+
+    let rootEl: HTMLElement | null = null;
+    let manifestoEl: HTMLElement | null = null;
+    let linkEl: HTMLAnchorElement | null = null;
+    let restartBtn: HTMLButtonElement | null = null;
 
     const update = (state: Readonly<UniverseState>): void => {
-        const nowVisible =
+        if (!rootEl || !container.contains(rootEl)) {
+            rootEl = renderLayer5CipherFinaleView(state) as HTMLElement;
+            container.replaceChildren(rootEl);
+            manifestoEl = rootEl.querySelector<HTMLElement>('[data-bind="l5-manifesto"]');
+            linkEl = rootEl.querySelector<HTMLAnchorElement>('#link-open-repo');
+            restartBtn = rootEl.querySelector<HTMLButtonElement>('#btn-restart-universe');
+            return;
+        }
+
+        const isLockedAndVisible =
             state.singularityAct === 'ACT_D_GITHUB_CARD' &&
             state.githubCardAssemblyProgress >= 0.84;
-        if (nowVisible !== lastVisibleState || state.singularityAct === 'RESTART_COLLAPSE') {
-            lastVisibleState = nowVisible;
-            container.replaceChildren(renderLayer5CipherFinaleView(state));
+        const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
+        const showActions = isLockedAndVisible && !isCollapsing;
+
+        rootEl.classList.toggle('visible', showActions);
+
+        if (manifestoEl) {
+            manifestoEl.textContent = showActions
+                ? CANONICAL_FINALE_LINES.join(' — ')
+                : '';
+        }
+        if (linkEl) {
+            linkEl.tabIndex = showActions ? 0 : -1;
+        }
+        if (restartBtn) {
+            restartBtn.disabled = !showActions;
+            restartBtn.tabIndex = showActions ? 0 : -1;
         }
     };
+
     return universeStore.subscribe(update);
 }
 
