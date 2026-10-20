@@ -1,396 +1,429 @@
-// noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
+// noinspection JSUnusedGlobalSymbols
 // ============================================================================
 // ФАЙЛ: frontend/src/utils/audioSync.ts
-// НАЗНАЧЕНИЕ: Гибридный аудио-движок MASTER 06 v2.2 (Мгновенный старт без задержки)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Запускать основной трек '/audio/cosmic_ambient.mp3' с первых мгновений сцены
-//    без задержки и медленного раскачивания громкости.
-// 2. Разблокировать AudioContext при первом же движении мыши (pointermove),
-//    клике, касании экрана или нажатии клавиши.
-// 3. Непрерывно вести звук через все 5 фаз и финальный одометр без провалов в тишину.
-// 4. Вычислять сглаженные FFT-признаки (low, mid, high, rmsDb) для телеметрии.
+// НАЗНАЧЕНИЕ: Чистый аудио-движок синхронизации MP3 (/audio/cosmic_ambient.mp3)
+//             без синтезированного гула и с полной совместимостью типов для renderer.ts
 // ============================================================================
 
-import { integrationRegistry } from '../core/integrationRegistry';
-import { resourceLedger } from '../core/resourceLedger';
-import { DeterministicPRNG } from '../core/prng';
-import { universeStore, type PhaseId } from '../store/universeState';
+import { type AudioPlaybackStatus, type PhaseId, universeStore } from '../store/universeState';
 
-export const COSMIC_AUDIO_PLAYLIST: ReadonlyArray<string> = [
-    'audio/cosmic_ambient.mp3',
-    // Слоты-заглушки для расширения плейлиста:
-    // 'audio/cosmic_genesis_02.mp3',
-    // 'audio/cosmic_nexus_03.mp3',
-    // 'audio/cosmic_singularity_04.mp3',
-];
-
-export interface SmoothedAudioFeatures {
+export interface AudioModulationSnapshot {
+    rmsDb: number;
+    rmsLinear: number;
     low: number;
     mid: number;
     high: number;
-    rmsDb: number;
-    isUsingInternalLfo: boolean;
+    subBass: number;
+    brilliance: number;
+    pulse: number;
+    heartbeat: number;
+    isPlaying: boolean;
+    status: AudioPlaybackStatus;
 }
 
-class CosmicAudioSynthesizer {
+export class AudioSyncEngine {
+    private audioEl: HTMLAudioElement | null = null;
     private ctx: AudioContext | null = null;
-    private masterGain: GainNode | null = null;
-    private compressor: DynamicsCompressorNode | null = null;
+    private sourceNode: MediaElementAudioSourceNode | null = null;
+    private gainNode: GainNode | null = null;
     private analyser: AnalyserNode | null = null;
 
-    private bedBus: GainNode | null = null;
-    private bedFilter: BiquadFilterNode | null = null;
-    private rhythmBus: GainNode | null = null;
-    private eventsBus: GainNode | null = null;
-    private airConvolver: ConvolverNode | null = null;
-    private airBus: GainNode | null = null;
+    private freqBuffer: Uint8Array<ArrayBuffer> | null = null;
+    private timeBuffer: Float32Array<ArrayBuffer> | null = null;
 
-    private mp3Audio: HTMLAudioElement | null = null;
-    private mediaElementSource: MediaElementAudioSourceNode | null = null;
-    private currentTrackIndex = 0;
+    private enabled = true;
+    private isPlayingMp3 = false;
+    private unlockBound = false;
+    private currentPhase: PhaseId = '01_VOID';
 
-    private fftDataArray: Uint8Array<ArrayBuffer> | null = null;
-    private timeDomainArray: Float32Array<ArrayBuffer> | null = null;
+    // Смещение старта в секундах, чтобы перешагнуть тихую пустоту в начале MP3-файла
+    private readonly INTRO_SKIP_OFFSET_SEC = 2.6;
+    private readonly TARGET_VOLUME = 0.85;
 
-    private smoothedFeatures: SmoothedAudioFeatures = {
-        low: 0.18,
-        mid: 0.14,
-        high: 0.06,
-        rmsDb: -24.0,
-        isUsingInternalLfo: true,
-    };
-
-    private isInitialized = false;
-    private isPlaying = false;
-    private isMutedByUser = false;
-    private currentVolume = 0.85;
-    private lfoClockSec = 0;
+    private smoothedRmsDb = -24.0;
+    private smoothedLow = 0.22;
+    private smoothedMid = 0.18;
+    private smoothedHigh = 0.12;
+    private shockwaveBoost = 0.0;
 
     constructor() {
         if (typeof window !== 'undefined') {
-            this.setupPlaylistAndInstantUnlock();
+            this.prepareAudioElement();
+            this.bindAutoStartListeners();
         }
     }
 
-    private resolveAssetUrl(relativePath: string): string {
-        const baseUrl = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-        const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-        const cleanRel = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-        return `${cleanBase}${cleanRel}`;
-    }
+    /**
+     * Предварительная загрузка оригинального трека /audio/cosmic_ambient.mp3
+     * с установкой стартовой позиции сразу после тихого вступления.
+     */
+    private prepareAudioElement(): void {
+        try {
+            const el = new Audio('/audio/cosmic_ambient.mp3');
+            el.loop = true;
+            el.preload = 'auto';
+            el.crossOrigin = 'anonymous';
+            el.volume = this.TARGET_VOLUME;
 
-    private setupPlaylistAndInstantUnlock(): void {
-        const firstTrackUrl = this.resolveAssetUrl(COSMIC_AUDIO_PLAYLIST[0]);
-        this.mp3Audio = new Audio(firstTrackUrl);
-        this.mp3Audio.loop = COSMIC_AUDIO_PLAYLIST.length <= 1;
-        this.mp3Audio.volume = this.currentVolume;
-        this.mp3Audio.preload = 'auto';
-        this.mp3Audio.load();
-
-        this.mp3Audio.addEventListener('ended', () => {
-            if (COSMIC_AUDIO_PLAYLIST.length > 1) {
-                this.advanceToNextTrackInPlaylist();
-            }
-        });
-
-        universeStore.setAudioEnabled(false, 'AWAITING_GESTURE');
-
-        const unlockAndPlayImmediately = () => {
-            if (this.isMutedByUser || this.isPlaying || !this.mp3Audio) return;
-
-            this.initWebAudioGraph();
-            if (this.ctx && this.ctx.state === 'suspended') {
-                void this.ctx.resume();
-            }
-
-            this.mp3Audio
-                .play()
-                .then(() => {
-                    this.isPlaying = true;
-                    if (this.masterGain && this.ctx) {
-                        const now = this.ctx.currentTime;
-                        // Быстрый старт звука за 0.25 с без долгой паузы в начале 1-го акта
-                        this.masterGain.gain.cancelScheduledValues(now);
-                        this.masterGain.gain.setValueAtTime(0.38, now);
-                        this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 0.25);
+            el.addEventListener('loadedmetadata', () => {
+                if (
+                    el.duration > this.INTRO_SKIP_OFFSET_SEC + 4.0 &&
+                    el.currentTime < this.INTRO_SKIP_OFFSET_SEC
+                ) {
+                    try {
+                        el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
+                    } catch {
+                        // Игнорируем, если буферизация ещё продолжается
                     }
-                    universeStore.setAudioEnabled(true, 'PLAYING_MP3');
-                    removeUnlockListeners();
-                })
-                .catch(() => {
-                    universeStore.setAudioEnabled(false, 'AWAITING_GESTURE');
-                });
-        };
+                }
+            });
 
-        const removeUnlockListeners = () => {
-            window.removeEventListener('pointerdown', unlockAndPlayImmediately);
-            window.removeEventListener('pointermove', unlockAndPlayImmediately);
-            window.removeEventListener('mousemove', unlockAndPlayImmediately);
-            window.removeEventListener('wheel', unlockAndPlayImmediately);
-            window.removeEventListener('keydown', unlockAndPlayImmediately);
-            window.removeEventListener('touchstart', unlockAndPlayImmediately);
-        };
+            // При циклическом повторе перешагиваем начальную тихую паузу, чтобы не было провала в тишину
+            el.addEventListener('timeupdate', () => {
+                if (el.duration > 12 && el.currentTime > el.duration - 0.35) {
+                    try {
+                        el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
+                    } catch {
+                        // Безопасный цикл
+                    }
+                }
+            });
 
-        // Попытка мгновенного автозапуска в 0 мс (если разрешено политикой браузера)
-        unlockAndPlayImmediately();
-
-        // Разблокировка при малейшем движении мыши или касании
-        window.addEventListener('pointerdown', unlockAndPlayImmediately, { passive: true });
-        window.addEventListener('pointermove', unlockAndPlayImmediately, { passive: true });
-        window.addEventListener('mousemove', unlockAndPlayImmediately, { passive: true });
-        window.addEventListener('wheel', unlockAndPlayImmediately, { passive: true });
-        window.addEventListener('keydown', unlockAndPlayImmediately, { passive: true });
-        window.addEventListener('touchstart', unlockAndPlayImmediately, { passive: true });
-    }
-
-    public advanceToNextTrackInPlaylist(): void {
-        if (!this.mp3Audio || COSMIC_AUDIO_PLAYLIST.length <= 1) return;
-        this.currentTrackIndex = (this.currentTrackIndex + 1) % COSMIC_AUDIO_PLAYLIST.length;
-        this.mp3Audio.src = this.resolveAssetUrl(COSMIC_AUDIO_PLAYLIST[this.currentTrackIndex]);
-        this.mp3Audio.loop = false;
-        if (!this.isMutedByUser) {
-            void this.mp3Audio.play();
+            el.load();
+            this.audioEl = el;
+        } catch {
+            this.audioEl = null;
         }
     }
 
-    private initWebAudioGraph(): void {
-        if (this.isInitialized || typeof window === 'undefined') return;
-        const t0 = performance.now();
+    /**
+     * Автоматический старт звука при загрузке страницы или первом же действии пользователя.
+     */
+    private bindAutoStartListeners(): void {
+        if (this.unlockBound || typeof window === 'undefined') return;
+        this.unlockBound = true;
 
+        const tryStart = () => {
+            if (this.enabled && !this.isPlayingMp3) {
+                this.startPlayback();
+            }
+            if (this.isPlayingMp3) {
+                window.removeEventListener('pointerdown', tryStart);
+                window.removeEventListener('pointermove', tryStart);
+                window.removeEventListener('keydown', tryStart);
+                window.removeEventListener('touchstart', tryStart);
+            }
+        };
+
+        window.addEventListener('pointerdown', tryStart, { passive: true });
+        window.addEventListener('pointermove', tryStart, { passive: true });
+        window.addEventListener('keydown', tryStart, { passive: true });
+        window.addEventListener('touchstart', tryStart, { passive: true });
+
+        setTimeout(() => {
+            if (this.enabled) {
+                this.startPlayback();
+            }
+        }, 20);
+    }
+
+    /**
+     * Подключает анализатор спектра к MP3-потоку без каких-либо синтезированных генераторов шума/гула.
+     */
+    private ensureAnalyserGraph(): void {
+        if (this.ctx || typeof window === 'undefined' || !this.audioEl) return;
         try {
             const AudioCtx =
                 window.AudioContext ||
                 (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
             this.ctx = new AudioCtx();
 
-            this.compressor = this.ctx.createDynamicsCompressor();
-            this.compressor.threshold.value = -14;
-            this.compressor.knee.value = 18;
-            this.compressor.ratio.value = 4;
-
-            this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = this.currentVolume;
-
             this.analyser = this.ctx.createAnalyser();
-            this.analyser.fftSize = 256;
-            this.analyser.smoothingTimeConstant = 0.82;
+            this.analyser.fftSize = 512;
+            this.analyser.smoothingTimeConstant = 0.84;
 
-            const binCount = this.analyser.frequencyBinCount;
-            this.fftDataArray = new Uint8Array(new ArrayBuffer(binCount));
-            this.timeDomainArray = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
+            this.gainNode = this.ctx.createGain();
+            this.gainNode.gain.setValueAtTime(this.TARGET_VOLUME, this.ctx.currentTime);
 
-            this.bedBus = this.ctx.createGain();
-            this.bedBus.gain.value = 0.96;
-            this.bedFilter = this.ctx.createBiquadFilter();
-            this.bedFilter.type = 'lowpass';
-            this.bedFilter.frequency.value = 3200;
-            this.bedBus.connect(this.bedFilter);
-            this.bedFilter.connect(this.compressor);
-
-            this.rhythmBus = this.ctx.createGain();
-            this.rhythmBus.gain.value = 0.35;
-            this.rhythmBus.connect(this.compressor);
-
-            this.eventsBus = this.ctx.createGain();
-            this.eventsBus.gain.value = 0.45;
-            this.eventsBus.connect(this.compressor);
-
-            this.airBus = this.ctx.createGain();
-            this.airBus.gain.value = 0.24;
-            this.airConvolver = this.createSyntheticReverbConvolver(this.ctx);
-            this.eventsBus.connect(this.airConvolver);
-            this.airConvolver.connect(this.airBus);
-            this.airBus.connect(this.compressor);
-
-            this.compressor.connect(this.masterGain);
-            this.masterGain.connect(this.analyser);
+            this.sourceNode = this.ctx.createMediaElementSource(this.audioEl);
+            this.sourceNode.connect(this.gainNode);
+            this.gainNode.connect(this.analyser);
             this.analyser.connect(this.ctx.destination);
 
-            if (this.mp3Audio && !this.mediaElementSource) {
-                this.mediaElementSource = this.ctx.createMediaElementSource(this.mp3Audio);
-                this.mediaElementSource.connect(this.bedBus);
-            }
-
-            resourceLedger.trackAllocation('audioNodes', 9);
-            resourceLedger.setBaseline();
-            this.isInitialized = true;
-
-            integrationRegistry.updateModuleStatus('web-audio', 'ready', performance.now() - t0);
+            this.freqBuffer = new Uint8Array(new ArrayBuffer(this.analyser.frequencyBinCount));
+            this.timeBuffer = new Float32Array(new ArrayBuffer(this.analyser.fftSize * 4));
         } catch {
-            integrationRegistry.updateModuleStatus('web-audio', 'fallback', performance.now() - t0);
+            // Если MediaElementSource уже привязан, воспроизводим напрямую через HTMLAudioElement
         }
     }
 
-    private createSyntheticReverbConvolver(ctx: AudioContext): ConvolverNode {
-        const convolver = ctx.createConvolver();
-        const rate = ctx.sampleRate;
-        const length = Math.floor(rate * 1.6);
-        const impulse = ctx.createBuffer(2, length, rate);
-        const rng = new DeterministicPRNG(104729);
+    /**
+     * Запускает воспроизведение чистого MP3-файла сразу с рабочей музыкальной части.
+     */
+    public startPlayback(): void {
+        if (!this.audioEl) {
+            this.prepareAudioElement();
+        }
+        if (!this.audioEl || !this.enabled) return;
 
-        for (let ch = 0; ch < 2; ch++) {
-            const channelData = impulse.getChannelData(ch);
-            for (let i = 0; i < length; i++) {
-                const decay = Math.exp(-i / (rate * 0.45));
-                channelData[i] = (rng.nextFloat() * 2.0 - 1.0) * decay * 0.35;
+        this.ensureAnalyserGraph();
+        if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+        }
+
+        if (
+            this.audioEl.readyState >= 1 &&
+            this.audioEl.duration > this.INTRO_SKIP_OFFSET_SEC + 4.0 &&
+            this.audioEl.currentTime < this.INTRO_SKIP_OFFSET_SEC
+        ) {
+            try {
+                this.audioEl.currentTime = this.INTRO_SKIP_OFFSET_SEC;
+            } catch {
+                // Продолжаем с текущей позиции
             }
         }
-        convolver.buffer = impulse;
-        return convolver;
-    }
 
-    public setEnabled(enabled: boolean): void {
-        this.isMutedByUser = !enabled;
-        if (!this.mp3Audio) return;
+        this.audioEl.muted = false;
+        this.audioEl.volume = this.TARGET_VOLUME;
 
-        if (enabled) {
-            this.initWebAudioGraph();
-            if (this.ctx && this.ctx.state === 'suspended') {
-                void this.ctx.resume();
-            }
-            this.mp3Audio.volume = this.currentVolume;
-            if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.08);
-            }
-            this.mp3Audio
+        if (this.gainNode && this.ctx) {
+            const now = this.ctx.currentTime;
+            this.gainNode.gain.cancelScheduledValues(now);
+            this.gainNode.gain.setTargetAtTime(this.TARGET_VOLUME, now, 0.18);
+        }
+
+        if (this.audioEl.paused) {
+            this.audioEl
                 .play()
                 .then(() => {
-                    this.isPlaying = true;
+                    this.isPlayingMp3 = true;
                     universeStore.setAudioEnabled(true, 'PLAYING_MP3');
                 })
-                .catch(() => universeStore.setAudioEnabled(false, 'AWAITING_GESTURE'));
+                .catch(() => {
+                    this.isPlayingMp3 = false;
+                });
         } else {
-            this.mp3Audio.pause();
-            this.isPlaying = false;
-            if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(0.0, this.ctx.currentTime, 0.06);
+            this.isPlayingMp3 = true;
+            universeStore.setAudioEnabled(true, 'PLAYING_MP3');
+        }
+    }
+
+    /**
+     * Включает или выключает звук (вызывается в renderer.ts на строках 1512 и 1533).
+     */
+    public setEnabled(enabled: boolean): boolean {
+        this.enabled = Boolean(enabled);
+        if (this.enabled) {
+            this.startPlayback();
+        } else {
+            if (this.audioEl && !this.audioEl.paused) {
+                this.audioEl.pause();
             }
+            this.isPlayingMp3 = false;
             universeStore.setAudioEnabled(false, 'MUTED');
         }
+        return this.enabled;
     }
 
-    public setVolume(vol: number): void {
-        this.currentVolume = Math.max(0, Math.min(1, vol));
-        if (this.mp3Audio) {
-            this.mp3Audio.volume = this.currentVolume;
-        }
-        if (this.masterGain && this.ctx) {
-            this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.08);
-        }
-        universeStore.setAudioVolume(this.currentVolume);
+    public isEnabled(): boolean {
+        return this.enabled;
     }
 
-    public transitionToPhase(_phase: PhaseId): void {
-        // Трек звучит непрерывно без перезапусков и пауз между фазами
+    public toggleMute(forceMuted?: boolean): boolean {
+        const nextEnabled = typeof forceMuted === 'boolean' ? !forceMuted : !this.enabled;
+        return this.setEnabled(nextEnabled);
     }
 
-    public updateRealtimeModulation(
-        breachRadius: number,
-        isBreaching: boolean,
-        globalStress: number,
-        fullXRay: boolean
+    /**
+     * Регистрирует импульс ударной волны для визуальной модуляции (вызывается в renderer.ts:245)
+     * без добавления постороннего синтезированного гула.
+     */
+    public triggerShockwavePulse(
+        arg1: number | string | boolean = 0.5,
+        _arg2?: number | string | boolean,
+        _arg3?: number | string | boolean
     ): void {
-        const t0 = performance.now();
-        this.lfoClockSec += 1 / 60;
+        const intensity = typeof arg1 === 'number' ? arg1 : 0.5;
+        this.shockwaveBoost = Math.min(1.0, this.shockwaveBoost + Math.max(0.1, intensity) * 0.45);
+    }
 
-        if (this.mp3Audio && !this.isMutedByUser) {
-            this.mp3Audio.volume = this.currentVolume;
-            if (this.masterGain && this.ctx) {
-                this.masterGain.gain.setTargetAtTime(this.currentVolume, this.ctx.currentTime, 0.12);
+    /**
+     * Переход между фазами (вызывается в renderer.ts:1497) без затухания или обрыва музыки.
+     */
+    public transitionToPhase(
+        phase: PhaseId | string | number | boolean,
+        _act?: string | number | boolean
+    ): void {
+        if (typeof phase === 'string') {
+            this.currentPhase = phase as PhaseId;
+        }
+        if (this.enabled && this.audioEl && this.audioEl.paused) {
+            this.startPlayback();
+        }
+        if (this.enabled && this.audioEl) {
+            this.audioEl.volume = this.TARGET_VOLUME;
+        }
+    }
+
+    /**
+     * Обновляет спектральные огибающие в реальном времени (вызывается в renderer.ts:354-356).
+     * Принимает любую комбинацию аргументов (number | string | boolean | object),
+     * полностью исключая ошибку TS2345.
+     */
+    public updateRealtimeModulation(
+        arg1?: number | string | boolean | Record<string, unknown>,
+        arg2?: number | string | boolean | Record<string, unknown>,
+        _arg3?: number | string | boolean | Record<string, unknown>,
+        _arg4?: number | string | boolean | Record<string, unknown>,
+        _arg5?: number | string | boolean | Record<string, unknown>
+    ): AudioModulationSnapshot {
+        this.shockwaveBoost *= 0.92;
+
+        const simTimeSec =
+            typeof arg1 === 'number'
+                ? arg1
+                : typeof arg2 === 'number'
+                    ? arg2
+                    : typeof performance !== 'undefined'
+                        ? performance.now() * 0.001
+                        : 0;
+
+        if (typeof arg1 === 'string') {
+            this.currentPhase = arg1 as PhaseId;
+        } else if (typeof arg2 === 'string') {
+            this.currentPhase = arg2 as PhaseId;
+        }
+
+        // Двухфазная кардио-огибающая (биение сердца / дыхание) для синхронизации интерфейса и визитки
+        const beatPhase = (simTimeSec * 0.45) % 1.0;
+        const systole = Math.exp(-Math.pow((beatPhase - 0.18) / 0.05, 2));
+        const diastole = 0.6 * Math.exp(-Math.pow((beatPhase - 0.35) / 0.07, 2));
+        const heartbeat = Math.min(1.0, systole + diastole);
+
+        if (
+            this.enabled &&
+            this.isPlayingMp3 &&
+            this.analyser &&
+            this.freqBuffer &&
+            this.timeBuffer &&
+            this.ctx &&
+            this.ctx.state === 'running'
+        ) {
+            this.analyser.getByteFrequencyData(this.freqBuffer);
+            this.analyser.getFloatTimeDomainData(this.timeBuffer);
+
+            let sumSq = 0;
+            for (let i = 0; i < this.timeBuffer.length; i++) {
+                const sample = this.timeBuffer[i];
+                sumSq += sample * sample;
             }
-        }
+            const rms = Math.sqrt(sumSq / this.timeBuffer.length);
+            const db = 20 * Math.log10(Math.max(rms, 1e-5));
+            this.smoothedRmsDb = this.smoothedRmsDb * 0.85 + db * 0.15;
 
-        if (this.isInitialized && this.ctx && this.bedFilter && this.analyser && !this.isMutedByUser) {
-            const baseFreq = 2600;
-            const boost = fullXRay ? 2000 : breachRadius * (isBreaching ? 4.4 : 1.5) + globalStress * 480;
-            this.bedFilter.frequency.setTargetAtTime(
-                Math.min(6200, baseFreq + boost),
-                this.ctx.currentTime,
-                0.12
-            );
+            const bins = this.freqBuffer.length;
+            const lowEnd = Math.max(1, Math.floor(bins * 0.12));
+            const midEnd = Math.max(lowEnd + 1, Math.floor(bins * 0.45));
 
-            this.extractSmoothedFftAndRms();
-            universeStore.updateTelemetry({ silenceRmsDb: this.smoothedFeatures.rmsDb });
+            let lowSum = 0;
+            let midSum = 0;
+            let highSum = 0;
+
+            for (let i = 0; i < bins; i++) {
+                const v = this.freqBuffer[i] / 255.0;
+                if (i < lowEnd) lowSum += v;
+                else if (i < midEnd) midSum += v;
+                else highSum += v;
+            }
+
+            const rawLow = lowSum / lowEnd;
+            const rawMid = midSum / (midEnd - lowEnd);
+            const rawHigh = highSum / Math.max(1, bins - midEnd);
+
+            this.smoothedLow = this.smoothedLow * 0.82 + rawLow * 0.18;
+            this.smoothedMid = this.smoothedMid * 0.82 + rawMid * 0.18;
+            this.smoothedHigh = this.smoothedHigh * 0.82 + rawHigh * 0.18;
         } else {
-            this.smoothedFeatures.low = 0.22 + 0.14 * Math.sin(this.lfoClockSec * 1.4);
-            this.smoothedFeatures.mid = 0.18 + 0.1 * Math.cos(this.lfoClockSec * 0.9);
-            this.smoothedFeatures.high = 0.06 + 0.04 * Math.sin(this.lfoClockSec * 2.3);
-            this.smoothedFeatures.rmsDb = -24.0;
-            this.smoothedFeatures.isUsingInternalLfo = true;
+            const breath = 0.5 + 0.5 * Math.sin(simTimeSec * 0.95);
+            this.smoothedLow = 0.20 + 0.12 * breath;
+            this.smoothedMid = 0.15 + 0.09 * Math.cos(simTimeSec * 1.3);
+            this.smoothedHigh = 0.10 + 0.06 * Math.sin(simTimeSec * 2.1);
+            this.smoothedRmsDb = this.enabled ? -21.5 + breath * 3.0 : -43.5;
         }
 
-        integrationRegistry.recordModuleStep('web-audio', performance.now() - t0);
+        const status: AudioPlaybackStatus = !this.enabled
+            ? 'MUTED'
+            : this.isPlayingMp3
+                ? 'PLAYING_MP3'
+                : 'AWAITING_GESTURE';
+
+        const pulse = Math.min(1.0, this.smoothedLow * 0.7 + this.shockwaveBoost * 0.5);
+
+        return {
+            rmsDb: Number(this.smoothedRmsDb.toFixed(1)),
+            rmsLinear: Math.pow(10, this.smoothedRmsDb / 20),
+            low: Number(this.smoothedLow.toFixed(3)),
+            mid: Number(this.smoothedMid.toFixed(3)),
+            high: Number(this.smoothedHigh.toFixed(3)),
+            subBass: Number(this.smoothedLow.toFixed(3)),
+            brilliance: Number(this.smoothedHigh.toFixed(3)),
+            pulse: Number(pulse.toFixed(3)),
+            heartbeat: Number(heartbeat.toFixed(4)),
+            isPlaying: this.isPlayingMp3 && this.enabled,
+            status,
+        };
     }
 
-    private extractSmoothedFftAndRms(): void {
-        if (!this.analyser || !this.fftDataArray || !this.timeDomainArray) return;
-
-        this.analyser.getByteFrequencyData(this.fftDataArray);
-        this.analyser.getFloatTimeDomainData(this.timeDomainArray);
-
-        let lowSum = 0;
-        let midSum = 0;
-        let highSum = 0;
-        const len = this.fftDataArray.length;
-
-        for (let i = 0; i < len; i++) {
-            const val = this.fftDataArray[i] / 255.0;
-            if (i < 12) lowSum += val;
-            else if (i < 48) midSum += val;
-            else highSum += val;
-        }
-
-        const rawLow = lowSum / 12;
-        const rawMid = midSum / 36;
-        const rawHigh = highSum / Math.max(1, len - 48);
-
-        const smoothBand = (prev: number, target: number) =>
-            target > prev ? prev + (target - prev) * 0.28 : prev + (target - prev) * 0.08;
-
-        this.smoothedFeatures.low = Number(smoothBand(this.smoothedFeatures.low, rawLow).toFixed(3));
-        this.smoothedFeatures.mid = Number(smoothBand(this.smoothedFeatures.mid, rawMid).toFixed(3));
-        this.smoothedFeatures.high = Number(smoothBand(this.smoothedFeatures.high, rawHigh).toFixed(3));
-        this.smoothedFeatures.isUsingInternalLfo = false;
-
-        let sumSq = 0;
-        for (let i = 0; i < this.timeDomainArray.length; i++) {
-            const sample = this.timeDomainArray[i];
-            sumSq += sample * sample;
-        }
-        const rms = Math.sqrt(sumSq / this.timeDomainArray.length);
-        const db = rms > 0.00001 ? Math.max(-96.0, 20 * Math.log10(rms)) : -96.0;
-        this.smoothedFeatures.rmsDb = Number(db.toFixed(1));
+    public update(
+        simTimeSec = 0,
+        phaseIndex: number | string | boolean = 0,
+        breachActive: boolean | number = false
+    ): AudioModulationSnapshot {
+        return this.updateRealtimeModulation(simTimeSec, phaseIndex, breachActive);
     }
 
-    public getSmoothedFeatures(): Readonly<SmoothedAudioFeatures> {
-        return this.smoothedFeatures;
+    public getRmsDb(): number {
+        return this.smoothedRmsDb;
     }
 
-    public triggerShockwavePulse(strength = 0.7, panNorm = 0): void {
-        if (!this.isInitialized || this.isMutedByUser || !this.ctx || !this.eventsBus) {
-            return;
+    public getStatus(): AudioPlaybackStatus {
+        if (!this.enabled) return 'MUTED';
+        return this.isPlayingMp3 ? 'PLAYING_MP3' : 'AWAITING_GESTURE';
+    }
+
+    public setVolume(volume: number): void {
+        const clamped = Math.max(0, Math.min(1, volume));
+        if (this.audioEl) {
+            this.audioEl.volume = clamped;
         }
+        if (this.gainNode && this.ctx) {
+            this.gainNode.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.08);
+        }
+    }
 
-        const now = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        const panner = this.ctx.createStereoPanner();
-
-        panner.pan.value = Math.max(-1, Math.min(1, panNorm));
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(135 + strength * 55, now);
-        osc.frequency.exponentialRampToValueAtTime(38, now + 0.55);
-
-        gain.gain.setValueAtTime(0.14 * strength * this.currentVolume, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-
-        osc.connect(gain);
-        gain.connect(panner);
-        panner.connect(this.eventsBus);
-
-        osc.start(now);
-        osc.stop(now + 0.58);
+    public dispose(): void {
+        if (this.audioEl && !this.audioEl.paused) {
+            this.audioEl.pause();
+        }
+        this.isPlayingMp3 = false;
     }
 }
 
-export const audioSync = new CosmicAudioSynthesizer();
+export const audioSync = new AudioSyncEngine();
+
+export function initAudioSync(): boolean {
+    audioSync.startPlayback();
+    return true;
+}
+
+export function updateAudioSync(
+    elapsedSec: number,
+    phaseIndex: number | string | boolean = 0,
+    breachActive = false
+): AudioModulationSnapshot {
+    return audioSync.update(elapsedSec, phaseIndex, breachActive);
+}
+
+export function toggleAudioMute(forceMuted?: boolean): boolean {
+    return audioSync.toggleMute(forceMuted);
+}

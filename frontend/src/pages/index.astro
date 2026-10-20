@@ -2,33 +2,45 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
-// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.0 (MASTER 00-99)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Развернуть полноэкранный холст #universe-canvas без спиннеров и экранов загрузки.
-// 2. Разместить точки монтирования для реактивных островов Layer2-Layer5.
-// 3. Подключить клиентский оркестратор и стили через внешний модуль renderer.ts.
+// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.3 (MASTER 00–99)
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Инициализация стилей и метаданных: импорт глобальной системы стилей
+//    universe.css, конфигурации 5 фаз (UNIVERSE_PHASES) и расчёт базового
+//    пути BASE_URL для совместимости с GitHub Pages.
+// 2. Полноэкранный графический слой (Layer 1): размещение холста #universe-canvas
+//    и оптической виньетки .optical-vignette для рендеринга оптик ILLUSION,
+//    NEXUS, BREACH X-RAY и финального квантового одометра.
+// 3. Финальный семантический слой (Layer 5): точка монтирования #layer5-finale-root
+//    для интерактивной визитки GitHub, блока aria-live и перезапуска цикла.
+// 4. Парящий интерфейс телеметрии и управления (HUD Overlay): паспорт текущей
+//    фазы (.brand-card), полноразмерная правая колонка телеметрии Водопада
+//    (#layer2-metrics-root, #layer3-topology-root, #layer4-terminal-root)
+//    и нижний док переключения 5 фаз и инженерных режимов.
 // ============================================================================
+import '../styles/universe.css';
 import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
 
 const initialPhase = UNIVERSE_PHASES['01_VOID'];
+const rawBaseUrl = import.meta.env.BASE_URL || '/';
+const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 ---
 
 <!doctype html>
 <html lang="ru">
 <head>
 	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>UNIVERSE // NEUROVERSE — Interactive Polyglot Audiovisual Installation</title>
 	<meta
 		name="description"
 		content="Полноэкранная кинематографическая аудиовизуальная инсталляция «Из Нуля в Ноль» (108 секунд): Astro, TypeScript, React, WebGPU, Rust/WASM, Python."
 	/>
-	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+	<link rel="icon" type="image/svg+xml" href={`${baseUrl}favicon.svg`} />
 </head>
 
 <body>
 <main class="universe-viewport">
-	<!-- СЛОЙ 1: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
+	<!-- ЭТАП 1: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
 	<canvas
 		id="universe-canvas"
 		aria-label="Интерактивное космическое и нейронное полотно UNIVERSE"
@@ -36,12 +48,12 @@ const initialPhase = UNIVERSE_PHASES['01_VOID'];
 
 	<div class="optical-vignette"></div>
 
-	<!-- СЛОЙ 5 (АКТ D): Семантический DOM-контейнер кнопок финальной карточки GitHub и aria-live -->
+	<!-- ЭТАП 2 (АКТ D): Семантический DOM-контейнер кнопок финальной карточки GitHub и aria-live -->
 	<div id="layer5-finale-root"></div>
 
-	<!-- ИСЧЕЗАЮЩИЙ В ПОКОЕ КОНТЕЙНЕР ИНТЕРФЕЙСА (ТЕСТ БЕЗ ИНТЕРФЕЙСА) -->
+	<!-- ЭТАП 3: Контейнер паспорта фазы, правой колонки Водопада телеметрии и нижнего дока управления -->
 	<div class="hud-overlay" id="hud-overlay-root">
-		<!-- ВЕРХНИЙ БАР: Паспорт текущей фазы + Стек реактивных островов инспекции (Layer 2, 3, 4) -->
+		<!-- ВЕРХНИЙ БАР: Паспорт текущей фазы слева + Полноразмерная колонка телеметрии справа (Layers 2, 3, 4) -->
 		<header class="hud-top-bar">
 			<section class="hud-panel brand-card" data-ui-panel="true">
 				<span class="phase-codename" id="ui-phase-codename">{initialPhase.codeName}</span>
@@ -50,10 +62,10 @@ const initialPhase = UNIVERSE_PHASES['01_VOID'];
 				<p class="phase-philosophy" id="ui-phase-philosophy">{initialPhase.philosophyRu}</p>
 			</section>
 
-			<div class="inspection-islands-stack">
-				<div id="layer2-metrics-root"></div>
-				<div id="layer3-topology-root"></div>
-				<div id="layer4-terminal-root"></div>
+			<div class="inspection-islands-stack" aria-label="Каскад телеметрии Цифрового Водопада">
+				<div id="layer2-metrics-root" class="waterfall-island-slot"></div>
+				<div id="layer3-topology-root" class="waterfall-island-slot"></div>
+				<div id="layer4-terminal-root" class="waterfall-island-slot"></div>
 			</div>
 		</header>
 

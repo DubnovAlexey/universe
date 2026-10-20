@@ -1,23 +1,33 @@
 /* noinspection CssUnusedSymbol */
 /* ============================================================================
  * ФАЙЛ: frontend/src/styles/universe.css
- * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.2 (Парящая телеметрия)
- * ЗАДАЧИ ФАЙЛА:
- * 1. Зафиксировать каноническую палитру MASTER 00 (#020308, #03050A, #060B19,
- *    #7DD3FC, #38BDF8, #1E1B4B, #6366F1, #F8FAFC, #F59E0B).
- * 2. Сделать верхние панели телеметрии (Layer 2, 3, 4) и паспорт фазы парящими
- *    в воздухе без жёстких геометрических рамок — как часть самой космической среды.
- * 3. Обеспечить адаптивность на экранах 320px..1920px.
+ * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.3
+ * АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+ * 1. Каноническая палитра и типографика (MASTER 00): обсидиан #020308,
+ *    графит #03050A, полуночный индиго #060B19, серебристо-голубой #7DD3FC,
+ *    сигнальный циан #38BDF8, ультрамарин #1E1B4B, индиго #6366F1,
+ *    жемчуг #F8FAFC и редкий янтарь #F59E0B.
+ * 2. Полноэкранный каркас сцены (#universe-canvas, .optical-vignette,
+ *    .hud-overlay): жёсткая фиксация 100vw x 100vh без полос прокрутки.
+ * 3. Полноразмерная правая колонка телеметрии (.inspection-islands-stack):
+ *    вертикальное размещение каскадов LAYER_02, LAYER_03, LAYER_04 сверху донизу,
+ *    живой волновой контур мембраны BREACH LENS без прямоугольных углов,
+ *    укрупнённая читаемая типографика, эффект «Водопада» и «Звездопада / Капель».
+ * 4. Стили финальной визитки одометра (.finale-counter-actions), нижней
+ *    шкалы 5 фаз (.phase-timeline-dock) и адаптивности (320px..1920px).
  * ============================================================================ */
 
+/* ----------------------------------------------------------------------------
+ * РАЗДЕЛ 1. КАНОНИЧЕСКАЯ ЦВЕТОВАЯ КОНСТИТУЦИЯ И ПЕРЕМЕННЫЕ ТИПОГРАФИКИ
+ * ---------------------------------------------------------------------------- */
 :root {
     --void-obsidian: #020308;
     --void-graphite: #03050a;
     --void-indigo: #060b19;
-    --glass-surface: rgba(3, 5, 10, 0.34);
-    --glass-surface-hover: rgba(6, 11, 25, 0.68);
-    --glass-border: rgba(125, 211, 252, 0.14);
-    --glass-border-bright: rgba(56, 189, 248, 0.42);
+    --glass-surface: rgba(3, 6, 15, 0.42);
+    --glass-surface-hover: rgba(6, 12, 28, 0.74);
+    --glass-border: rgba(125, 211, 252, 0.16);
+    --glass-border-bright: rgba(56, 189, 248, 0.45);
 
     --accent-ice: #7dd3fc;
     --accent-cyan: #38bdf8;
@@ -26,9 +36,9 @@
     --accent-pearl: #f8fafc;
     --accent-amber: #f59e0b;
 
-    --text-primary: rgba(248, 250, 252, 0.94);
-    --text-secondary: rgba(125, 211, 252, 0.78);
-    --text-muted: rgba(125, 211, 252, 0.48);
+    --text-primary: rgba(248, 250, 252, 0.96);
+    --text-secondary: rgba(186, 230, 253, 0.86);
+    --text-muted: rgba(148, 163, 184, 0.78);
 
     --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
@@ -54,6 +64,9 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+/* ----------------------------------------------------------------------------
+ * РАЗДЕЛ 2. ПОЛНОЭКРАННЫЙ ХОЛСТ СИМУЛЯЦИИ И КОНТЕЙНЕР HUD OVERLAY
+ * ---------------------------------------------------------------------------- */
 .universe-viewport {
     position: relative;
     width: 100vw;
@@ -70,6 +83,7 @@ body {
     z-index: 1;
     cursor: crosshair;
     touch-action: none;
+    display: block;
 }
 
 .optical-vignette {
@@ -107,9 +121,9 @@ body {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid var(--glass-border);
-    border-radius: 9px;
-    box-shadow: 0 6px 24px rgba(2, 3, 8, 0.5);
-    opacity: 0.22;
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(2, 3, 8, 0.52);
+    opacity: 0.86;
     transition:
             opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
             background-color 0.35s ease,
@@ -119,7 +133,7 @@ body {
 
 .hud-panel:hover,
 .hud-panel:focus-within {
-    opacity: 0.96;
+    opacity: 0.98;
     background: var(--glass-surface-hover);
     border-color: var(--glass-border-bright);
 }
@@ -127,7 +141,7 @@ body {
 .layer-hidden {
     opacity: 0 !important;
     pointer-events: none !important;
-    transform: translateY(6px);
+    transform: translateX(14px);
 }
 
 .btn-cyber:focus-visible,
@@ -137,65 +151,68 @@ body {
     outline-offset: 2px;
 }
 
-/* ============================================================================
- * ВЕРХНИЙ БАР И ПАРЯЩИЕ В ВОЗДУХЕ ТЕЛЕМЕТРИЧЕСКИЕ ОСТРОВА (БЕЗ ЖЁСТКИХ РАМОК)
- * ============================================================================ */
+/* ----------------------------------------------------------------------------
+ * РАЗДЕЛ 3. ВЕРХНИЙ ПАСПОРТ ФАЗЫ И ПРАВАЯ КОЛОНКА «ЦИФРОВОГО ВОДОПАДА» (LAYERS 2–4)
+ * ---------------------------------------------------------------------------- */
 .hud-top-bar {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem;
-    flex-wrap: wrap;
+    position: relative;
+    width: 100%;
 }
 
 .brand-card {
-    padding: 0.45rem 0.65rem;
-    max-width: 410px;
-    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.45) 0%, transparent 85%);
+    padding: 0.55rem 0.8rem;
+    max-width: 440px;
+    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.56) 0%, transparent 88%);
     border: none;
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    text-shadow: 0 2px 12px rgba(2, 3, 8, 0.95), 0 0 10px rgba(56, 189, 248, 0.22);
+    text-shadow: 0 2px 12px rgba(2, 3, 8, 0.96), 0 0 10px rgba(56, 189, 248, 0.24);
 }
 
 .brand-card:hover,
 .brand-card:focus-within {
-    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.72) 0%, transparent 90%);
+    background: radial-gradient(ellipse at 20% 30%, rgba(6, 11, 25, 0.78) 0%, transparent 92%);
     border: none;
 }
 
 .phase-codename {
     font-family: var(--font-mono);
-    font-size: 0.58rem;
-    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--accent-cyan);
+    color: var(--accent-ice);
     display: block;
-    margin-bottom: 0.12rem;
+    margin-bottom: 0.14rem;
+    text-shadow: 0 0 10px rgba(125, 211, 252, 0.38);
 }
 
 .phase-title {
-    font-size: 0.88rem;
-    font-weight: 600;
+    font-size: 1.02rem;
+    font-weight: 700;
     letter-spacing: 0.02em;
     color: var(--accent-pearl);
-    margin-bottom: 0.1rem;
+    margin-bottom: 0.16rem;
 }
 
 .phase-subtitle {
-    font-size: 0.68rem;
+    font-size: 0.76rem;
     color: var(--text-secondary);
-    line-height: 1.28;
+    line-height: 1.34;
 }
 
 .phase-philosophy {
     display: none;
-    margin-top: 0.35rem;
-    padding-top: 0.35rem;
-    border-top: 1px solid rgba(125, 211, 252, 0.12);
-    font-size: 0.66rem;
-    line-height: 1.38;
+    margin-top: 0.38rem;
+    padding-top: 0.38rem;
+    border-top: 1px solid rgba(125, 211, 252, 0.14);
+    font-size: 0.72rem;
+    line-height: 1.42;
     color: var(--text-primary);
 }
 
@@ -204,125 +221,202 @@ body {
     display: block;
 }
 
+/* Полноразмерная правая колонка телеметрии сверху до нижней панели управления */
 .inspection-islands-stack {
+    position: fixed;
+    top: 0.65rem;
+    right: 0.85rem;
+    bottom: 4.35rem;
+    width: min(418px, calc(100vw - 1.7rem));
+    z-index: 24;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    justify-content: space-between;
     gap: 0.55rem;
-    max-width: 550px;
+    pointer-events: none;
 }
 
-/* Парящие в воздухе показатели без коробок и искусственных рамок */
+.waterfall-island-slot {
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+}
+
+/* Живые мембранные панели без жёстких прямоугольных рамок и прямых углов */
 .metrics-inspector-v2,
 .topology-inspector-v2,
 .terminal-inspector-v2 {
-    padding: 0.42rem 0.65rem;
-    opacity: 0.92;
-    background: radial-gradient(
-            ellipse at 50% 50%,
-            rgba(6, 11, 25, 0.42) 0%,
-            rgba(3, 5, 10, 0.18) 68%,
-            transparent 100%
-    );
+    position: relative;
+    flex: 1 1 0;
+    width: 100%;
+    height: 100%;
+    padding: 0.85rem 1.25rem;
+    opacity: 0.96;
+    background: transparent;
     border: none;
+    border-radius: 0;
     box-shadow: none;
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
     text-shadow:
             0 2px 10px rgba(2, 3, 8, 0.98),
-            0 0 12px rgba(56, 189, 248, 0.28);
+            0 0 12px rgba(56, 189, 248, 0.32);
 }
 
 .metrics-inspector-v2:hover,
 .topology-inspector-v2:hover,
 .terminal-inspector-v2:hover {
-    background: radial-gradient(
-            ellipse at 50% 50%,
-            rgba(6, 11, 25, 0.65) 0%,
-            rgba(3, 5, 10, 0.32) 75%,
-            transparent 100%
-    );
+    opacity: 1;
+    background: transparent;
     border: none;
+}
+
+.waterfall-contour-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    zIndex: 0;
+}
+
+.waterfall-stream-overlay {
+    position: absolute;
+    inset: 10px;
+    pointer-events: none;
+    z-index: 1;
+    background-image: linear-gradient(
+            180deg,
+            rgba(125, 211, 252, 0.0) 0%,
+            rgba(125, 211, 252, 0.055) 50%,
+            rgba(125, 211, 252, 0.0) 100%
+    );
+    background-size: 100% 26px;
+}
+
+.starfall-drops-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+    overflow: hidden;
+}
+
+.starfall-glyph {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--accent-ice);
+    pointer-events: none;
+    text-shadow:
+            0 -6px 10px rgba(125, 211, 252, 0.92),
+            0 -14px 20px rgba(56, 189, 248, 0.52);
+}
+
+.waterfall-panel-content {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.42rem;
+    height: 100%;
+    width: 100%;
 }
 
 .inspector-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.28rem;
-    padding-bottom: 0.18rem;
-    border-bottom: 1px solid rgba(125, 211, 252, 0.1);
+    gap: 0.65rem;
+    padding-bottom: 0.28rem;
+    border-bottom: 1px solid rgba(125, 211, 252, 0.16);
 }
 
 .digest-badge,
 .source-tag {
     font-family: var(--font-mono);
-    font-size: 0.56rem;
+    font-size: 0.68rem;
+    font-weight: 600;
     color: var(--accent-amber);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
 }
 
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(3, auto);
-    gap: 0.36rem 0.85rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.42rem 0.9rem;
     font-family: var(--font-mono);
 }
 
 .metric-box {
     display: flex;
     flex-direction: column;
+    gap: 0.08rem;
 }
 
 .metric-box .label {
-    font-size: 0.52rem;
+    font-size: 0.66rem;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
 }
 
 .metric-box .value {
-    font-size: 0.74rem;
-    font-weight: 600;
+    font-size: 0.92rem;
+    font-weight: 700;
     color: var(--accent-pearl);
 }
 
 .metric-box .value small {
-    font-size: 0.58rem;
+    font-size: 0.72rem;
     color: var(--accent-ice);
-    font-weight: 400;
+    font-weight: 500;
 }
 
 .topology-stats-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.65rem;
+    flex-direction: column;
+    gap: 0.28rem;
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: 0.76rem;
     color: var(--text-secondary);
-    margin-top: 0.2rem;
+}
+
+.topology-stat-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
 }
 
 .topology-stats-row strong {
+    font-size: 0.88rem;
     color: var(--accent-pearl);
 }
 
 .registry-mini-table {
     display: grid;
-    grid-template-columns: repeat(2, minmax(195px, 1fr));
-    gap: 0.22rem 0.65rem;
+    grid-template-columns: 1fr;
+    gap: 0.18rem;
     font-family: var(--font-mono);
-    font-size: 0.56rem;
-    margin-bottom: 0.32rem;
+    font-size: 0.68rem;
 }
 
 .registry-row {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1.15fr 0.95fr 0.75fr 1.15fr;
+    align-items: center;
     gap: 0.35rem;
-    padding: 0.1rem 0.2rem;
-    background: transparent;
+    padding: 0.08rem 0.15rem;
 }
 
 .mod-id {
@@ -336,38 +430,56 @@ body {
 
 .mod-status.status-ready {
     color: var(--accent-ice);
+    font-weight: 600;
 }
 
 .mod-status.status-fallback,
 .mod-status.status-loading {
     color: var(--accent-amber);
+    font-weight: 600;
 }
 
 .mod-status.status-inactive {
     color: var(--text-muted);
 }
 
+.mod-perf {
+    text-align: right;
+    color: var(--text-secondary);
+}
+
 .ledger-bar {
     font-family: var(--font-mono);
-    font-size: 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 600;
     color: var(--accent-ice);
-    padding: 0.18rem 0;
-    border-top: 1px solid rgba(125, 211, 252, 0.08);
-    border-bottom: 1px solid rgba(125, 211, 252, 0.08);
-    margin-bottom: 0.25rem;
+    padding: 0.22rem 0.45rem;
+    background: rgba(15, 23, 42, 0.42);
+    border-radius: 8px;
+    text-align: center;
 }
 
 .terminal-log-box {
     font-family: var(--font-mono);
-    font-size: 0.56rem;
+    font-size: 0.68rem;
+    line-height: 1.32;
     color: var(--text-secondary);
-    max-height: 78px;
-    overflow-y: auto;
+    max-height: 76px;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 0.14rem;
+    gap: 0.16rem;
 }
 
+.terminal-log-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ----------------------------------------------------------------------------
+ * РАЗДЕЛ 4. ФИНАЛЬНАЯ КАРТОЧКА ОДОМЕТРА, НИЖНИЙ ДОК ФАЗ И АДАПТИВНОСТЬ
+ * ---------------------------------------------------------------------------- */
 .sr-only-manifesto {
     position: absolute;
     width: 1px;
@@ -404,26 +516,26 @@ body {
 .btn-cipher-action {
     pointer-events: auto;
     font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.74rem;
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     text-decoration: none;
-    padding: 0.56rem 1.15rem;
-    border-radius: 6px;
-    background: rgba(6, 11, 25, 0.65);
+    padding: 0.58rem 1.2rem;
+    border-radius: 8px;
+    background: rgba(6, 11, 25, 0.72);
     color: var(--accent-ice);
-    border: 1px solid rgba(125, 211, 252, 0.28);
+    border: 1px solid rgba(125, 211, 252, 0.32);
     cursor: pointer;
-    box-shadow: 0 6px 22px rgba(2, 3, 8, 0.75);
+    box-shadow: 0 6px 22px rgba(2, 3, 8, 0.78);
     transition: all 0.25s ease;
 }
 
 .btn-cipher-action:hover:not(:disabled) {
-    background: rgba(56, 189, 248, 0.16);
+    background: rgba(56, 189, 248, 0.18);
     color: var(--accent-pearl);
     border-color: var(--accent-pearl);
-    box-shadow: 0 0 18px rgba(125, 211, 252, 0.32);
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.36);
 }
 
 .btn-cipher-action:disabled {
@@ -437,19 +549,21 @@ body {
     align-items: flex-end;
     gap: 0.75rem;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 26;
 }
 
 .phase-timeline-dock {
-    padding: 0.38rem 0.55rem;
+    padding: 0.42rem 0.62rem;
     display: flex;
     flex-direction: column;
-    gap: 0.28rem;
+    gap: 0.32rem;
 }
 
 .timeline-progress-track {
     width: 100%;
-    height: 2px;
-    background: rgba(125, 211, 252, 0.12);
+    height: 2.5px;
+    background: rgba(125, 211, 252, 0.14);
     border-radius: 99px;
     overflow: hidden;
 }
@@ -463,18 +577,19 @@ body {
 
 .phase-buttons-row {
     display: flex;
-    gap: 0.28rem;
+    gap: 0.32rem;
     flex-wrap: wrap;
 }
 
 .phase-pill {
-    background: rgba(2, 3, 8, 0.45);
-    border: 1px solid rgba(125, 211, 252, 0.14);
+    background: rgba(2, 3, 8, 0.55);
+    border: 1px solid rgba(125, 211, 252, 0.16);
     color: var(--text-secondary);
-    padding: 0.26rem 0.52rem;
-    border-radius: 5px;
+    padding: 0.3rem 0.58rem;
+    border-radius: 6px;
     font-family: var(--font-mono);
-    font-size: 0.6rem;
+    font-size: 0.66rem;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -485,27 +600,28 @@ body {
 }
 
 .phase-pill.active {
-    background: rgba(56, 189, 248, 0.16);
+    background: rgba(56, 189, 248, 0.2);
     border-color: var(--accent-ice);
     color: var(--accent-pearl);
 }
 
 .controls-dock {
-    padding: 0.38rem 0.55rem;
+    padding: 0.42rem 0.62rem;
     display: flex;
     align-items: center;
-    gap: 0.32rem;
+    gap: 0.36rem;
     flex-wrap: wrap;
 }
 
 .btn-cyber {
-    background: rgba(2, 3, 8, 0.5);
-    border: 1px solid rgba(125, 211, 252, 0.16);
+    background: rgba(2, 3, 8, 0.58);
+    border: 1px solid rgba(125, 211, 252, 0.18);
     color: var(--text-primary);
-    padding: 0.26rem 0.52rem;
-    border-radius: 5px;
+    padding: 0.3rem 0.58rem;
+    border-radius: 6px;
     font-family: var(--font-mono);
-    font-size: 0.6rem;
+    font-size: 0.66rem;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -516,12 +632,12 @@ body {
 }
 
 .btn-cyber.active-toggle {
-    background: rgba(99, 102, 241, 0.22);
+    background: rgba(99, 102, 241, 0.26);
     border-color: var(--accent-ice);
     color: var(--accent-pearl);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 920px) {
     .hud-overlay {
         padding: 0.45rem 0.55rem;
     }
@@ -535,13 +651,16 @@ body {
         display: none;
     }
 
-    .registry-mini-table {
-        grid-template-columns: 1fr;
+    .inspection-islands-stack {
+        top: 3.4rem;
+        right: 0.45rem;
+        bottom: 5.2rem;
+        width: min(350px, 94vw);
     }
 
     .finale-counter-actions {
         top: auto;
-        bottom: 4.5rem;
+        bottom: 4.8rem;
         flex-direction: column;
         gap: 0.45rem;
         width: min(300px, 88vw);
@@ -550,7 +669,7 @@ body {
     .btn-cipher-action {
         width: 100%;
         text-align: center;
-        font-size: 0.64rem;
+        font-size: 0.66rem;
         padding: 0.48rem 0.75rem;
     }
 }

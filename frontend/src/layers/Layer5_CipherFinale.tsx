@@ -1,13 +1,17 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer5_CipherFinale.tsx
-// НАЗНАЧЕНИЕ: Доступный семантический DOM-слой финальной карточки GitHub и Restart (MASTER 05 v2.0)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Рендерить интерактивные кнопки перехода в репозиторий DubnovAlexey/universe
-//    и запуска обратной хореографии Restart Universe (с клавиатурным фокусом Tab / Enter / Space).
-// 2. Содержать визуально скрытый блок aria-live="polite" с 5 каноничными строками финала,
-//    который озвучивается скринридером ровно один раз после защёлкивания всех барабанов (p >= 0.84).
-// 3. Немедленно отключать интерактивность кнопок при переходе в состояние RESTART_COLLAPSE.
+// НАЗНАЧЕНИЕ: Доступный семантический DOM-слой финальной карточки GitHub и Restart (MASTER 05 v2.3)
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Эффект квантовой перестановки символов при наведении (triggerButtonScramble):
+//    интерактивная прокрутка букв на кнопках действий с точной фиксацией текста.
+// 2. Семантический компонент финала (renderLayer5CipherFinaleView): рендеринг
+//    невидимого блока aria-live="polite" с 5 каноническими строками манифеста,
+//    ссылки на репозиторий DubnovAlexey/universe и кнопки запуска обратной
+//    хореографии Restart Universe.
+// 3. Реактивный монтировщик (mountLayer5CipherFinale): синхронизация видимости
+//    кнопок в подакте ACT_D_GITHUB_CARD (при p >= 0.84) и мгновенное отключение
+//    интерактивности при переходе в состояние RESTART_COLLAPSE.
 // ============================================================================
 
 import { React } from './Layer2_Metrics';
@@ -21,7 +25,7 @@ function triggerButtonScramble(el: HTMLElement, originalLabel: string): void {
     const timer = window.setInterval(() => {
         el.textContent = originalLabel
             .split('')
-            .map((ch, idx) => {
+            .map((ch: string, idx: number): string => {
                 if (ch === ' ' || ch === '[' || ch === ']' || idx < iter) return ch;
                 return SCRAMBLE_GLYPHS[(idx * 7 + Math.floor(iter * 3)) % SCRAMBLE_GLYPHS.length];
             })
@@ -61,7 +65,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 target="_blank"
                 rel="noopener noreferrer"
                 tabIndex={isLockedAndVisible ? 0 : -1}
-                onMouseEnter={(e: MouseEvent) => {
+                onMouseEnter={(e: MouseEvent): void => {
                     if (e.currentTarget instanceof HTMLElement) {
                         triggerButtonScramble(e.currentTarget, repoLabel);
                     }
@@ -76,12 +80,12 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 id="btn-restart-universe"
                 disabled={!isLockedAndVisible || isCollapsing}
                 tabIndex={isLockedAndVisible ? 0 : -1}
-                onMouseEnter={(e: MouseEvent) => {
+                onMouseEnter={(e: MouseEvent): void => {
                     if (e.currentTarget instanceof HTMLElement) {
                         triggerButtonScramble(e.currentTarget, restartLabel);
                     }
                 }}
-                onClick={() => {
+                onClick={(): void => {
                     universeStore.triggerUniverseRestart();
                 }}
             >
@@ -95,9 +99,10 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     if (!container) return () => {};
     let lastVisibleState = false;
 
-    const update = (state: Readonly<UniverseState>) => {
+    const update = (state: Readonly<UniverseState>): void => {
         const nowVisible =
-            state.singularityAct === 'ACT_D_GITHUB_CARD' && state.githubCardAssemblyProgress >= 0.84;
+            state.singularityAct === 'ACT_D_GITHUB_CARD' &&
+            state.githubCardAssemblyProgress >= 0.84;
         if (nowVisible !== lastVisibleState || state.singularityAct === 'RESTART_COLLAPSE') {
             lastVisibleState = nowVisible;
             container.replaceChildren(renderLayer5CipherFinaleView(state));
