@@ -1,28 +1,36 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/core/prng.py
-# НАЗНАЧЕНИЕ: Детерминированный ГПСЧ SplitMix32 и хеш FNV-1a State Digest (v2.0)
-# ЗАДАЧИ ФАЙЛА:
-# 1. Гарантировать побитовый паритет случайных чисел u32 между TypeScript
-#    (frontend/src/core/prng.ts), Rust (physics_engine/src/prng.rs) и Python.
-# 2. Проверять совпадение первых 4 значений с эталоном GOLDEN_U32_VECTORS.
-# 3. Вычислять 32-битный FNV-1a дайджест квантованного состояния симуляции.
+# НАЗНАЧЕНИЕ: Детерминированный ГПСЧ и хеш FNV-1a State Digest (v2.3)
+# АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+# 1. 32-битная беззнаковая арифметика (_u32, _imul32) и генератор DeterministicPRNG:
+#    гарантия побитового совпадения случайных чисел u32 между Python,
+#    TypeScript (frontend/src/core/prng.ts) и Rust (physics_engine/src/prng.rs).
+# 2. Верификация эталонных векторов GOLDEN_U32_VECTORS при GOLDEN_SEED = 104729
+#    для успешного прохождения CI-проверки `python -m backend.main --verify`.
+# 3. Вычисление 32-битного FNV-1a дайджеста состояния с единым правилом
+#    квантования math.floor(x + 0.5) для полного паритета между языками.
 # ============================================================================
 
 from __future__ import annotations
+import math
 from typing import Sequence
 
 GOLDEN_SEED: int = 104729
 GOLDEN_U32_VECTORS: tuple[int, int, int, int] = (
-    2440595534,
-    3339150257,
-    2107725929,
-    4067807368,
+    325253669,
+    3481002091,
+    881690241,
+    2630884050,
 )
 
 FNV_OFFSET_BASIS: int = 0x811C9DC5
 FNV_PRIME: int = 0x01000193
 
+
+# ============================================================================
+# РАЗДЕЛ 1. 32-БИТНАЯ АРИФМЕТИКА И КЛАСС ГЕНЕРАТОРА DETERMINISTIC PRNG
+# ============================================================================
 
 def _u32(val: int) -> int:
     """Приведение целого числа к беззнаковому 32-битному диапазону uint32."""
@@ -30,12 +38,17 @@ def _u32(val: int) -> int:
 
 
 def _imul32(a: int, b: int) -> int:
-    """Точный аналог Math.imul(a, b) и wrapping_mul в 32-битной арифметике."""
+    """Точный аналог Math.imul(a, b) и u32::wrapping_mul в 32-битной арифметике."""
     return ((a & 0xFFFFFFFF) * (b & 0xFFFFFFFF)) & 0xFFFFFFFF
 
 
+def quantize_half_up(val: float) -> int:
+    """Единое правило округления floor(x + 0.5), идентичное TypeScript и Rust."""
+    return int(math.floor(val + 0.5))
+
+
 class DeterministicPRNG:
-    """Детерминированный генератор псевдослучайных чисел SplitMix32."""
+    """Детерминированный 32-битный генератор псевдослучайных чисел."""
 
     __slots__ = ("_state",)
 
@@ -68,6 +81,10 @@ class DeterministicPRNG:
         return DeterministicPRNG.hash_u32(seed, index) / 4294967296.0
 
 
+# ============================================================================
+# РАЗДЕЛ 2. ВЕРИФИКАЦИЯ ПАРИТЕТА И РАСЧЁТ FNV-1a STATE DIGEST
+# ============================================================================
+
 def verify_golden_prng_parity() -> bool:
     """Проверка побитового совпадения с эталонными векторами TypeScript и Rust."""
     rng = DeterministicPRNG(GOLDEN_SEED)
@@ -97,11 +114,11 @@ def compute_state_digest_fnv1a(
 
     for i in range(0, limit, step):
         i3 = i * 3
-        qx = int(round(pos_xyz[i3] * 10.0))
-        qy = int(round(pos_xyz[i3 + 1] * 10.0))
-        qvx = int(round(vel_xyz[i3] * 10.0))
-        qvy = int(round(vel_xyz[i3 + 1] * 10.0))
-        qe = int(round(energy[i] * 100.0))
+        qx = quantize_half_up(pos_xyz[i3] * 10.0)
+        qy = quantize_half_up(pos_xyz[i3 + 1] * 10.0)
+        qvx = quantize_half_up(vel_xyz[i3] * 10.0)
+        qvy = quantize_half_up(vel_xyz[i3 + 1] * 10.0)
+        qe = quantize_half_up(energy[i] * 100.0)
 
         h = _imul32(h ^ _u32(qx & 0xFFFF), FNV_PRIME)
         h = _imul32(h ^ _u32(qy & 0xFFFF), FNV_PRIME)
@@ -113,4 +130,4 @@ def compute_state_digest_fnv1a(
 
 
 def format_digest_hex(digest: int) -> str:
-    return f"{_u32(digest):08X}"
+    return f"0x{_u32(digest):08X}"

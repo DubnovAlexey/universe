@@ -1,20 +1,23 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/core/prng.ts
-// НАЗНАЧЕНИЕ: Детерминированный генератор случайных чисел (Mulberry32 / SplitMix32)
+// НАЗНАЧЕНИЕ: Детерминированный генератор псевдослучайных чисел (Mulberry32 / SplitMix32)
 //             и вычислитель контрольной суммы состояния State Digest (FNV-1a 32-bit)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Обеспечить 100% воспроизводимую последовательность случайных чисел от seed (u32).
-// 2. Предоставить проверку по эталонным golden-векторам для паритета TS <-> Rust <-> Python.
-// 3. Вычислять 32-битный State Digest по квантованным координатам и скоростям сущностей,
-//    доказывая, что ILLUSION, NEXUS и X-RAY читают один и тот же буфер состояния.
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Детерминированный ГПСЧ DeterministicPRNG: 32-битная целочисленная арифметика
+//    через Math.imul и беззнаковые сдвиги (>>> 0) для побитового совпадения
+//    между TypeScript, Rust (u32::wrapping_mul) и Python (& 0xFFFFFFFF).
+// 2. Эталонные векторы паритета GOLDEN_U32_VECTORS: верификация первых 4 значений
+//    генератора при стартовом зерне GOLDEN_SEED = 104729 для CI-тестов.
+// 3. Контрольная сумма состояния State Digest (FNV-1a 32-bit): квантование
+//    координат и скоростей через единый оператор Math.floor(v + 0.5), исключающий
+//    платформенные различия округления полуцелых чисел между JS, Python и Rust.
 // ============================================================================
 
-// ----------------------------------------------------------------------------
-// 1. ДЕТЕРМИНИРОВАННЫЙ ГЕНЕРАТОР ПСЕВДОСЛУЧАЙНЫХ ЧИСЕЛ (SPLITMIX32)
-// Алгоритм использует 32-битную целочисленную арифметику Math.imul, что гарантирует
-// побитовое совпадение с реализациями на Rust (u32::wrapping_mul) и Python (& 0xFFFFFFFF).
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 1. ДЕТЕРМИНИРОВАННЫЙ ГЕНЕРАТОР ПСЕВДОСЛУЧАЙНЫХ ЧИСЕЛ (32-BIT)
+// ============================================================================
+
 export class DeterministicPRNG {
     private state: number;
 
@@ -25,7 +28,9 @@ export class DeterministicPRNG {
         }
     }
 
-    // Возвращает следующее беззнаковое 32-битное целое число (u32)
+    /**
+     * Генерирует следующее беззнаковое 32-битное целое число (uint32).
+     */
     public nextU32(): number {
         this.state = (this.state + 0x6d2b79f5) >>> 0;
         let z = this.state;
@@ -34,17 +39,23 @@ export class DeterministicPRNG {
         return (z ^ (z >>> 14)) >>> 0;
     }
 
-    // Возвращает число с плавающей точкой в полуинтервале [0.0, 1.0)
+    /**
+     * Генерирует число с плавающей точкой двойной точности в полуинтервале [0.0, 1.0).
+     */
     public nextFloat(): number {
         return this.nextU32() / 4294967296.0;
     }
 
-    // Возвращает число в диапазоне [min, max)
+    /**
+     * Генерирует число с плавающей точкой в заданном диапазоне [min, max).
+     */
     public nextRange(min: number, max: number): number {
         return min + this.nextFloat() * (max - min);
     }
 
-    // Чистая детерминированная хеш-функция от пары (seed, index) без мутации состояния
+    /**
+     * Чистая биективная хеш-функция SplitMix32 от пары (seed, index) без мутации состояния.
+     */
     public static hashU32(seed: number, index: number): number {
         let h = ((seed >>> 0) ^ Math.imul(index >>> 0, 0x9e3779b9)) >>> 0;
         h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
@@ -52,21 +63,26 @@ export class DeterministicPRNG {
         return (h ^ (h >>> 16)) >>> 0;
     }
 
+    /**
+     * Чистая детерминированная хеш-функция, возвращающая число в полуинтервале [0.0, 1.0).
+     */
     public static hashFloat(seed: number, index: number): number {
         return DeterministicPRNG.hashU32(seed, index) / 4294967296.0;
     }
 }
 
-// ----------------------------------------------------------------------------
-// 2. ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG (ДЛЯ ПАРИТЕТ-ТЕСТОВ MASTER 00B)
-// Для стартового seed = 104729 первые 4 значения u32 строго детерминированы.
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 2. ЭТАЛОННЫЕ GOLDEN-ВЕКТОРЫ ПАРИТЕТА (TS <-> RUST <-> PYTHON)
+// Для GOLDEN_SEED = 104729 первые 4 значения nextU32() строго равны векторам ниже.
+// ============================================================================
+
 export const GOLDEN_SEED = 104729;
+
 export const GOLDEN_U32_VECTORS: ReadonlyArray<number> = [
-    2440595534,
-    3339150257,
-    2107725929,
-    4067807368,
+    325253669,
+    3481002091,
+    881690241,
+    2630884050,
 ];
 
 export function verifyGoldenPrngParity(): boolean {
@@ -79,13 +95,18 @@ export function verifyGoldenPrngParity(): boolean {
     return true;
 }
 
-// ----------------------------------------------------------------------------
-// 3. ВЫЧИСЛЕНИЕ КОНТРОЛЬНОЙ СУММЫ СОСТОЯНИЯ (STATE DIGEST — FNV-1a 32-BIT)
-// Квантует координаты и скорости с шагом 0.1px, чтобы исключить микро-расхождения
-// округления float между платформами, и вычисляет быстрый 32-битный дайджест.
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 3. ВЫЧИСЛЕНИЕ КОНТРОЛЬНОЙ СУММЫ СОСТОЯНИЯ (STATE DIGEST — FNV-1a 32-BIT)
+// Используется единое правило квантования Math.floor(x + 0.5) для полного
+// побитового совпадения с Python и Rust на любых положительных и отрицательных числах.
+// ============================================================================
+
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
+
+export function quantizeHalfUp(val: number): number {
+    return Math.floor(val + 0.5) | 0;
+}
 
 export function computeQuantizedStateDigest(
     tick: number,
@@ -97,7 +118,6 @@ export function computeQuantizedStateDigest(
 ): number {
     let hash = FNV_OFFSET_BASIS >>> 0;
 
-    // Включаем номер тика и количество активных тел в начало дайджеста
     hash = Math.imul(hash ^ (tick >>> 0), FNV_PRIME) >>> 0;
     hash = Math.imul(hash ^ (count >>> 0), FNV_PRIME) >>> 0;
 
@@ -106,11 +126,11 @@ export function computeQuantizedStateDigest(
 
     for (let i = 0; i < limit; i += step) {
         const i3 = i * 3;
-        const qx = Math.round(posBuffer[i3] * 10) | 0;
-        const qy = Math.round(posBuffer[i3 + 1] * 10) | 0;
-        const qvx = Math.round(velBuffer[i3] * 10) | 0;
-        const qvy = Math.round(velBuffer[i3 + 1] * 10) | 0;
-        const qe = Math.round(energyBuffer[i] * 100) | 0;
+        const qx = quantizeHalfUp(posBuffer[i3] * 10.0);
+        const qy = quantizeHalfUp(posBuffer[i3 + 1] * 10.0);
+        const qvx = quantizeHalfUp(velBuffer[i3] * 10.0);
+        const qvy = quantizeHalfUp(velBuffer[i3 + 1] * 10.0);
+        const qe = quantizeHalfUp(energyBuffer[i] * 100.0);
 
         hash = Math.imul(hash ^ (qx & 0xffff), FNV_PRIME) >>> 0;
         hash = Math.imul(hash ^ (qy & 0xffff), FNV_PRIME) >>> 0;

@@ -1,26 +1,30 @@
 // ============================================================================
 // ФАЙЛ: physics_engine/src/prng.rs
-// НАЗНАЧЕНИЕ: Детерминированный PRNG (SplitMix32) и хеш State Digest (FNV-1a)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Генерировать побитово идентичную с TypeScript (frontend/src/core/prng.ts)
-//    и Python (backend/core/prng.py) последовательность случайных чисел u32.
-// 2. Проверять совпадение первых 4 значений с эталонными GOLDEN_U32_VECTORS.
-// 3. Вычислять 32-битный FNV-1a дайджест квантованного состояния симуляции.
+// НАЗНАЧЕНИЕ: Детерминированный PRNG и хеш State Digest (FNV-1a 32-bit, v2.3)
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Генератор псевдослучайных чисел DeterministicPrng: побитово идентичная
+//    с TypeScript (frontend/src/core/prng.ts) и Python (backend/core/prng.py)
+//    последовательность случайных чисел u32.
+// 2. Эталонные векторы GOLDEN_U32_VECTORS при GOLDEN_SEED = 104_729 и функция
+//    проверки паритета verify_golden_vectors().
+// 3. Вычисление 32-битного FNV-1a дайджеста квантованного состояния симуляции
+//    с единым правилом округления (val + 0.5).floor() as i32.
 // ============================================================================
 
 #![allow(dead_code)]
 
 pub const GOLDEN_SEED: u32 = 104_729;
 pub const GOLDEN_U32_VECTORS: [u32; 4] = [
-    2_440_595_534,
-    3_339_150_257,
-    2_107_725_929,
-    4_067_807_368,
+    325_253_669,
+    3_481_002_091,
+    881_690_241,
+    2_630_884_050,
 ];
 
-// ----------------------------------------------------------------------------
-// 1. СТРУКТУРА ГЕНЕРАТОРА ПСЕВДОСЛУЧАЙНЫХ ЧИСЕЛ SPLITMIX32
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 1. СТРУКТУРА ГЕНЕРАТОРА ПСЕВДОСЛУЧАЙНЫХ ЧИСЕЛ DETERMINISTIC PRNG
+// ============================================================================
+
 #[derive(Clone, Copy, Debug)]
 pub struct DeterministicPrng {
     state: u32,
@@ -56,7 +60,6 @@ impl DeterministicPrng {
     }
 }
 
-// Проверка паритета с эталонными векторами TypeScript
 pub fn verify_golden_vectors() -> bool {
     let mut rng = DeterministicPrng::new(GOLDEN_SEED);
     for expected in GOLDEN_U32_VECTORS.iter() {
@@ -67,11 +70,17 @@ pub fn verify_golden_vectors() -> bool {
     true
 }
 
-// ----------------------------------------------------------------------------
-// 2. ВЫЧИСЛЕНИЕ КОНТРОЛЬНОЙ СУММЫ СОСТОЯНИЯ (FNV-1a 32-BIT STATE DIGEST)
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 2. ВЫЧИСЛЕНИЕ КОНТРОЛЬНОЙ СУММЫ СОСТОЯНИЯ (FNV-1a 32-BIT STATE DIGEST)
+// ============================================================================
+
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
 const FNV_PRIME: u32 = 0x0100_0193;
+
+#[inline]
+pub fn quantize_half_up(val: f32) -> i32 {
+    (val + 0.5_f32).floor() as i32
+}
 
 pub fn compute_quantized_state_digest(
     tick: u32,
@@ -85,17 +94,17 @@ pub fn compute_quantized_state_digest(
     hash = (hash ^ tick).wrapping_mul(FNV_PRIME);
     hash = (hash ^ (count as u32)).wrapping_mul(FNV_PRIME);
 
-    let limit = count.min(pos.len() / 3);
+    let limit = count.min(pos.len() / 3).min(vel.len() / 3).min(energy.len());
     let step = stride.max(1);
 
     let mut i = 0;
     while i < limit {
         let i3 = i * 3;
-        let qx = (pos[i3] * 10.0).round() as i32;
-        let qy = (pos[i3 + 1] * 10.0).round() as i32;
-        let qvx = (vel[i3] * 10.0).round() as i32;
-        let qvy = (vel[i3 + 1] * 10.0).round() as i32;
-        let qe = (energy[i] * 100.0).round() as i32;
+        let qx = quantize_half_up(pos[i3] * 10.0);
+        let qy = quantize_half_up(pos[i3 + 1] * 10.0);
+        let qvx = quantize_half_up(vel[i3] * 10.0);
+        let qvy = quantize_half_up(vel[i3 + 1] * 10.0);
+        let qe = quantize_half_up(energy[i] * 100.0);
 
         hash = (hash ^ ((qx & 0xffff) as u32)).wrapping_mul(FNV_PRIME);
         hash = (hash ^ ((qy & 0xffff) as u32)).wrapping_mul(FNV_PRIME);

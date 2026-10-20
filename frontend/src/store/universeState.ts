@@ -1,19 +1,26 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/store/universeState.ts
-// НАЗНАЧЕНИЕ: Единое хранилище состояния Вселенной UNIVERSE v2.3 (0 ошибок TS)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Управлять 5 фазами 108-секундного цикла с гарантированным автопереключением
-//    с самого первого запуска страницы (включая самовосстанавливающийся таймер).
-// 2. Обеспечить гладкую C2-интерполяцию камеры Перлина (smootherstep) без рывков.
-// 3. Согласовать тип EngineBackendKind ('WebGPU' | 'Canvas2D-HighDPI') с pipeline.ts.
-// 4. Передавать оба аргумента (ft, nowMs) в qualityGovernor.feedFrameTime(ft, nowMs).
+// НАЗНАЧЕНИЕ: Единое хранилище состояния Вселенной и часов цикла UNIVERSE v2.4
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Метаданные и партитура 5 фаз 108-секундного цикла (UNIVERSE_PHASES):
+//    01_VOID (0–17 с), 02_GENESIS (17–39 с), 03_EVOLUTION (39–64 с),
+//    04_COLLAPSE (64–79 с), 05_SINGULARITY (79–108 с).
+// 2. Подакты фазы сингулярности:
+//    - ACT_A_ACCRETION (79.0–87.5 с): рождение Чёрной дыры из Точки Нуля и корона NGC 6543;
+//    - ACT_B_LOGIC (87.5–93.0 с): сведение 3 оптик и плавное спиральное схлопывание;
+//    - ACT_C_ZERO_SILENCE (93.0–95.5 с): ровно 2500 мс (2.5 с) живой тишины;
+//    - ACT_D_GITHUB_CARD (95.5–108.0 с): сборка квантового одометра и визитки;
+//    - RESTART_COLLAPSE: изолированный таймер restartElapsedSec (1.65 с от момента клика).
+// 3. Независимое управление слоями телеметрии и графики (toggleLayer):
+//    каждая кнопка нижней панели (METRICS, TOPOLOGY, TERMINAL, X-RAY) имеет
+//    собственный флаг видимости без взаимной блокировки.
 // ============================================================================
 
 import { type InspectionLevel, type PhaseId } from '../core/contracts';
 import { GOLDEN_SEED } from '../core/prng';
 import { SceneBufferSoA } from '../core/sceneBuffer';
-import { QualityGovernor } from '../core/qualityGovernor';
+import { qualityGovernor, QualityGovernor } from '../core/qualityGovernor';
 
 export type { PhaseId, InspectionLevel };
 
@@ -65,6 +72,10 @@ export interface PhaseMetadata {
     targetParticleCount: number;
     targetZoom: number;
 }
+
+// ============================================================================
+// РАЗДЕЛ 1. КАНОНИЧЕСКАЯ ШКАЛА 5 ФАЗ (0..108 СЕКУНД)
+// ============================================================================
 
 export const PHASE_ORDER: readonly PhaseId[] = [
     '01_VOID',
@@ -199,6 +210,7 @@ export interface UniverseState {
     singularityActProgress: number;
     zeroSilenceElapsedMs: number;
     githubCardAssemblyProgress: number;
+    restartElapsedSec: number;
     opticalWeights: OpticalWeights;
     camera: {
         zoom: number;
@@ -215,12 +227,16 @@ type StateListener = (state: Readonly<UniverseState>) => void;
 
 /**
  * Полином Перлина 5-го порядка (C2-непрерывный smootherstep):
- * нулевая первая и вторая производные на границах исключают скачки камеры и линий.
+ * нулевая первая и вторая производные на границах исключают скачки камеры и морфинга.
  */
 export function smootherstep(edge0: number, edge1: number, x: number): number {
     const u = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, edge1 - edge0)));
     return u * u * u * (u * (u * 6 - 15) + 10);
 }
+
+// ============================================================================
+// РАЗДЕЛ 2. КЛАСС ХРАНИЛИЩА СОСТОЯНИЯ И ЕДИНЫХ ЧАСОВ ЦИКЛА (UniverseStore)
+// ============================================================================
 
 class UniverseStore {
     private readonly state: UniverseState;
@@ -234,12 +250,13 @@ class UniverseStore {
 
     constructor() {
         const urlParams = this.parseUrlParameters();
-        this.qualityGovernor = new QualityGovernor();
+        // Используем единый синглтон qualityGovernor, чтобы pipeline.ts и store читали один объект
+        this.qualityGovernor = qualityGovernor;
         this.sceneBuffer = new SceneBufferSoA(1024, urlParams.seed);
 
         const initialMeta = UNIVERSE_PHASES['01_VOID'];
         const bootTime = this.formatTimestamp();
-        const bootLine = `[${bootTime}] [SYSTEM:BOOT] Инициализация UNIVERSE v2.3 (seed=${urlParams.seed}) [ts/universeState.ts]`;
+        const bootLine = `[${bootTime}] [SYSTEM:BOOT] Инициализация UNIVERSE v2.4 (seed=${urlParams.seed}) [ts/universeState.ts]`;
 
         this.state = {
             seed: urlParams.seed,
@@ -261,6 +278,7 @@ class UniverseStore {
             singularityActProgress: 0,
             zeroSilenceElapsedMs: 0,
             githubCardAssemblyProgress: 0,
+            restartElapsedSec: 0,
             opticalWeights: {
                 illusion: 1.0,
                 nexusTopology: 0.65,
@@ -274,16 +292,16 @@ class UniverseStore {
             },
             layers: {
                 layer1_cosmosIllusion: true,
-                layer2_metricsHud: urlParams.debugMode,
+                layer2_metricsHud: true,
                 layer3_topologyGraph: true,
-                layer4_architectTerminal: urlParams.debugMode,
+                layer4_architectTerminal: true,
                 layer5_truthXRayMode: false,
             },
             telemetry: {
                 tick: 0,
                 fps: 60,
                 frameTimeMs: 16.6,
-                frameTimeP95Ms: 18.2,
+                frameTimeP95Ms: 16.7,
                 physicsStepMs: 0.8,
                 activeParticles: initialMeta.targetParticleCount,
                 activeConnections: 0,
@@ -297,8 +315,8 @@ class UniverseStore {
                 engineBackend: 'Canvas2D-HighDPI',
                 wasmStatus: 'TS_FALLBACK',
                 pythonBackendStatus: 'CLIENT_ONLY',
-                audioStatus: 'PLAYING_MP3',
-                silenceRmsDb: -21.5,
+                audioStatus: 'AWAITING_GESTURE',
+                silenceRmsDb: -60.0,
             },
             terminalLogs: [bootLine],
             architectEvents: [
@@ -306,7 +324,7 @@ class UniverseStore {
                     id: 'boot_0',
                     timestamp: bootTime,
                     type: 'system:boot',
-                    message: `Инициализация UNIVERSE v2.3 (seed=${urlParams.seed}) [ts/universeState.ts]`,
+                    message: `Инициализация UNIVERSE v2.4 (seed=${urlParams.seed}) [ts/universeState.ts]`,
                 },
             ],
         };
@@ -318,23 +336,24 @@ class UniverseStore {
     }
 
     /**
-     * Страховочный таймер автоцикла: если на старте страницы кадры RAF задержались,
-     * часы фаз все равно плавно идут вперёд и гарантируют переход 01 -> 02 -> 03 -> 04 -> 05.
+     * Резервный сторожевой таймер: срабатывает только в том случае, если главный цикл
+     * requestAnimationFrame был приостановлен браузером более чем на 1.2 секунды.
+     * В штатном режиме 60 FPS не конкурирует с часами рендерера.
      */
     private startPhaseWatchdog(): void {
         setInterval(() => {
             if (this.state.isPaused || this.state.isTabHidden) return;
             const now = performance.now();
             const gapMs = now - this.lastTelemetryUpdateMs;
-            if (gapMs > 260) {
-                const dtSec = Math.min(0.25, gapMs / 1000);
+            if (gapMs > 1200) {
+                const dtSec = Math.min(0.2, gapMs / 1000);
                 this.lastTelemetryUpdateMs = now;
                 this.updateTelemetry({
                     phaseElapsedSec: this.state.telemetry.phaseElapsedSec + dtSec,
                     simulationTimeSec: this.state.telemetry.simulationTimeSec + dtSec,
                 });
             }
-        }, 200);
+        }, 500);
     }
 
     private parseUrlParameters(): {
@@ -412,6 +431,7 @@ class UniverseStore {
         this.state.telemetry.phaseElapsedSec = 0;
         this.state.telemetry.phaseProgress = 0;
         this.state.telemetry.simulationTimeSec = meta.startSec;
+        this.state.restartElapsedSec = 0;
 
         if (phase === '05_SINGULARITY') {
             this.state.singularityAct = 'ACT_A_ACCRETION';
@@ -446,6 +466,12 @@ class UniverseStore {
 
     public toggleAutoCycle(): void {
         this.state.autoCyclePhases = !this.state.autoCyclePhases;
+        this.appendLogEvent(
+            'cycle:mode',
+            this.state.autoCyclePhases
+                ? 'Автоматический 108-секундный цикл включён.'
+                : 'Ручной режим исследования фазы включён.'
+        );
         this.notifyListeners(true);
     }
 
@@ -466,13 +492,29 @@ class UniverseStore {
 
     public setInspectionLevel(level: InspectionLevel): void {
         this.state.inspectionLevel = level;
-        this.state.layers.layer3_topologyGraph = true;
         this.notifyListeners(true);
     }
 
+    /**
+     * Независимое переключение видимости каждого слоя телеметрии и рентгена X-RAY
+     * с записью события в терминал для чёткого визуального отклика кнопок.
+     */
     public toggleLayer(layerKey: keyof UniverseLayersVisibility): void {
         this.state.layers[layerKey] = !this.state.layers[layerKey];
+        const isOn = this.state.layers[layerKey];
         this.state.opticalWeights.xrayTruth = this.state.layers.layer5_truthXRayMode ? 1.0 : 0.0;
+
+        const labelMap: Record<keyof UniverseLayersVisibility, string> = {
+            layer1_cosmosIllusion: 'COSMOS ILLUSION',
+            layer2_metricsHud: 'LAYER_02 METRICS',
+            layer3_topologyGraph: 'LAYER_03 TOPOLOGY',
+            layer4_architectTerminal: 'LAYER_04 TERMINAL',
+            layer5_truthXRayMode: 'GLOBAL X-RAY OPTICS',
+        };
+        this.appendLogEvent(
+            'ui:layer',
+            `${labelMap[layerKey]}: ${isOn ? 'АКТИВИРОВАН' : 'СКРЫТ'}`
+        );
         this.notifyListeners(true);
     }
 
@@ -504,7 +546,7 @@ class UniverseStore {
     private appendLogEvent(type: string, message: string): void {
         const ts = this.formatTimestamp();
         const nextEvent: ArchitectLogEvent = {
-            id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            id: `evt_${Date.now()}_${this.state?.telemetry?.tick ?? 0}`,
             timestamp: ts,
             type,
             message,
@@ -514,9 +556,15 @@ class UniverseStore {
         this.state.terminalLogs = [formattedLine, ...this.state.terminalLogs.slice(0, 24)];
     }
 
+    /**
+     * Запускает обратную хореографию схлопывания Вселенной с собственным счётчиком
+     * времени restartElapsedSec = 0 (длительность 1.65 с независимо от времени фазы).
+     */
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.singularityAct = 'RESTART_COLLAPSE';
+        this.state.restartElapsedSec = 0;
+        this.state.singularityActProgress = 0;
         this.appendLogEvent(
             'cycle:restart',
             `Запущено гравитационное схлопывание цикла #${this.state.cycleCount} -> #${this.state.cycleCount + 1}`
@@ -534,19 +582,24 @@ class UniverseStore {
         this.state.singularityActProgress = 0;
         this.state.zeroSilenceElapsedMs = 0;
         this.state.githubCardAssemblyProgress = 0;
+        this.state.restartElapsedSec = 0;
         this.state.opticalWeights.logicConvergence = 0;
         this.state.telemetry.phaseElapsedSec = 0;
         this.state.telemetry.phaseProgress = 0;
         this.state.telemetry.simulationTimeSec = 0;
+        this.sceneBuffer.reset(this.state.seed);
         this.notifyListeners(true);
     }
 
     public updateTelemetry(partial: Partial<UniverseTelemetryState>): void {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const prevPhaseElapsed = this.state.telemetry.phaseElapsedSec;
         this.lastTelemetryUpdateMs = nowMs;
 
         Object.assign(this.state.telemetry, partial);
         this.state.telemetry.stateDigestHex = this.sceneBuffer.getDigestHex();
+
+        const dtSec = Math.max(0, this.state.telemetry.phaseElapsedSec - prevPhaseElapsed);
 
         const ft = Math.max(1.0, this.state.telemetry.frameTimeMs);
         this.state.telemetry.fps = Math.min(240, Math.round(1000 / ft));
@@ -565,42 +618,81 @@ class UniverseStore {
         const rawProgress = Math.max(0, Math.min(1, this.state.telemetry.phaseElapsedSec / dur));
         this.state.telemetry.phaseProgress = Number(rawProgress.toFixed(4));
 
-        // Плавная C2-интерполяция зума и дрейфа камеры Перлина без резких ступенек между фазами
+        // Плавная C2-интерполяция зума и дрейфа камеры Перлина (замирает в Акте C живой тишины)
         const simSec = this.state.telemetry.simulationTimeSec;
-        const smoothPhaseAlpha = smootherstep(0.0, 0.35, rawProgress);
-        const targetZoom =
-            this.state.phaseMeta.targetZoom + Math.sin(simSec * 0.42) * 0.008 * smoothPhaseAlpha;
-        this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.014;
-        this.state.camera.driftX = Math.sin(simSec * 0.14) * 11.5;
-        this.state.camera.driftY = Math.cos(simSec * 0.11) * 8.5;
+        if (this.state.singularityAct === 'ACT_C_ZERO_SILENCE') {
+            this.state.camera.driftX *= 0.9;
+            this.state.camera.driftY *= 0.9;
+        } else {
+            const smoothPhaseAlpha = smootherstep(0.0, 0.35, rawProgress);
+            const targetZoom =
+                this.state.phaseMeta.targetZoom + Math.sin(simSec * 0.42) * 0.008 * smoothPhaseAlpha;
+            this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.014;
+            this.state.camera.driftX = Math.sin(simSec * 0.14) * 10.5;
+            this.state.camera.driftY = Math.cos(simSec * 0.11) * 7.8;
+        }
 
-        if (
-            this.state.currentPhase === '05_SINGULARITY' &&
-            this.state.singularityAct !== 'RESTART_COLLAPSE'
-        ) {
+        // Обработка обратной хореографии Restart Universe (ровно 1.65 с от момента нажатия)
+        if (this.state.singularityAct === 'RESTART_COLLAPSE') {
+            this.state.restartElapsedSec += dtSec > 0 ? dtSec : 0.016;
+            const collapseProg = Math.min(1.0, this.state.restartElapsedSec / 1.65);
+            this.state.singularityActProgress = smootherstep(0.0, 1.0, collapseProg);
+            this.state.githubCardAssemblyProgress = Math.max(
+                0.0,
+                1.0 - this.state.singularityActProgress
+            );
+            this.notifyListeners(false);
+            return;
+        }
+
+        // Партитура 5-й фазы (79–108 с, длительность 29 с) с точным окном 2.5 с тишины
+        if (this.state.currentPhase === '05_SINGULARITY') {
             const el = this.state.telemetry.phaseElapsedSec;
             if (el < 8.5) {
+                // 79.0 – 87.5 с: Акт A (Рождение из Точки Нуля, аккреция и корона NGC 6543)
                 this.state.singularityAct = 'ACT_A_ACCRETION';
                 this.state.singularityActProgress = smootherstep(0, 8.5, el);
+                this.state.zeroSilenceElapsedMs = 0;
+                this.state.githubCardAssemblyProgress = 0;
                 this.state.opticalWeights.logicConvergence = 0;
             } else if (el < 14.0) {
+                // 87.5 – 93.0 с: Акт B (Сведение оптик LOGIC и плавное сжатие в Точку Нуля)
                 this.state.singularityAct = 'ACT_B_LOGIC';
                 this.state.singularityActProgress = smootherstep(8.5, 14.0, el);
+                this.state.zeroSilenceElapsedMs = 0;
+                this.state.githubCardAssemblyProgress = 0;
                 this.state.opticalWeights.logicConvergence = this.state.singularityActProgress;
                 this.emitEventOnce(
                     'logic_conv_act_b',
                     'logic:convergence-started',
-                    `Акт B (LOGIC): Три оптики синхронны. StateDigest=0x${this.state.telemetry.stateDigestHex}`
+                    `Акт B (LOGIC): Три оптики синхронны. StateDigest=${this.state.telemetry.stateDigestHex}`
                 );
-            } else if (el < 15.1) {
+            } else if (el < 16.5) {
+                // 93.0 – 95.5 с: Акт C (Ровно 2500 мс = 2.5 секунды Живой Тишины)
                 this.state.singularityAct = 'ACT_C_ZERO_SILENCE';
-                this.state.zeroSilenceElapsedMs = (el - 14.0) * 1000;
-                this.state.singularityActProgress = (el - 14.0) / 1.1;
+                this.state.zeroSilenceElapsedMs = Math.min(2500, Math.round((el - 14.0) * 1000));
+                this.state.singularityActProgress = (el - 14.0) / 2.5;
+                this.state.githubCardAssemblyProgress = 0;
+                this.emitEventOnce(
+                    'zero_silence_start',
+                    'zero-silence:started',
+                    'Акт C: Начало 2500 мс живой тишины (93.0–95.5 с) [web-audio]'
+                );
             } else {
+                // 95.5 – 108.0 с: Акт D (Квантовый одометр и финальная визитка DUBNOV ALEXEY)
                 this.state.singularityAct = 'ACT_D_GITHUB_CARD';
-                const cardElapsed = el - 15.1;
-                this.state.githubCardAssemblyProgress = Math.max(0, Math.min(1, cardElapsed / 6.5));
+                this.state.zeroSilenceElapsedMs = 2500;
+                const cardElapsed = el - 16.5;
+                this.state.githubCardAssemblyProgress = Math.max(
+                    0,
+                    Math.min(1, cardElapsed / 6.5)
+                );
                 this.state.singularityActProgress = this.state.githubCardAssemblyProgress;
+                this.emitEventOnce(
+                    'zero_silence_end',
+                    'zero-silence:ended',
+                    'Акт D: Завершение тишины (2500 мс). Запуск барабанов одометра.'
+                );
             }
         }
 
