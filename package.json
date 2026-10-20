@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "dev:frontend": "npm run dev --workspace=frontend"
   },
   "dependencies": {
-    "astro": "7.2.8"
+    "astro": "7.4.1"
   }
 }
