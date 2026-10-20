@@ -11,8 +11,8 @@
 //    - Class C (Murray Dendrites): ветвящиеся дендриты по закону Мюррея r_p^3 = sum r_c^3.
 // 3. Вывод топологических инвариантов (средняя степень узлов, кластеризация,
 //    диаметр в хопах, длина пути и активные синаптические импульсы в полёте)
-//    с эффектом дыхания цифр и «Звездопада / Капель».
-// 4. Реактивный монтировщик (mountLayer3Topology) для слота #layer3-topology-root.
+//    с плавным дыханием цифр и 60-FPS «Звездопадом / Каплями».
+// 4. Реактивный монтировщик (mountLayer3Topology) без лишних таймеров перерисовки.
 // ============================================================================
 
 import {
@@ -120,20 +120,7 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
         container.replaceChildren(renderLayer3TopologyView(state, metrics));
     };
 
-    const unsub = universeStore.subscribe(update);
-    const refreshTimer =
-        typeof window !== 'undefined'
-            ? window.setInterval(() => {
-                update(universeStore.getState());
-            }, 160)
-            : 0;
-
-    return () => {
-        if (refreshTimer && typeof window !== 'undefined') {
-            window.clearInterval(refreshTimer);
-        }
-        unsub();
-    };
+    return universeStore.subscribe(update);
 }
 
 export default renderLayer3TopologyView;

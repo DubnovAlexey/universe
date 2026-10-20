@@ -9,8 +9,8 @@
 //    времени шага p50/p95 мс) и подтверждение эквивалентности трёх оптик
 //    (ILLUSION == NEXUS == X-RAY [StateDigest]).
 // 3. Отображение счётчиков ресурсов ResourceLedger (buf, tex, audio, listeners,
-//    restarts) и потока архитектурных логов с эффектом «Звездопада / Капель».
-// 4. Реактивный монтировщик (mountLayer4Terminal) для слота #layer4-terminal-root.
+//    restarts) и потока архитектурных логов с 60-FPS эффектом «Звездопада / Капель».
+// 4. Реактивный монтировщик (mountLayer4Terminal) без лишних таймеров перерисовки.
 // ============================================================================
 
 import {
@@ -121,20 +121,7 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
         container.replaceChildren(renderLayer4TerminalView(state));
     };
 
-    const unsub = universeStore.subscribe(update);
-    const refreshTimer =
-        typeof window !== 'undefined'
-            ? window.setInterval(() => {
-                update(universeStore.getState());
-            }, 160)
-            : 0;
-
-    return () => {
-        if (refreshTimer && typeof window !== 'undefined') {
-            window.clearInterval(refreshTimer);
-        }
-        unsub();
-    };
+    return universeStore.subscribe(update);
 }
 
 export default renderLayer4TerminalView;
