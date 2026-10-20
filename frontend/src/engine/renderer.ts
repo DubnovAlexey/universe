@@ -1,7 +1,7 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/renderer.ts
-// НАЗНАЧЕНИЕ: Главный графический и физический конвейер рендеринга UNIVERSE v2.3
+// НАЗНАЧЕНИЕ: Главный графический и физический конвейер рендеринга UNIVERSE v2.4
 //             и клиентский оркестратор интерактивных слоёв (MASTER 00–05)
 // АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
 // 1. Процедурные шумовые поля и структуры фоновых явлений: симплекс-шум,
@@ -15,21 +15,24 @@
 //    - 01_VOID: нестабильные дышащие кольца светового эха цефеиды RS Puppis;
 //    - 02_GENESIS: спиральные пылевые рукава и тёмные каньоны поглощения света;
 //    - 03_EVOLUTION: 5 кеплеровских колец, полушария NEXUS, сплайны A/B/C и импульсы;
-//    - 05_SINGULARITY: 7-оболочечная корона NGC 6543 и релятивистская Чёрная дыра.
+//    - 05_SINGULARITY: C2-рождение Чёрной дыры и короны NGC 6543 строго из Точки Нуля
+//      и плавное тягучее спиральное схлопывание.
 // 4. Органическая оптика мембраны BREACH LENS и эшелон глубины Z4:
 //    C2-гладкое раскрытие рентгеновских геодезических ячеек без прямоугольных
 //    артефактов, суб-нейронные токи Z4, микротрещины и бесконтурные выноски узлов.
 // 5. Рендеринг барабанов квантового одометра (cipherOdometerEngine) в Акте D:
-//    монохромно-теневая палитра, хаотичная прокрутка центральной строки и Hover.
-// 6. Оркестратор жизненного цикла и DOM-интерфейса (bootstrapUniverseV2):
-//    монтирование слоёв Layer 2–5, синхронизация паспорта фазы и кнопок управления.
+//    многослойная холодная палитра с глубокими тенями (без ржаво-рыжего оттенка),
+//    хаотичная скорость центральной строки и C∞-дыхание визитки.
+// 6. Интерактивный контроллер угловых панелей (CornerPanelsQuantumController)
+//    и оркестратор DOM (bootstrapUniverseV2): при наведении курсора выбранный
+//    элемент остаётся неподвижным, а соседние элементы в ряду перебираются
+//    с холодными полутонами и тенями.
 // ============================================================================
 
 import '../styles/universe.css';
 
 import {
     PHASE_ORDER,
-    UNIVERSE_PHASES,
     smootherstep,
     universeStore,
     type PhaseId,
@@ -305,10 +308,6 @@ export class UniverseRenderer {
         };
     }
 
-    /**
-     * Безопасное чтение массивов частиц, рёбер и импульсов из VoidPhaseSimulation
-     * с поддержкой как публичных геттеров, так и прямого доступа к полям экземпляра.
-     */
     private getSimParticles(): ReadonlyArray<QuantumParticle> {
         const sim = this.simulation as unknown as {
             getParticles?: () => ReadonlyArray<QuantumParticle>;
@@ -449,7 +448,7 @@ export class UniverseRenderer {
         const phase = state.currentPhase;
         const act = state.singularityAct;
 
-        // Специальный режим Акта C (2.5 секунды живой тишины: 93.0–95.5 с)
+        // Специальный режим Акта C (ровно 2.5 секунды живой тишины: 93.0–95.5 с)
         if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
             this.renderZeroSilenceActC(ctx, cx, cy, minSide, simTimeSec);
             ctx.restore();
@@ -464,7 +463,7 @@ export class UniverseRenderer {
             phase === '05_SINGULARITY' &&
             (act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE');
         const sceneVisibility = isOdometerStage
-            ? Math.max(0.24, 1.0 - state.githubCardAssemblyProgress * 0.72)
+            ? Math.max(0.22, 1.0 - state.githubCardAssemblyProgress * 0.74)
             : 1.0;
 
         const particles = this.getSimParticles();
@@ -493,7 +492,10 @@ export class UniverseRenderer {
             const voidWeight =
                 phase === '01_VOID'
                     ? 1.0
-                    : Math.max(0.0, 1.0 - smootherstep(0.0, 0.55, state.telemetry.phaseProgress));
+                    : Math.max(
+                        0.0,
+                        1.0 - smootherstep(0.0, 0.55, state.telemetry.phaseProgress)
+                    );
             if (voidWeight > 0.01) {
                 this.renderBreathingLightEchoRings(
                     ctx,
@@ -588,8 +590,6 @@ export class UniverseRenderer {
 
     /**
      * Отрисовывает нестабильные, живо дышащие концентрические кольца светового эха RS Puppis.
-     * Каждое кольцо деформируется во всех своих частях, взаимодействуя с энергетическими узлами,
-     * и меняет яркость вдоль дуги от гребней волны до глубокого затухания в тенях.
      */
     private renderBreathingLightEchoRings(
         ctx: CanvasRenderingContext2D,
@@ -609,7 +609,6 @@ export class UniverseRenderer {
         ctx.save();
 
         for (let k = 0; k < ringCount; k++) {
-            // Закон гравитационного чирпа T_n = T_0 * (1 - n/N)^1.65
             const chirpFactor = Math.pow(1.0 - k / (ringCount + 1.5), 1.65);
             const cycleProgress = (simTimeSec * 0.135 + chirpFactor) % 1.0;
             const baseRadiusPx = (0.045 + Math.pow(cycleProgress, 0.86) * 0.48) * scale;
@@ -625,7 +624,6 @@ export class UniverseRenderer {
                 const sEnd = (c + 1) * segsPerChunk;
                 const midTheta = (((sStart + sEnd) * 0.5) / totalSegs) * TAU;
 
-                // Неоднородная модуляция яркости вдоль дуги (гребень волны vs пропадание в тень)
                 const crestMod =
                     0.52 +
                     0.48 *
@@ -649,13 +647,11 @@ export class UniverseRenderer {
                     const cosT = Math.cos(theta);
                     const sinT = Math.sin(theta);
 
-                    // 1. Упругие гармоники нестабильного дыхания кольца (m = 2, 3, 5)
                     const harmonicWave =
                         0.034 * Math.sin(2.0 * theta + simTimeSec * 1.15 + k) +
                         0.025 * Math.cos(3.0 * theta - simTimeSec * 1.55 + k * 2.1) +
                         0.018 * Math.sin(5.0 * theta + simTimeSec * 0.92 - k * 1.3);
 
-                    // 2. Турбулентная деформация межзвёздной среды (FBM)
                     const fbmWave =
                         0.058 *
                         fbm2D(
@@ -668,11 +664,14 @@ export class UniverseRenderer {
                     const probeX = cx + cosT * localRadPx * 1.15;
                     const probeY = cy + sinT * localRadPx * 0.84;
 
-                    // 3. Взаимодействие фронта волны с энергетическими узлами симуляции
                     if (particles.length > 0) {
                         const stride = Math.max(1, Math.floor(particles.length / 28));
                         let nodePullPx = 0;
-                        for (let pIdx = (k * 5) % stride; pIdx < particles.length; pIdx += stride) {
+                        for (
+                            let pIdx = (k * 5) % stride;
+                            pIdx < particles.length;
+                            pIdx += stride
+                        ) {
                             const pt = particles[pIdx];
                             const dx = probeX - pt.x;
                             const dy = probeY - pt.y;
@@ -691,7 +690,6 @@ export class UniverseRenderer {
                     else ctx.lineTo(px, py);
                 }
 
-                // На гребнях волны — жемчужно-голубой френелевский блик, в полутенях — индиго-циан
                 ctx.strokeStyle =
                     crestMod > 0.78
                         ? RenderPipeline.hexToRgba('#f8fafc', arcAlpha * 0.88)
@@ -703,13 +701,13 @@ export class UniverseRenderer {
             }
         }
 
-        // Жемчужно-золотистая Точка Нуля (ядро цефеиды RS Кормы) с анаморфным штрихом
-        const corePulse = 1.0 + 0.16 * Math.sin(simTimeSec * 2.2) + 0.22 * audioSnap.pulse;
+        // Жемчужно-голубая Точка Нуля (ядро цефеиды RS Кормы) с анаморфным штрихом
+        const corePulse = 1.0 + 0.14 * Math.sin(simTimeSec * 2.1) + 0.2 * audioSnap.pulse;
         const coreRadius = scale * 0.085 * corePulse;
         const coreGrad = ctx.createRadialGradient(cx, cy, 1.0, cx, cy, coreRadius);
         coreGrad.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.96 * masterAlpha));
-        coreGrad.addColorStop(0.28, RenderPipeline.hexToRgba('#7dd3fc', 0.62 * masterAlpha));
-        coreGrad.addColorStop(0.58, RenderPipeline.hexToRgba('#f59e0b', 0.24 * masterAlpha));
+        coreGrad.addColorStop(0.32, RenderPipeline.hexToRgba('#7dd3fc', 0.64 * masterAlpha));
+        coreGrad.addColorStop(0.65, RenderPipeline.hexToRgba('#6366f1', 0.24 * masterAlpha));
         coreGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
         ctx.fillStyle = coreGrad;
@@ -717,7 +715,6 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, coreRadius, 0, TAU);
         ctx.fill();
 
-        // Тонкий горизонтальный анаморфный блик через Точку Нуля
         const flareW = scale * 0.24 * corePulse;
         const flareGrad = ctx.createLinearGradient(cx - flareW, cy, cx + flareW, cy);
         flareGrad.addColorStop(0.0, 'rgba(125, 211, 252, 0.0)');
@@ -785,14 +782,12 @@ export class UniverseRenderer {
             );
 
             if (cloud.isAbsorptionCanyon) {
-                // Тёмный пылевой каньон поглощения света (#020308) с тонким контровым светом на гребне
                 const alpha = clamp(cloud.density * phaseIntensity * 0.88, 0.05, 0.34);
                 grad.addColorStop(0.0, RenderPipeline.hexToRgba('#020308', alpha));
                 grad.addColorStop(0.62, RenderPipeline.hexToRgba('#060b19', alpha * 0.55));
                 grad.addColorStop(0.84, RenderPipeline.hexToRgba('#7dd3fc', alpha * 0.12));
                 grad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
             } else {
-                // Светящаяся газовая складка (ультрамарин / индиго / серебристый циан)
                 const alpha = clamp(
                     cloud.density * phaseIntensity * (0.48 + 0.26 * audioSnap.low),
                     0.025,
@@ -880,10 +875,9 @@ export class UniverseRenderer {
         phaseProgress: number
     ): void {
         ctx.save();
-        const keplerRatios = [0.22, 0.36, 0.52, 0.70, 0.88];
+        const keplerRatios = [0.22, 0.36, 0.52, 0.7, 0.88];
         const stress = stressStore.getState().globalStress;
 
-        // 1. 5 тонких встречных кеплеровских колец-носителей натяжения
         for (let rIdx = 0; rIdx < keplerRatios.length; rIdx++) {
             const ratio = keplerRatios[rIdx];
             const dir = rIdx % 2 === 0 ? 1 : -1;
@@ -897,7 +891,10 @@ export class UniverseRenderer {
                 const a = (s / segs) * TAU + simTimeSec * 0.15 * dir;
                 const tensionWave =
                     phase === '04_COLLAPSE'
-                        ? 1.0 + 0.065 * Math.sin(a * 3.0 - simTimeSec * 2.8 + rIdx) * (0.5 + stress)
+                        ? 1.0 +
+                        0.065 *
+                        Math.sin(a * 3.0 - simTimeSec * 2.8 + rIdx) *
+                        (0.5 + stress)
                         : 1.0 + 0.02 * Math.sin(a * 4.0 + simTimeSec * 1.1);
                 const lx = Math.cos(a) * rx * tensionWave;
                 const ly = Math.sin(a) * ry * tensionWave;
@@ -916,12 +913,12 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // 2. Мягкое внутреннее свечение левого и правого полушарий и мозолистого тела
         for (let hSign = -1; hSign <= 1; hSign += 2) {
             const lobeX = cx + hSign * scaledW * 0.185;
             const lobeR = Math.min(scaledW, scaledH) * 0.34;
             const lobeGrad = ctx.createRadialGradient(lobeX, cy, lobeR * 0.08, lobeX, cy, lobeR);
-            const pulse = 0.09 + 0.03 * Math.sin(simTimeSec * 1.8 + hSign + phaseProgress * Math.PI);
+            const pulse =
+                0.09 + 0.03 * Math.sin(simTimeSec * 1.8 + hSign + phaseProgress * Math.PI);
             lobeGrad.addColorStop(0.0, RenderPipeline.hexToRgba('#6366f1', pulse));
             lobeGrad.addColorStop(0.55, RenderPipeline.hexToRgba('#1e1b4b', pulse * 0.6));
             lobeGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
@@ -960,7 +957,6 @@ export class UniverseRenderer {
 
         ctx.save();
 
-        // 1. Рёбра Класса A (MST Trunks), Класса B (Gabriel Bridges), Класса C (Murray Dendrites)
         for (let i = 0; i < edges.length; i++) {
             const e = edges[i];
             const revealBoost = Math.max(baseGraphWeight, e.truthVisibility * 0.95);
@@ -979,8 +975,8 @@ export class UniverseRenderer {
             if (alpha < 0.015) continue;
 
             let colorHex = '#38bdf8';
-            if (e.afterglow > 0.78) {
-                colorHex = '#f59e0b'; // Редкий янтарный отблеск при интерференции сигналов
+            if (e.afterglow > 0.82) {
+                colorHex = '#f8fafc';
             } else if (e.edgeClass === 'AXON_TRUNK') {
                 colorHex = e.afterglow > 0.25 ? '#f8fafc' : '#7dd3fc';
             } else if (e.edgeClass === 'BRIDGE') {
@@ -1001,7 +997,6 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // 2. Кометы синаптических импульсов вдоль кривых Безье по таблице длины дуги (lengthLUT)
         for (let i = 0; i < pulses.length; i++) {
             const pulse = pulses[i];
             const headPos = NexusGraphEngine.sampleBezierByArcLength(
@@ -1026,11 +1021,10 @@ export class UniverseRenderer {
                 tailFrac
             );
 
-            const isAmberCascade = pulse.cascadeDepth >= 2 || i % 7 === 0;
-            const headColor = isAmberCascade ? '#f59e0b' : '#f8fafc';
-            const midColor = isAmberCascade ? '#f59e0b' : '#7dd3fc';
+            const isCascadePeak = pulse.cascadeDepth >= 2 || i % 7 === 0;
+            const headColor = '#f8fafc';
+            const midColor = isCascadePeak ? '#bae6fd' : '#7dd3fc';
 
-            // Светящийся хвост пакета сигнала
             const tailGrad = ctx.createLinearGradient(
                 tailPos.x,
                 tailPos.y,
@@ -1054,7 +1048,6 @@ export class UniverseRenderer {
             ctx.lineTo(headPos.x, headPos.y);
             ctx.stroke();
 
-            // Ядро фронта импульса
             const rGlow = (2.4 + 1.4 * audioSnap.pulse) * pulse.intensity;
             const headGlow = ctx.createRadialGradient(
                 headPos.x,
@@ -1101,7 +1094,6 @@ export class UniverseRenderer {
         for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
 
-            // C1/C2-преломление на кольце линзы BREACH LENS (строго 0 за пределами кольца)
             const refract = stressStore.getBoundaryRefractionOffset(p.x, p.y, simTimeSec);
             const sx = p.x + refract.dx;
             const sy = p.y + refract.dy;
@@ -1122,7 +1114,6 @@ export class UniverseRenderer {
                 0.98
             );
 
-            // Крупная расфокусированная пыль Z0 (Foreground Bokeh)
             if (p.depthTier === 'FOREGROUND') {
                 const bokehR = radius * 3.4;
                 const bokehGrad = ctx.createRadialGradient(sx, sy, 0.5, sx, sy, bokehR);
@@ -1142,24 +1133,23 @@ export class UniverseRenderer {
                 continue;
             }
 
-            // Ореол активной сомы или вспышки интерференции (#F59E0B)
-            const isAmberSoma = p.interferenceFlash > 0.15 || p.synapticCharge > 0.65;
+            const isExcitedSoma = p.interferenceFlash > 0.15 || p.synapticCharge > 0.65;
             if (
-                isAmberSoma ||
+                isExcitedSoma ||
                 p.degree >= 3 ||
                 refract.rimHighlight > 0.25 ||
                 phase === '03_EVOLUTION'
             ) {
-                const haloR = radius * (isAmberSoma ? 4.4 : 3.2);
-                const haloColor = isAmberSoma
-                    ? '#f59e0b'
+                const haloR = radius * (isExcitedSoma ? 4.2 : 3.2);
+                const haloColor = isExcitedSoma
+                    ? '#bae6fd'
                     : p.clusterId % 3 === 0
                         ? '#7dd3fc'
                         : '#6366f1';
                 const haloGrad = ctx.createRadialGradient(sx, sy, 0.4, sx, sy, haloR);
                 haloGrad.addColorStop(
                     0.0,
-                    RenderPipeline.hexToRgba(haloColor, alpha * (isAmberSoma ? 0.65 : 0.36))
+                    RenderPipeline.hexToRgba(haloColor, alpha * (isExcitedSoma ? 0.62 : 0.36))
                 );
                 haloGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
                 ctx.fillStyle = haloGrad;
@@ -1168,8 +1158,7 @@ export class UniverseRenderer {
                 ctx.fill();
             }
 
-            // Ядро звезды / сомы нейрона
-            ctx.fillStyle = isAmberSoma
+            ctx.fillStyle = isExcitedSoma
                 ? RenderPipeline.hexToRgba('#f8fafc', alpha)
                 : p.depthTier === 'MIDGROUND'
                     ? RenderPipeline.hexToRgba('#f8fafc', alpha * 0.94)
@@ -1178,7 +1167,6 @@ export class UniverseRenderer {
             ctx.arc(sx, sy, Math.max(0.8, radius), 0, TAU);
             ctx.fill();
 
-            // В глобальном режиме X-RAY выводим неперекрывающиеся воздушные выноски для хабов
             if (fullXRayMode && p.degree >= 3 && i % 29 === 0 && xrayCalloutsRendered < 6) {
                 this.renderBorderlessNodeCallout(ctx, sx, sy, p, simTimeSec, 0.88);
                 xrayCalloutsRendered++;
@@ -1195,8 +1183,6 @@ export class UniverseRenderer {
     /**
      * Отрисовывает мембрану BREACH LENS, криволинейные геодезические клеточки рентгена
      * и глубинный суб-квантовый слой Z4 («обратную сторону Вселенной») под клеточками.
-     * Все элементы подчиняются гладкому колоколообразному затуханию g(u) = (1 - u^2)^2
-     * без каких-либо прямоугольных сеток сбоку или жёстких круглых срезов.
      */
     private renderBreachLensAndSubQuantumZ4(
         ctx: CanvasRenderingContext2D,
@@ -1232,7 +1218,6 @@ export class UniverseRenderer {
 
         ctx.save();
 
-        // 1. Глубокий ореол «обратной стороны Вселенной» (Эшелон Z4) с мягким C2-спадом к краям
         const z4BgGrad = ctx.createRadialGradient(
             lx,
             ly,
@@ -1255,7 +1240,6 @@ export class UniverseRenderer {
         ctx.arc(lx, ly, activeRadius * 1.12, 0, TAU);
         ctx.fill();
 
-        // 2. Суб-квантовая сеть Z4 под клеточками (глубинный параллакс, внутренние связи и импульсы)
         const parallaxX = (lx - cx) * -0.16;
         const parallaxY = (ly - cy) * -0.16;
 
@@ -1268,7 +1252,6 @@ export class UniverseRenderer {
             if (dist >= activeRadius) continue;
 
             const u = dist / activeRadius;
-            // C2-гладкий колокол: в центре 1.0, на границе линзы плавно уходит в 0.0
             const bellMask = Math.pow(1.0 - u * u, 2.0) * revealStrength;
             if (bellMask < 0.02) continue;
 
@@ -1290,7 +1273,6 @@ export class UniverseRenderer {
                 ctx.quadraticCurveTo(ctrlX, ctrlY, nbx, nby);
                 ctx.stroke();
 
-                // Внутренний суб-квантовый импульс, бегущий по глубинной дуге Z4
                 const pT = (simTimeSec * 0.78 + i * 0.17 + nIdx * 0.33) % 1.0;
                 const omt = 1.0 - pT;
                 const ix = omt * omt * zx + 2.0 * omt * pT * ctrlX + pT * pT * nbx;
@@ -1312,7 +1294,6 @@ export class UniverseRenderer {
             ctx.fill();
         }
 
-        // 3. Деформируемые координатные клеточки рентгена поверх Z4, растворяющиеся к кромке линзы
         const cellStep = 34;
         const halfSpan = Math.ceil(activeRadius / cellStep) * cellStep;
         const baseGx = Math.floor(lx / cellStep) * cellStep;
@@ -1329,7 +1310,6 @@ export class UniverseRenderer {
                 const cellAlpha = Math.pow(1.0 - u * u, 2.0) * revealStrength * 0.22;
                 if (cellAlpha < 0.015) continue;
 
-                // Мягкое искривление узлов координатной клетки полем линзы
                 const warpX =
                     Math.sin(gy * 0.025 + simTimeSec * 1.4) * 3.2 * (1.0 - u);
                 const warpY =
@@ -1348,7 +1328,6 @@ export class UniverseRenderer {
             }
         }
 
-        // 4. Нестабильный живой волновой контур мембраны BREACH LENS и микротрещины
         const rimSegs = 96;
         const rimChunks = 16;
         const segPerChunk = rimSegs / rimChunks;
@@ -1358,7 +1337,11 @@ export class UniverseRenderer {
             const s1 = (c + 1) * segPerChunk;
             const midAngle = (((s0 + s1) * 0.5) / rimSegs) * TAU;
             const crest =
-                0.5 + 0.5 * Math.sin(midAngle * 3.0 - simTimeSec * 2.2 + Math.cos(midAngle * 2.0));
+                0.5 +
+                0.5 *
+                Math.sin(
+                    midAngle * 3.0 - simTimeSec * 2.2 + Math.cos(midAngle * 2.0)
+                );
             const rimAlpha = revealStrength * (0.08 + 0.48 * Math.pow(crest, 1.4));
             if (rimAlpha < 0.02) continue;
 
@@ -1386,7 +1369,6 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // Отрисовка детерминированных микротрещин на кромке линзы из stressStore
         for (let i = 0; i < sState.microCracks.length; i++) {
             const crack = sState.microCracks[i];
             const baseR = stressStore.getDeformedLensRadiusAtAngle(
@@ -1395,7 +1377,11 @@ export class UniverseRenderer {
             );
             const anchorX = lx + Math.cos(crack.anchorAngle) * baseR;
             const anchorY = ly + Math.sin(crack.anchorAngle) * baseR;
-            const crackAlpha = clamp(crack.life * crack.intensity * revealStrength, 0, 0.85);
+            const crackAlpha = clamp(
+                crack.life * crack.intensity * revealStrength,
+                0,
+                0.85
+            );
             if (crackAlpha < 0.02) continue;
 
             ctx.strokeStyle = RenderPipeline.hexToRgba('#f8fafc', crackAlpha);
@@ -1418,7 +1404,6 @@ export class UniverseRenderer {
             }
         }
 
-        // 5. Логарифмические векторы скорости и 3–5 бесконтурных выносок узлов внутри линзы
         let calloutCount = 0;
         for (let i = 0; i < particles.length; i++) {
             const pt = particles[i];
@@ -1428,7 +1413,6 @@ export class UniverseRenderer {
             const u = d / (activeRadius * 0.82);
             const localMask = Math.pow(1.0 - u * u, 1.8) * revealStrength;
 
-            // Логарифмический вектор скорости L = log(1 + |v|)
             if (i % 4 === 0) {
                 const speed = Math.hypot(pt.vx, pt.vy);
                 if (speed > 0.15) {
@@ -1445,7 +1429,14 @@ export class UniverseRenderer {
             }
 
             if (calloutCount < 4 && i % 23 === 0 && d < activeRadius * 0.68) {
-                this.renderBorderlessNodeCallout(ctx, pt.x, pt.y, pt, simTimeSec, localMask);
+                this.renderBorderlessNodeCallout(
+                    ctx,
+                    pt.x,
+                    pt.y,
+                    pt,
+                    simTimeSec,
+                    localMask
+                );
                 calloutCount++;
             }
         }
@@ -1453,10 +1444,6 @@ export class UniverseRenderer {
         ctx.restore();
     }
 
-    /**
-     * Отрисовывает воздушную инженерную выноску узла (ID и модуль-владелец)
-     * без жёстких прямоугольных рамок, с мягкой тенью и плавным дыханием.
-     */
     private renderBorderlessNodeCallout(
         ctx: CanvasRenderingContext2D,
         nx: number,
@@ -1496,6 +1483,8 @@ export class UniverseRenderer {
     /**
      * Отрисовывает 7-оболочечную корону туманности «Кошачий глаз» (NGC 6543),
      * допплеровский аккреционный диск и тень горизонта событий Чёрной дыры в фазе 05_SINGULARITY.
+     * ИСПРАВЛЕНО: В начале Акта A (79.0 с) Чёрная дыра и корона плавно вырастают из микроскопической
+     * Точки Нуля (smootherstep 0.0 -> 0.45), а в Акте B сжимаются более тягуче и плавно.
      */
     private renderSingularityCoronaAndBlackHole(
         ctx: CanvasRenderingContext2D,
@@ -1509,22 +1498,44 @@ export class UniverseRenderer {
     ): void {
         ctx.save();
 
-        const collapseFactor =
-            act === 'ACT_B_LOGIC' && actProgress > 0.55
-                ? Math.pow(1.0 - (actProgress - 0.55) / 0.45, 2.2)
-                : act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE'
-                    ? 0.28
-                    : 1.0;
+        // Плавная кривая рождения из микроскопической Точки Нуля (0.015 -> 1.0) в Акте A
+        // и более медленное, тягучее схлопывание в Акте B
+        let volumeEnvelope = 1.0;
+        let opacityEnvelope = 1.0;
+
+        if (act === 'ACT_A_ACCRETION' || act === 'NONE' || act === 'INACTIVE') {
+            const birthCurve = smootherstep(0.0, 0.46, actProgress);
+            volumeEnvelope = 0.015 + 0.985 * birthCurve;
+            opacityEnvelope = smootherstep(0.0, 0.25, actProgress);
+        } else if (act === 'ACT_B_LOGIC') {
+            if (actProgress > 0.36) {
+                const cNorm = (actProgress - 0.36) / 0.64;
+                const smoothCollapse = smootherstep(0.0, 1.0, cNorm);
+                volumeEnvelope = Math.max(0.012, Math.pow(1.0 - smoothCollapse, 1.65));
+            }
+        } else if (act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE') {
+            volumeEnvelope = 0.26;
+            opacityEnvelope = 0.72;
+        }
 
         // 1. 7 лепестковых газовых оболочек звезды Вольфа — Райе («Кошачий глаз» NGC 6543)
         const shells = 7;
         for (let l = 1; l <= shells; l++) {
-            const baseR = (0.09 + l * 0.055) * scale * collapseFactor;
-            if (baseR < 2.0) continue;
+            const shellBirthDelay = (l - 1) * 0.04;
+            const shellScale =
+                act === 'ACT_A_ACCRETION'
+                    ? smootherstep(shellBirthDelay, Math.min(1.0, shellBirthDelay + 0.48), actProgress)
+                    : volumeEnvelope;
+
+            const baseR = (0.09 + l * 0.055) * scale * shellScale;
+            if (baseR < 1.5) continue;
+
             const lobes = 4 + (l % 3) * 2;
             const alpha = clamp(
-                (0.24 - l * 0.024) * (0.85 + 0.25 * audioSnap.pulse),
-                0.02,
+                (0.24 - l * 0.024) *
+                (0.85 + 0.25 * audioSnap.pulse) *
+                opacityEnvelope,
+                0.015,
                 0.32
             );
 
@@ -1547,35 +1558,48 @@ export class UniverseRenderer {
                 l % 2 === 0
                     ? RenderPipeline.hexToRgba('#7dd3fc', alpha)
                     : l === 3
-                        ? RenderPipeline.hexToRgba('#f59e0b', alpha * 0.72)
+                        ? RenderPipeline.hexToRgba('#bae6fd', alpha * 0.78)
                         : RenderPipeline.hexToRgba('#6366f1', alpha * 0.85);
-            ctx.lineWidth = 1.1;
+            ctx.lineWidth = 1.05;
             ctx.stroke();
         }
 
-        // 2. Фотонное кольцо и сфера тени горизонта событий Чёрной дыры
-        const shadowR = Math.max(8.0, scale * 0.068 * collapseFactor);
+        // 2. Фотонное кольцо и сфера тени горизонта событий Чёрной дыры (вырастает строго из Точки Нуля)
+        const fullShadowR = scale * 0.068;
+        const shadowR = Math.max(0.8, fullShadowR * volumeEnvelope);
+
+        const photonOuterR = Math.max(3.5, shadowR * 2.45);
         const photonGrad = ctx.createRadialGradient(
-            cx - shadowR * 0.18,
+            cx - shadowR * 0.16,
             cy,
-            shadowR * 0.82,
+            shadowR * 0.78,
             cx,
             cy,
-            shadowR * 2.4
+            photonOuterR
         );
-        photonGrad.addColorStop(0.0, 'rgba(2, 3, 8, 1.0)');
-        photonGrad.addColorStop(0.36, 'rgba(2, 3, 8, 0.98)');
-        photonGrad.addColorStop(0.46, RenderPipeline.hexToRgba('#f8fafc', 0.88));
-        photonGrad.addColorStop(0.62, RenderPipeline.hexToRgba('#7dd3fc', 0.42));
-        photonGrad.addColorStop(0.82, RenderPipeline.hexToRgba('#f59e0b', 0.18));
+        photonGrad.addColorStop(0.0, `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`);
+        photonGrad.addColorStop(0.36, `rgba(2, 3, 8, ${(0.98 * opacityEnvelope).toFixed(3)})`);
+        photonGrad.addColorStop(
+            0.46,
+            RenderPipeline.hexToRgba('#f8fafc', 0.88 * opacityEnvelope)
+        );
+        photonGrad.addColorStop(
+            0.64,
+            RenderPipeline.hexToRgba('#7dd3fc', 0.44 * opacityEnvelope)
+        );
+        photonGrad.addColorStop(
+            0.84,
+            RenderPipeline.hexToRgba('#6366f1', 0.22 * opacityEnvelope)
+        );
         photonGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
         ctx.fillStyle = photonGrad;
         ctx.beginPath();
-        ctx.arc(cx, cy, shadowR * 2.4, 0, TAU);
+        ctx.arc(cx, cy, photonOuterR, 0, TAU);
         ctx.fill();
 
-        ctx.fillStyle = '#020308';
+        // Внутренняя абсолютно чёрная сфера горизонта событий
+        ctx.fillStyle = `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(cx, cy, shadowR * 0.92, 0, TAU);
         ctx.fill();
@@ -1594,8 +1618,8 @@ export class UniverseRenderer {
         minSide: number,
         simTimeSec: number
     ): void {
-        const slowBreath = 1.0 + 0.025 * Math.sin(simTimeSec * TAU * 0.18);
-        const ringR = minSide * 0.065 * slowBreath;
+        const slowBreath = 1.0 + 0.024 * Math.sin(simTimeSec * TAU * 0.18);
+        const ringR = minSide * 0.064 * slowBreath;
 
         const halo = ctx.createRadialGradient(cx, cy, ringR * 0.6, cx, cy, ringR * 2.2);
         halo.addColorStop(0.0, 'rgba(2, 3, 8, 1.0)');
@@ -1620,9 +1644,9 @@ export class UniverseRenderer {
 
     /**
      * Отрисовывает 5 строк квантового одометра из cipherOdometerEngine:
-     * 4 фиксируемые строки манифеста (с ре-спином при наведении мыши) и 1 центральную
-     * бесконечно бегущую строку в серо-чёрно-бело-голубоватой гамме с глубокими тенями
-     * и кардио-дыханием всей визитки в такт музыке.
+     * ИСПРАВЛЕНО: Полностью исключён ржаво-рыжий цвет (#f59e0b) при переборе;
+     * используется многослойная холодная палитра полутонов (жемчуг, ледяной циан,
+     * серебристый сланец, графит) с глубокими объёмными тенями.
      */
     private renderCipherOdometerStage(
         ctx: CanvasRenderingContext2D,
@@ -1630,10 +1654,7 @@ export class UniverseRenderer {
         h: number,
         state: Readonly<UniverseState>
     ): void {
-        const assemblyProgress =
-            state.singularityAct === 'RESTART_COLLAPSE'
-                ? Math.max(0.0, 1.0 - state.telemetry.phaseElapsedSec * 0.72)
-                : state.githubCardAssemblyProgress;
+        const assemblyProgress = state.githubCardAssemblyProgress;
 
         const cells: OdometerGlyphCellState[] = cipherOdometerEngine.evaluateCells(
             w,
@@ -1646,7 +1667,6 @@ export class UniverseRenderer {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // Мягкая дымчатая вуаль под областью одометра без прямоугольных границ
         const backdropR = Math.min(w, h) * 0.44;
         const backdropGrad = ctx.createRadialGradient(
             w * 0.5,
@@ -1663,6 +1683,8 @@ export class UniverseRenderer {
         ctx.fillStyle = backdropGrad;
         ctx.fillRect(0, 0, w, h);
 
+        const ghostTonePool = ['#64748b', '#475569', '#38bdf8', '#94a3b8'];
+
         for (let i = 0; i < cells.length; i++) {
             const c = cells[i];
             if (c.primaryChar === ' ') continue;
@@ -1672,21 +1694,26 @@ export class UniverseRenderer {
             ctx.scale(1.0, c.verticalScale);
 
             ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px "JetBrains Mono", "Fira Code", monospace`;
-            ctx.shadowColor = c.shadowColor || 'rgba(2, 6, 23, 0.92)';
-            ctx.shadowBlur = c.shadowBlur ?? 9;
-
             const breathAlpha = c.glyphBreathAlpha ?? 0.92;
 
-            // Для вращающихся барабанов рисуем верхний и нижний полутоновые следы колеса
+            // Для вращающихся барабанов рисуем многослойные верхний и нижний полутоновые следы колеса с тенью
             if (!c.isLocked) {
                 const ghostOffset = c.fontSizePx * 0.72;
-                ctx.globalAlpha = 0.24 * breathAlpha;
-                ctx.fillStyle = '#475569';
+                ctx.shadowColor = 'rgba(2, 6, 23, 0.96)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetY = 3;
+
+                ctx.globalAlpha = 0.28 * breathAlpha;
+                ctx.fillStyle = ghostTonePool[(c.charIndex + c.lineIndex) % ghostTonePool.length];
                 ctx.fillText(
                     c.upperChar,
                     0,
                     -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
                 );
+
+                ctx.globalAlpha = 0.22 * breathAlpha;
+                ctx.fillStyle =
+                    ghostTonePool[(c.charIndex + c.lineIndex + 2) % ghostTonePool.length];
                 ctx.fillText(
                     c.lowerChar,
                     0,
@@ -1694,13 +1721,20 @@ export class UniverseRenderer {
                 );
             }
 
-            ctx.globalAlpha = c.isLocked ? 0.96 : breathAlpha;
-            ctx.fillStyle =
-                c.lockFlash > 0.22
-                    ? '#f59e0b'
-                    : c.lockFlash > 0.08
-                        ? '#f8fafc'
-                        : c.colorHex;
+            // Глубокая тень основного символа + многотоновая холодная подсветка без рыжего цвета
+            ctx.shadowColor = c.shadowColor || 'rgba(2, 6, 23, 0.95)';
+            ctx.shadowBlur = c.shadowBlur ?? 11;
+            ctx.shadowOffsetY = c.isLocked ? 2 : 3;
+
+            ctx.globalAlpha = c.isLocked ? 0.97 : breathAlpha;
+            if (c.lockFlash > 0.26) {
+                ctx.fillStyle = c.charIndex % 2 === 0 ? '#f8fafc' : '#bae6fd';
+            } else if (c.lockFlash > 0.08) {
+                ctx.fillStyle = c.charIndex % 3 === 0 ? '#7dd3fc' : '#cbd5e1';
+            } else {
+                ctx.fillStyle = c.colorHex;
+            }
+
             ctx.fillText(
                 c.primaryChar,
                 0,
@@ -1757,6 +1791,7 @@ export class UniverseRenderer {
         }
 
         const isActiveSim = !state.isPaused && !state.isTabHidden;
+        // Масштабируем simDtSec один раз здесь и передаём timeScale = 1.0 в simulation.update
         const simDtSec = isActiveSim ? clampedDtSec * state.timeScale : 0.0;
         const nextSimSec = state.telemetry.simulationTimeSec + simDtSec;
         const nextPhaseElapsed = state.telemetry.phaseElapsedSec + simDtSec;
@@ -1767,14 +1802,13 @@ export class UniverseRenderer {
             state.singularityAct === 'ACT_C_ZERO_SILENCE'
         );
 
-        // Инструментальное измерение времени физического шага; на паузе физика строго не двигает тела
         if (isActiveSim && simDtSec > 0) {
             stressStore.stepPhysics(simDtSec);
             this.stepBackgroundFields(simDtSec, nextSimSec, state.seed);
             this.simulation.update(
                 simDtSec,
                 state.currentPhase,
-                state.timeScale,
+                1.0,
                 state.gravityMultiplier,
                 nextSimSec
             );
@@ -1788,12 +1822,18 @@ export class UniverseRenderer {
         const pulses = this.getSimPulses();
         const caps = this.pipeline.getCapabilities();
 
-        if (
-            latestState.singularityAct === 'RESTART_COLLAPSE' &&
-            latestState.telemetry.phaseElapsedSec > 1.65
-        ) {
-            resourceLedger.disposeCycleResources();
-            universeStore.completeRestartToVoid();
+        if (latestState.singularityAct === 'RESTART_COLLAPSE') {
+            universeStore.updateTelemetry({
+                frameTimeMs: Number(rawDtMs.toFixed(1)),
+                simulationTimeSec: Number(nextSimSec.toFixed(3)),
+                phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
+                audioStatus: audioSnap.status,
+                silenceRmsDb: audioSnap.rmsDb,
+            });
+            if (universeStore.getState().restartElapsedSec >= 1.65) {
+                resourceLedger.disposeCycleResources();
+                universeStore.completeRestartToVoid();
+            }
         } else if (isActiveSim) {
             universeStore.updateTelemetry({
                 frameTimeMs: Number(rawDtMs.toFixed(1)),
@@ -1814,10 +1854,7 @@ export class UniverseRenderer {
                             ? 'PYODIDE_LOCAL'
                             : 'CLIENT_ONLY',
                 audioStatus: audioSnap.status,
-                silenceRmsDb:
-                    latestState.singularityAct === 'ACT_C_ZERO_SILENCE'
-                        ? -84.2
-                        : audioSnap.rmsDb,
+                silenceRmsDb: audioSnap.rmsDb,
             });
         }
 
@@ -1829,6 +1866,153 @@ export let activeRenderer: UniverseRenderer | null = null;
 
 export function getUniverseRenderer(): UniverseRenderer | null {
     return activeRenderer;
+}
+
+// ============================================================================
+// РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР СОСЕДНИХ ЭЛЕМЕНТОВ В УГЛОВЫХ ПАНЕЛЯХ
+// При наведении курсора на элемент в .brand-card, .phase-timeline-dock или
+// .controls-dock сам элемент под курсором остаётся неподвижным и чётким,
+// а соседние элементы в ряду плавно перебирают знаки в холодной гамме с тенями.
+// ============================================================================
+
+const CORNER_SCRAMBLE_GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙◊◈';
+const CORNER_COLD_TONES: ReadonlyArray<{ color: string; shadow: string }> = [
+    {
+        color: '#f8fafc',
+        shadow: '0 2px 10px rgba(2, 6, 23, 0.96), 0 0 12px rgba(186, 230, 253, 0.55)',
+    },
+    {
+        color: '#bae6fd',
+        shadow: '0 2px 12px rgba(2, 6, 23, 0.96), 0 0 14px rgba(125, 211, 252, 0.48)',
+    },
+    {
+        color: '#94a3b8',
+        shadow: '0 3px 10px rgba(1, 3, 10, 0.98), 0 0 8px rgba(71, 85, 105, 0.52)',
+    },
+    {
+        color: '#7dd3fc',
+        shadow: '0 2px 12px rgba(2, 6, 23, 0.96), 0 0 14px rgba(56, 189, 248, 0.45)',
+    },
+    {
+        color: '#cbd5e1',
+        shadow: '0 3px 11px rgba(15, 23, 42, 0.95), 0 0 9px rgba(148, 163, 184, 0.4)',
+    },
+];
+
+const activeScrambleTimers = new WeakMap<HTMLElement, number>();
+
+function setCanonicalElementText(el: HTMLElement | null, nextText: string): void {
+    if (!el) return;
+    const prevCanonical = el.dataset.canonicalText;
+    el.dataset.canonicalText = nextText;
+
+    // Если элемент сейчас не в процессе квантового перебора (или его канонический текст сменился), обновляем сразу
+    if (el.dataset.scrambling !== '1' || prevCanonical !== nextText) {
+        el.textContent = nextText;
+    }
+}
+
+function stopElementScramble(el: HTMLElement): void {
+    const existingTimer = activeScrambleTimers.get(el);
+    if (existingTimer !== undefined) {
+        window.clearInterval(existingTimer);
+        activeScrambleTimers.delete(el);
+    }
+    el.dataset.scrambling = '0';
+    el.style.removeProperty('color');
+    el.style.removeProperty('text-shadow');
+    if (el.dataset.canonicalText) {
+        el.textContent = el.dataset.canonicalText;
+    }
+}
+
+function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): void {
+    stopElementScramble(el);
+
+    const canonical = (el.dataset.canonicalText || el.textContent || '').trim();
+    if (!canonical) return;
+    el.dataset.canonicalText = canonical;
+    el.dataset.scrambling = '1';
+
+    let step = 0;
+    const totalSteps = Math.max(12, Math.min(24, canonical.length + 6));
+
+    const timerId = window.setInterval(() => {
+        const latestCanonical = el.dataset.canonicalText || canonical;
+        const progress = step / totalSteps;
+
+        if (progress >= 1.0) {
+            stopElementScramble(el);
+            return;
+        }
+
+        const lockBoundary = Math.floor(progress * latestCanonical.length);
+        let out = '';
+        for (let i = 0; i < latestCanonical.length; i++) {
+            const ch = latestCanonical[i];
+            if (
+                ch === ' ' ||
+                ch === '.' ||
+                ch === ':' ||
+                ch === '/' ||
+                ch === '(' ||
+                ch === ')' ||
+                i < lockBoundary
+            ) {
+                out += ch;
+            } else {
+                const gIdx =
+                    (i * 11 + step * 5 + siblingIndex * 7) % CORNER_SCRAMBLE_GLYPHS.length;
+                out += CORNER_SCRAMBLE_GLYPHS[gIdx];
+            }
+        }
+
+        const tone =
+            CORNER_COLD_TONES[(step + siblingIndex * 2) % CORNER_COLD_TONES.length];
+        el.style.color = tone.color;
+        el.style.textShadow = tone.shadow;
+        el.textContent = out;
+
+        step++;
+    }, 32);
+
+    activeScrambleTimers.set(el, timerId);
+}
+
+/**
+ * Привязывает ко всем угловым панелям (.brand-card, #ui-phase-buttons, .controls-dock)
+ * инверсный отклик: элемент под курсором мыши мгновенно фиксируется и стоит на месте,
+ * а соседние элементы в его группе мягко перебираются.
+ */
+function bindCornerPanelsNeighborScramble(): void {
+    if (typeof document === 'undefined') return;
+
+    const groupsSelectors = [
+        '.brand-card > .phase-codename, .brand-card > .phase-title, .brand-card > .phase-subtitle, .brand-card > .phase-philosophy',
+        '#ui-phase-buttons > button.phase-pill',
+        '.controls-dock > button.btn-cyber',
+    ];
+
+    groupsSelectors.forEach((selector) => {
+        const items = Array.from(document.querySelectorAll<HTMLElement>(selector));
+        items.forEach((el) => {
+            if (!el.dataset.canonicalText) {
+                el.dataset.canonicalText = (el.textContent || '').trim();
+            }
+
+            el.addEventListener('pointerenter', () => {
+                // Выбранный под мышью элемент остаётся строго на месте и читается без искажений
+                stopElementScramble(el);
+
+                // Все соседние элементы в этой группе откликаются квантовым перебором
+                items.forEach((sibling, sIdx) => {
+                    if (sibling !== el) {
+                        startNeighborElementScramble(sibling, sIdx);
+                    }
+                });
+            });
+        });
+    });
 }
 
 /**
@@ -1843,10 +2027,11 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
     const progressEl = document.getElementById('ui-phase-progress');
     const overlayRoot = document.getElementById('hud-overlay-root');
 
-    if (codenameEl) codenameEl.textContent = state.phaseMeta.codeName;
-    if (titleEl) titleEl.textContent = state.phaseMeta.titleRu;
-    if (subtitleEl) subtitleEl.textContent = state.phaseMeta.subtitleRu;
-    if (philosophyEl) philosophyEl.textContent = state.phaseMeta.philosophyRu;
+    setCanonicalElementText(codenameEl, state.phaseMeta.codeName);
+    setCanonicalElementText(titleEl, state.phaseMeta.titleRu);
+    setCanonicalElementText(subtitleEl, state.phaseMeta.subtitleRu);
+    setCanonicalElementText(philosophyEl, state.phaseMeta.philosophyRu);
+
     if (progressEl) {
         progressEl.style.width = `${(state.telemetry.phaseProgress * 100).toFixed(1)}%`;
     }
@@ -1868,25 +2053,29 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
 
     const btnPause = document.getElementById('btn-toggle-pause');
     if (btnPause) {
-        btnPause.textContent = state.isPaused ? '▶ RESUME' : '⏸ PAUSE';
+        setCanonicalElementText(btnPause, state.isPaused ? '▶ RESUME' : '⏸ PAUSE');
         btnPause.classList.toggle('active-toggle', state.isPaused);
     }
 
     const btnAuto = document.getElementById('btn-toggle-autocycle');
     if (btnAuto) {
-        btnAuto.textContent = state.autoCyclePhases ? '🔄 AUTO: ON' : '🔄 AUTO: OFF';
+        setCanonicalElementText(
+            btnAuto,
+            state.autoCyclePhases ? '🔄 AUTO: ON' : '🔄 AUTO: OFF'
+        );
         btnAuto.classList.toggle('active-toggle', state.autoCyclePhases);
     }
 
     const btnAudio = document.getElementById('btn-toggle-audio');
     if (btnAudio) {
         const aStatus = state.telemetry.audioStatus;
-        btnAudio.textContent =
+        const audioLabel =
             !state.audioEnabled || aStatus === 'MUTED'
                 ? '🔇 AUDIO: MUTED'
                 : aStatus === 'PLAYING_MP3' || aStatus === 'PLAYING_SYNTH'
                     ? '🔊 AUDIO: ON'
                     : '🔊 AUDIO: WAIT';
+        setCanonicalElementText(btnAudio, audioLabel);
         btnAudio.classList.toggle(
             'active-toggle',
             state.audioEnabled && aStatus !== 'MUTED'
@@ -1919,8 +2108,8 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
 
 /**
  * Точка входа клиентской графической подсистемы: инициализирует холст #universe-canvas,
- * монтирует реактивные острова телеметрии Layer 2–5, привязывает кнопки управления
- * и запускает единый цикл симуляции.
+ * монтирует реактивные острова телеметрии Layer 2–5, привязывает кнопки управления,
+ * активирует инверсный перебор соседних элементов в угловых панелях и запускает цикл симуляции.
  */
 export function bootstrapUniverseV2(): void {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -1937,27 +2126,27 @@ export function bootstrapUniverseV2(): void {
     activeRenderer = renderer;
 
     // 1. Монтируем штатные панели телеметрии (Layers 2, 3, 4) и финал (Layer 5)
-    mountLayer2Metrics(document.getElementById('layer2-metrics-root'));
-    mountLayer3Topology(document.getElementById('layer3-topology-root'));
-    mountLayer4Terminal(document.getElementById('layer4-terminal-root'));
-    mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
+    const unsubL2 = mountLayer2Metrics(document.getElementById('layer2-metrics-root'));
+    const unsubL3 = mountLayer3Topology(document.getElementById('layer3-topology-root'));
+    const unsubL4 = mountLayer4Terminal(document.getElementById('layer4-terminal-root'));
+    const unsubL5 = mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
 
-    // Включаем видимость правой колонки телеметрии по умолчанию, чтобы водопад был сразу виден
-    const initSnap = universeStore.getState();
-    if (!initSnap.layers.layer2_metricsHud) {
-        universeStore.toggleLayer('layer2_metricsHud');
-    }
-    if (!initSnap.layers.layer4_architectTerminal) {
-        universeStore.toggleLayer('layer4_architectTerminal');
-    }
+    resourceLedger.registerCycleDisposable(unsubL2);
+    resourceLedger.registerCycleDisposable(unsubL3);
+    resourceLedger.registerCycleDisposable(unsubL4);
+    resourceLedger.registerCycleDisposable(unsubL5);
 
     // 2. Подписываем обновление верхнего паспорта фазы и нижнего дока кнопок на UniverseStore
-    universeStore.subscribe((nextState: Readonly<UniverseState>) => {
+    const unsubHud = universeStore.subscribe((nextState: Readonly<UniverseState>) => {
         syncHudDomWithState(nextState);
     });
+    resourceLedger.registerCycleDisposable(unsubHud);
     syncHudDomWithState(universeStore.getState());
 
-    // 3. Обработчики кликов по кнопкам переключения 5 фаз
+    // 3. Подключаем инверсный квантовый перебор соседей при наведении на угловые панели
+    bindCornerPanelsNeighborScramble();
+
+    // 4. Обработчики кликов по кнопкам переключения 5 фаз
     const phaseButtonsContainer = document.getElementById('ui-phase-buttons');
     if (phaseButtonsContainer) {
         phaseButtonsContainer.addEventListener('click', (e: MouseEvent) => {
@@ -1973,7 +2162,7 @@ export function bootstrapUniverseV2(): void {
         });
     }
 
-    // 4. Обработчики кликов по кнопкам управления нижней панели
+    // 5. Обработчики кликов по кнопкам управления нижней панели
     document.getElementById('btn-toggle-pause')?.addEventListener('click', () => {
         universeStore.togglePause();
     });
@@ -1996,7 +2185,7 @@ export function bootstrapUniverseV2(): void {
         universeStore.toggleLayer('layer5_truthXRayMode');
     });
 
-    // 5. Слушатели окна, указателя мыши/касаний и клавиатуры с учётом в ResourceLedger
+    // 6. Слушатели окна, указателя мыши/касаний и клавиатуры с учётом в ResourceLedger
     window.addEventListener('resize', renderer.handleResize, { passive: true });
     resourceLedger.trackAllocation('listeners', 1);
 
@@ -2013,7 +2202,9 @@ export function bootstrapUniverseV2(): void {
         'pointerdown',
         (e: PointerEvent): void => {
             const isUiClick = Boolean(
-                (e.target as HTMLElement | null)?.closest('[data-ui-panel], [data-github-card], button, a')
+                (e.target as HTMLElement | null)?.closest(
+                    '[data-ui-panel], [data-github-card], button, a'
+                )
             );
             audioSync.startPlayback();
             if (!isUiClick) {

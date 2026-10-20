@@ -1,13 +1,20 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/01_void.ts
-// НАЗНАЧЕНИЕ: Ядро симуляции 5 фаз без скачков и рывков (C¹-непрерывный морфинг v2.2)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Генерировать детерминированные сущности в 4 эшелонах глубины (Z0-Z3) через DeterministicPRNG.
-// 2. Устранить резкие прыжки в 1-м, 2-м и 3-м актах за счёт гладких C¹-огибающих smoothstep
-//    и плавного затухания вклада предыдущей фазы без ступенчатого сброса previousPhase.
-// 3. Синхронизировать все тела с SceneBufferSoA, wasmPhysicsBridge и nexusGraphEngine.
-// 4. Двигать синаптические импульсы строго по таблице длины дуги (lengthLUT) с интерференцией.
+// НАЗНАЧЕНИЕ: Ядро симуляции 5 фаз с C2-бесшовным морфингом по снимку состояния (v2.4)
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Контракты частиц, рёбер и синаптических импульсов (QuantumParticle,
+//    TopologyEdge, SynapticPulse): хранение текущих координат и снимка точки
+//    перехода (morphOriginX, morphOriginY, morphOriginEnergy) для устранения
+//    скачков на границах смены фаз (17 с, 39 с, 64 с, 79 с).
+// 2. Генерация 4 эшелонов глубины (Z0..Z3) и C2-гладкая кинематика фазы 01_VOID:
+//    гравитационный чирп RS Puppis и зарождение вращательного момента.
+// 3. Главный шаг физического обновления (update):
+//    - фиксация точного снимка позиций при смене фазы (без искусственного 0.85);
+//    - C2-интерполяция Перлина smootherstep между снимком и новым аттрактором;
+//    - синхронизация с SceneBufferSoA и симплектическим ядром wasmPhysicsBridge.
+// 4. Стабильное управление топологией графа NEXUS и кометами импульсов:
+//    плавное обновление геометрии кривых Безье на каждом кадре без мерцания.
 // ============================================================================
 
 import { EntityKindCode, type PhaseId } from '../core/contracts';
@@ -18,12 +25,16 @@ import {
     nexusGraphEngine,
     type ComputedEdgeClass,
 } from '../bridge/simulationWorker';
-import { UNIVERSE_PHASES, universeStore } from '../store/universeState';
+import { smootherstep, UNIVERSE_PHASES, universeStore } from '../store/universeState';
 import { stressStore } from '../store/stressState';
 import { computeGenesisTarget } from './02_genesis';
 import { computeEvolutionBrainTarget } from './03_evolution';
 import { computeCollapseStormTarget } from './04_collapse';
 import { computeSingularityTarget } from './05_singularity';
+
+// ============================================================================
+// РАЗДЕЛ 1. ТИПЫ И ИНТЕРФЕЙСЫ СУЩНОСТЕЙ СИМУЛЯЦИИ
+// ============================================================================
 
 export type DepthLayerTier = 'FOREGROUND' | 'MIDGROUND' | 'BACKGROUND' | 'DEEP_LAYER';
 export type NexusEdgeClass = ComputedEdgeClass;
@@ -41,6 +52,9 @@ export interface QuantumParticle {
     y: number;
     prevX: number;
     prevY: number;
+    morphOriginX: number;
+    morphOriginY: number;
+    morphOriginEnergy: number;
     homeNormX: number;
     homeNormY: number;
     depthZ: number;
@@ -126,10 +140,9 @@ export const BRAIN_HEMISPHERE_LOBES: ReadonlyArray<[number, number]> = [
     [0.34, 0.16],
 ];
 
-function smoothstep(edge0: number, edge1: number, x: number): number {
-    const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(0.0001, edge1 - edge0)));
-    return t * t * (3.0 - 2.0 * t);
-}
+// ============================================================================
+// РАЗДЕЛ 2. ЯДРО СИМУЛЯЦИИ ПЯТИ ФАЗ (VoidPhaseSimulation)
+// ============================================================================
 
 export class VoidPhaseSimulation {
     private particles: QuantumParticle[] = [];
@@ -140,9 +153,9 @@ export class VoidPhaseSimulation {
     private height = 1080;
     private lastCycleCount = 1;
     private activePhase: PhaseId = '01_VOID';
-    private outgoingPhase: PhaseId = '01_VOID';
     private phaseMorphFactor = 1.0;
     private tickCounter = 0;
+    private lastTopologyBuildSimSec = -10;
     private prng: DeterministicPRNG;
 
     constructor(initialWidth = 1920, initialHeight = 1080) {
@@ -163,10 +176,13 @@ export class VoidPhaseSimulation {
         this.height = height;
 
         for (let i = 0; i < this.particles.length; i++) {
-            this.particles[i].x *= scaleX;
-            this.particles[i].y *= scaleY;
-            this.particles[i].prevX = this.particles[i].x;
-            this.particles[i].prevY = this.particles[i].y;
+            const p = this.particles[i];
+            p.x *= scaleX;
+            p.y *= scaleY;
+            p.prevX = p.x;
+            p.prevY = p.y;
+            p.morphOriginX *= scaleX;
+            p.morphOriginY *= scaleY;
         }
     }
 
@@ -184,8 +200,8 @@ export class VoidPhaseSimulation {
         this.pulses = [];
         this.afterglowMap.clear();
         this.tickCounter = 0;
+        this.lastTopologyBuildSimSec = -10;
         this.activePhase = uState.currentPhase;
-        this.outgoingPhase = uState.currentPhase;
         this.phaseMorphFactor = 1.0;
 
         for (let i = 0; i < cappedCount; i++) {
@@ -202,13 +218,13 @@ export class VoidPhaseSimulation {
         let depthZ: number;
         let depthTier: DepthLayerTier;
         if (r1 < 0.14) {
-            depthZ = 0.10 + r2 * 0.19;
+            depthZ = 0.1 + r2 * 0.19;
             depthTier = 'DEEP_LAYER';
         } else if (r1 < 0.42) {
-            depthZ = 0.30 + r2 * 0.35;
+            depthZ = 0.3 + r2 * 0.35;
             depthTier = 'BACKGROUND';
         } else if (r1 < 0.91) {
-            depthZ = 0.70 + r2 * 0.50;
+            depthZ = 0.7 + r2 * 0.5;
             depthTier = 'MIDGROUND';
         } else {
             depthZ = 1.25 + r2 * 0.35;
@@ -221,10 +237,14 @@ export class VoidPhaseSimulation {
         const angle = r4 * Math.PI * 2;
         const radiusSpread = 0.025 + Math.pow(r3, 0.82) * 0.135;
         const homeNormX = Math.max(-0.45, Math.min(0.45, lobeX + Math.cos(angle) * radiusSpread));
-        const homeNormY = Math.max(-0.42, Math.min(0.42, lobeY + Math.sin(angle) * (radiusSpread * 1.1)));
+        const homeNormY = Math.max(
+            -0.42,
+            Math.min(0.42, lobeY + Math.sin(angle) * (radiusSpread * 1.1))
+        );
 
         const x = this.width * (0.5 + homeNormX);
         const y = this.height * (0.5 + homeNormY);
+        const energy = 0.25 + r2 * 0.5;
 
         return {
             id,
@@ -232,6 +252,9 @@ export class VoidPhaseSimulation {
             y,
             prevX: x,
             prevY: y,
+            morphOriginX: x,
+            morphOriginY: y,
+            morphOriginEnergy: energy,
             homeNormX,
             homeNormY,
             depthZ,
@@ -243,7 +266,7 @@ export class VoidPhaseSimulation {
             vy: 0,
             mass: 0.65 + depthZ * 1.15,
             radius: (1.1 + r3 * 1.85) * (depthTier === 'FOREGROUND' ? 1.65 : depthZ),
-            energy: 0.25 + r2 * 0.5,
+            energy,
             kuramotoPhase: r4 * Math.PI * 2,
             synapticCharge: 0,
             interferenceFlash: 0,
@@ -266,19 +289,58 @@ export class VoidPhaseSimulation {
     ): MorphTargetPoint {
         switch (phase) {
             case '01_VOID':
-                return this.computeVoidChirpTarget(p, centerX, centerY, simTimeSec, phaseProgress);
+                return this.computeVoidChirpTarget(
+                    p,
+                    centerX,
+                    centerY,
+                    simTimeSec,
+                    phaseProgress
+                );
             case '02_GENESIS':
-                return computeGenesisTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+                return computeGenesisTarget(
+                    p,
+                    centerX,
+                    centerY,
+                    this.width,
+                    this.height,
+                    simTimeSec,
+                    phaseProgress
+                );
             case '03_EVOLUTION':
-                return computeEvolutionBrainTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+                return computeEvolutionBrainTarget(
+                    p,
+                    centerX,
+                    centerY,
+                    this.width,
+                    this.height,
+                    simTimeSec,
+                    phaseProgress
+                );
             case '04_COLLAPSE':
-                return computeCollapseStormTarget(p, centerX, centerY, this.width, this.height, simTimeSec, phaseProgress);
+                return computeCollapseStormTarget(
+                    p,
+                    centerX,
+                    centerY,
+                    this.width,
+                    this.height,
+                    simTimeSec,
+                    phaseProgress
+                );
             case '05_SINGULARITY':
-                return computeSingularityTarget(p, centerX, centerY, this.width, this.height, simTimeSec);
+                return computeSingularityTarget(
+                    p,
+                    centerX,
+                    centerY,
+                    this.width,
+                    this.height,
+                    simTimeSec
+                );
         }
     }
 
-    // Полностью C¹-гладкий расчёт 1-го акта без ступенчатых скачков на 3.0 с и 10.0 с
+    /**
+     * C2-гладкий расчёт 1-го акта (01_VOID) с использованием полинома Перлина smootherstep.
+     */
     private computeVoidChirpTarget(
         p: QuantumParticle,
         centerX: number,
@@ -287,16 +349,15 @@ export class VoidPhaseSimulation {
         phaseProgress: number
     ): MorphTargetPoint {
         const phaseSec = phaseProgress * 17.0;
-        const baseDistX = p.homeNormX * this.width * 0.90;
+        const baseDistX = p.homeNormX * this.width * 0.9;
         const baseDistY = p.homeNormY * this.height * 0.86;
         const r = Math.hypot(baseDistX, baseDistY) + 1.0;
 
-        // Плавное включение чирп-волны через smoothstep вместо резкого if (phaseSec >= 3.0)
-        const chirpEnvelope = smoothstep(1.5, 6.5, phaseSec);
-        const chirpProgress = smoothstep(2.0, 16.5, phaseSec);
+        const chirpEnvelope = smootherstep(1.2, 6.5, phaseSec);
+        const chirpProgress = smootherstep(2.0, 16.5, phaseSec);
         const chirpFreqMultiplier = 1.0 + chirpProgress * 0.52;
 
-        const matterAnticipation = smoothstep(8.5, 16.8, phaseSec);
+        const matterAnticipation = smootherstep(8.5, 16.8, phaseSec);
         const enclosedMass = 120.0 + r * 0.85;
         const circularAngularVel = Math.sqrt(enclosedMass / Math.max(45, r)) * 0.11;
 
@@ -317,7 +378,9 @@ export class VoidPhaseSimulation {
         const y = centerY + Math.sin(baseAngle) * finalR * 0.78;
 
         const firstSparkBoost =
-            smoothstep(0.6, 1.3, phaseSec) * (1.0 - smoothstep(1.5, 2.6, phaseSec)) * (p.id % 19 === 0 ? 0.68 : 0);
+            smootherstep(0.6, 1.3, phaseSec) *
+            (1.0 - smootherstep(1.5, 2.6, phaseSec)) *
+            (p.id % 19 === 0 ? 0.68 : 0);
 
         const fresnelRim =
             0.08 +
@@ -325,9 +388,16 @@ export class VoidPhaseSimulation {
             Math.max(0, Math.sin(r * 0.017 * chirpFreqMultiplier - simTimeSec * 1.75)) *
             0.38;
 
-        const energy = Math.min(1.0, 0.14 + fresnelRim + firstSparkBoost + matterAnticipation * 0.26);
+        const energy = Math.min(
+            1.0,
+            0.14 + fresnelRim + firstSparkBoost + matterAnticipation * 0.26
+        );
         return { x, y, energy };
     }
+
+    // ============================================================================
+    // РАЗДЕЛ 3. ГЛАВНЫЙ ШАГ ОБНОВЛЕНИЯ ФИЗИКИ И БЕСШОВНОГО МОРФИНГА
+    // ============================================================================
 
     public update(
         dtSeconds: number,
@@ -349,18 +419,26 @@ export class VoidPhaseSimulation {
             return;
         }
 
-        // Непрерывный морфинг при смене фазы без резкого сброса в точке 0.26
+        // При переходе в новую фазу сохраняем точный снимок текущих позиций каждой частицы,
+        // полностью исключая скачки и рывки на границах 17 с, 39 с, 64 с и 79 с
         if (phase !== this.activePhase) {
-            this.outgoingPhase = this.activePhase;
+            for (let i = 0; i < this.particles.length; i++) {
+                const pt = this.particles[i];
+                pt.morphOriginX = pt.x;
+                pt.morphOriginY = pt.y;
+                pt.morphOriginEnergy = pt.energy;
+            }
             this.activePhase = phase;
             this.phaseMorphFactor = 0.0;
         }
 
         this.tickCounter++;
-        const dt = Math.min(dtSeconds, 0.05) * timeScale * (uState.reducedMotion ? 0.45 : 1.0);
-        this.phaseMorphFactor = Math.min(1.0, this.phaseMorphFactor + dt * 0.42);
-        const smoothBlend =
-            this.phaseMorphFactor * this.phaseMorphFactor * (3.0 - 2.0 * this.phaseMorphFactor);
+        // dtSeconds уже масштабирован в renderer.ts (или умножается на timeScale, если вызван отдельно)
+        const dt = Math.min(dtSeconds * timeScale, 0.05) * (uState.reducedMotion ? 0.45 : 1.0);
+
+        // Длительность плавного C2-морфинга между фазами ~2.6 секунды
+        this.phaseMorphFactor = Math.min(1.0, this.phaseMorphFactor + dt * 0.385);
+        const smoothBlend = smootherstep(0.0, 1.0, this.phaseMorphFactor);
 
         const stressState = stressStore.getState();
         const centerX = this.width * 0.5;
@@ -370,14 +448,13 @@ export class VoidPhaseSimulation {
 
         sceneBuffer.snapshotPreviousPositions(this.particles.length);
 
-        // Плавный коэффициент пружины без рывков масштаба
-        const springRate = Math.min(0.18, dt * (2.15 + gravityMultiplier * 0.55));
+        const springRate = Math.min(0.16, dt * (2.05 + gravityMultiplier * 0.5));
+        const velDamping = Math.exp(-dt * 11.5);
 
         for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
             p.prevX = p.x;
             p.prevY = p.y;
-            p.degree = 0;
             p.kuramotoPhase = wasmPhysicsBridge.getKuramotoPhase(i);
 
             const currentTarget = this.computePhaseArchetypePoint(
@@ -389,28 +466,14 @@ export class VoidPhaseSimulation {
                 phaseProgress
             );
 
-            let targetX = currentTarget.x;
-            let targetY = currentTarget.y;
-            let targetEnergy = currentTarget.energy;
-
-            if (smoothBlend < 0.999 && this.outgoingPhase !== this.activePhase) {
-                const prevTarget = this.computePhaseArchetypePoint(
-                    this.outgoingPhase,
-                    p,
-                    centerX,
-                    centerY,
-                    simTimeSec,
-                    0.85
-                );
-                targetX = prevTarget.x * (1.0 - smoothBlend) + currentTarget.x * smoothBlend;
-                targetY = prevTarget.y * (1.0 - smoothBlend) + currentTarget.y * smoothBlend;
-                targetEnergy = prevTarget.energy * (1.0 - smoothBlend) + currentTarget.energy * smoothBlend;
-            }
-
-            const dx = targetX - p.x;
-            const dy = targetY - p.y;
-            p.vx = p.vx * 0.82 + dx * 0.42;
-            p.vy = p.vy * 0.82 + dy * 0.42;
+            // Смешиваем сохранённую точку входа в фазу (morphOrigin) с целевым аттрактором
+            let targetX =
+                p.morphOriginX * (1.0 - smoothBlend) + currentTarget.x * smoothBlend;
+            let targetY =
+                p.morphOriginY * (1.0 - smoothBlend) + currentTarget.y * smoothBlend;
+            const targetEnergy =
+                p.morphOriginEnergy * (1.0 - smoothBlend) +
+                currentTarget.energy * smoothBlend;
 
             if (stressState.isPointerInside && stressState.currentBreachRadius > 4) {
                 const dxPtr = p.x - stressState.lensX;
@@ -430,8 +493,13 @@ export class VoidPhaseSimulation {
                 }
             }
 
-            p.x += (targetX - p.x) * springRate;
-            p.y += (targetY - p.y) * springRate;
+            const dx = targetX - p.x;
+            const dy = targetY - p.y;
+            p.vx = p.vx * velDamping + dx * 0.38;
+            p.vy = p.vy * velDamping + dy * 0.38;
+
+            p.x += dx * springRate;
+            p.y += dy * springRate;
             p.energy += (targetEnergy - p.energy) * Math.min(1.0, dt * 3.6);
 
             if (p.synapticCharge > 0) {
@@ -477,7 +545,11 @@ export class VoidPhaseSimulation {
             kuramotoK
         );
 
-        sceneBuffer.commitTickAndComputeDigest(this.tickCounter, this.particles.length, uState.seed);
+        sceneBuffer.commitTickAndComputeDigest(
+            this.tickCounter,
+            this.particles.length,
+            uState.seed
+        );
 
         universeStore.updateTelemetry({
             tick: this.tickCounter,
@@ -486,11 +558,20 @@ export class VoidPhaseSimulation {
             kuramotoOrderR: physTelemetry.kuramotoOrderR,
         });
 
-        this.buildTopologyViaGraphEngine(dt, phase, simTimeSec, uState.seed);
+        this.updateTopologyAndEdgeCurves(dt, phase, simTimeSec, uState.seed);
         this.updateSynapticPulsesByArcLut(dt, phase, nowMs);
     }
 
-    private buildTopologyViaGraphEngine(
+    // ============================================================================
+    // РАЗДЕЛ 4. ТОПОЛОГИЯ ГРАФА NEXUS И ДВИЖЕНИЕ СИНАПТИЧЕСКИХ ИМПУЛЬСОВ
+    // ============================================================================
+
+    /**
+     * Перестраивает топологию графа с разумной частотой (~10 раз в секунду),
+     * а в промежуточные кадры плавно обновляет координаты кривых Безье и таблицы
+     * длин дуг по текущим координатам узлов (без мерцания рёбер и без фризов).
+     */
+    private updateTopologyAndEdgeCurves(
         dt: number,
         phase: PhaseId,
         simTimeSec: number,
@@ -509,6 +590,42 @@ export class VoidPhaseSimulation {
             this.afterglowMap.delete(keysToDelete[k]);
         }
 
+        const shouldRebuildTopology =
+            this.edges.length === 0 ||
+            Math.abs(simTimeSec - this.lastTopologyBuildSimSec) >= 0.1;
+
+        if (!shouldRebuildTopology) {
+            // Быстрое 60-FPS обновление геометрии существующих рёбер вслед за узлами
+            for (let i = 0; i < this.edges.length; i++) {
+                const e = this.edges[i];
+                const a = this.particles[e.fromIndex];
+                const b = this.particles[e.toIndex];
+                if (!a || !b) continue;
+
+                e.x1 = a.x;
+                e.y1 = a.y;
+                e.x2 = b.x;
+                e.y2 = b.y;
+
+                const midX = (a.x + b.x) * 0.5;
+                const midY = (a.y + b.y) * 0.5;
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const bendSign = (a.id + b.id + seed) % 2 === 0 ? 1 : -1;
+                const bendScale = e.edgeClass === 'AXON_TRUNK' ? 0.14 : 0.16;
+                const ctrlOffset =
+                    Math.sin(simTimeSec * 0.65 + (a.id + b.id) * 0.1) * 0.5 + 0.5;
+                const factor = bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
+
+                e.ctrlX = midX - dy * factor;
+                e.ctrlY = midY + dx * factor;
+                e.truthVisibility = stressStore.getTruthRevealFactorAt(midX, midY);
+                e.afterglow = this.afterglowMap.get(e.id) ?? 0;
+            }
+            return;
+        }
+
+        this.lastTopologyBuildSimSec = simTimeSec;
         const screenScale = Math.max(1.0, Math.min(this.width, this.height) / 920);
         const maxConnectDist =
             (phase === '03_EVOLUTION' || phase === '04_COLLAPSE' ? 225 : 180) * screenScale;
@@ -516,6 +633,7 @@ export class VoidPhaseSimulation {
         const graphInputs = [];
         for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
+            p.degree = 0;
             if (p.depthTier === 'FOREGROUND') continue;
             graphInputs.push({
                 index: i,
@@ -527,12 +645,13 @@ export class VoidPhaseSimulation {
             });
         }
 
-        const { edges: computedEdges, degreeByIndex } = nexusGraphEngine.buildDeterministicGraph(
-            graphInputs,
-            maxConnectDist,
-            seed,
-            simTimeSec
-        );
+        const { edges: computedEdges, degreeByIndex } =
+            nexusGraphEngine.buildDeterministicGraph(
+                graphInputs,
+                maxConnectDist,
+                seed,
+                simTimeSec
+            );
 
         for (let i = 0; i < graphInputs.length; i++) {
             const pIdx = graphInputs[i].index;
@@ -618,13 +737,19 @@ export class VoidPhaseSimulation {
                         universeStore.emitEventOnce(
                             `soma_interf_${Math.floor(nowMs / 1500)}`,
                             'signal:arrived',
-                            `Интерференция сигналов в соме #${pTo.id} (Δt=${Math.round(deltaArrivalMs)} мс) [python/graph_logic.py]`
+                            `Интерференция сигналов в соме #${pTo.id} (Δt=${Math.round(
+                                deltaArrivalMs
+                            )} мс) [python/graph_logic.py]`
                         );
                     }
                 }
 
                 if (pulse.cascadeDepth > 0 && this.pulses.length < maxPulses) {
-                    this.triggerCascadeFromNode(pulse.toIndex, pulse.fromIndex, pulse.cascadeDepth - 1);
+                    this.triggerCascadeFromNode(
+                        pulse.toIndex,
+                        pulse.fromIndex,
+                        pulse.cascadeDepth - 1
+                    );
                 }
 
                 this.pulses.splice(i, 1);
@@ -646,7 +771,11 @@ export class VoidPhaseSimulation {
 
         pFrom.synapticCharge = Math.min(1.0, pFrom.synapticCharge + 0.62);
         const speedPxPerSec =
-            edge.edgeClass === 'AXON_TRUNK' ? 255 : edge.edgeClass === 'BRIDGE' ? 195 : 145;
+            edge.edgeClass === 'AXON_TRUNK'
+                ? 255
+                : edge.edgeClass === 'BRIDGE'
+                    ? 195
+                    : 145;
         const normalizedSpeed = speedPxPerSec / Math.max(55, edge.arcLength);
 
         this.pulses.push({
@@ -688,7 +817,10 @@ export class VoidPhaseSimulation {
         }
     }
 
-    public samplePulsePoint(pulse: SynapticPulse, arcFraction: number): { x: number; y: number } {
+    public samplePulsePoint(
+        pulse: SynapticPulse,
+        arcFraction: number
+    ): { x: number; y: number } {
         return NexusGraphEngine.sampleBezierByArcLength(
             pulse.x1,
             pulse.y1,

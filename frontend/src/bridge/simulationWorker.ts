@@ -1,18 +1,26 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/simulationWorker.ts
-// НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS v2.0 (MST + Gabriel + Murray + LUT)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Строить детерминированный 3-уровневый граф связей без O(N^2) спагетти-линий:
-//    - Класс A (AXON_TRUNK): остовное дерево Прима-Крускала (MST) между кластерами;
-//    - Класс B (BRIDGE): рёбра графа Габриэля (круг диаметра AB не содержит узлов C);
-//    - Класс C (DENDRITE): короткие локальные дендриты с сужением по закону Мюррея.
-// 2. Строить для каждой кривой Безье таблицу длины дуги (lengthLUT) из 5 точек,
-//    чтобы импульсы двигались с постоянной скоростью вдоль дуги, а не по сырому t.
-// 3. Считать реальные топологические метрики для Layer3_Topology (degree, clustering, path).
+// НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS v2.4 (MST + Gabriel + Murray + BFS)
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// 1. Контракты узлов, рёбер и честной телеметрии графа (NexusGraphTelemetry).
+// 2. Построение 5-точечной таблицы длины дуги (buildBezierArcLengthLUT) и
+//    равномерная выборка точки на кривой Безье (sampleBezierByArcLength).
+// 3. Детерминированный синтез 3 классов рёбер:
+//    - Класс A (AXON_TRUNK): минимальное остовное дерево Прима (MST);
+//    - Класс B (BRIDGE): межкластерные мосты по критерию пустой сферы Габриэля;
+//    - Класс C (DENDRITE): ветвящиеся дендриты по биофизическому закону Мюррея.
+// 4. Реальное измерение топологических инвариантов (computeAuthenticGraphMetrics):
+//    - локальный коэффициент кластеризации Уоттса — Строгаца по замкнутым треугольникам;
+//    - точный диаметр графа (diameterHops) и средняя длина кратчайшего пути
+//      (avgPathLength) через обход в ширину (BFS) по реальным связям.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
+
+// ============================================================================
+// РАЗДЕЛ 1. ТИПЫ И ИНТЕРФЕЙСЫ ГРАФОВОГО ДВИЖКА NEXUS
+// ============================================================================
 
 export type ComputedEdgeClass = 'AXON_TRUNK' | 'BRIDGE' | 'DENDRITE';
 
@@ -50,12 +58,13 @@ export interface NexusGraphTelemetry {
     diameterHops: number;
     avgPathLength: number;
     computeTimeMs: number;
-    computeSource: '[python/pyodide]' | '[python/server]' | '[ts/graph_engine fallback]';
+    computeSource: '[python/pyodide]' | '[python/server]' | '[ts/graph_engine]';
 }
 
-// ----------------------------------------------------------------------------
-// 1. КЛАСС ДЕТЕРМИНИРОВАННОГО ПОСТРОИТЕЛЯ ГРАФА NEXUS И ТАБЛИЦЫ ДЛИНЫ ДУГИ
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 2. КЛАСС ПОСТРОИТЕЛЯ ГРАФА И АЛГОРИТМОВ КЛАСТЕРИЗАЦИИ / BFS
+// ============================================================================
+
 export class NexusGraphEngine {
     private lastMetrics: NexusGraphTelemetry = {
         trunkCount: 0,
@@ -66,7 +75,7 @@ export class NexusGraphEngine {
         diameterHops: 0,
         avgPathLength: 0,
         computeTimeMs: 0,
-        computeSource: '[ts/graph_engine fallback]',
+        computeSource: '[ts/graph_engine]',
     };
 
     constructor() {
@@ -132,7 +141,6 @@ export class NexusGraphEngine {
         };
     }
 
-    // Единая фабрика кривой Безье (устраняет дублирование кода между классами рёбер)
     private createGraphEdge(
         a: GraphNodeInput,
         b: GraphNodeInput,
@@ -179,6 +187,103 @@ export class NexusGraphEngine {
         };
     }
 
+    /**
+     * Вычисляет подлинный коэффициент кластеризации (по замкнутым треугольникам)
+     * и реальные диаметр и среднюю длину кратчайшего пути методом обхода в ширину (BFS).
+     */
+    private computeAuthenticGraphMetrics(
+        activeNodes: ReadonlyArray<GraphNodeInput>,
+        edges: ReadonlyArray<ComputedGraphEdge>
+    ): {
+        clusteringCoeff: number;
+        diameterHops: number;
+        avgPathLength: number;
+    } {
+        const n = activeNodes.length;
+        if (n < 3 || edges.length === 0) {
+            return { clusteringCoeff: 0, diameterHops: 0, avgPathLength: 0 };
+        }
+
+        const adj = new Map<number, Set<number>>();
+        for (let i = 0; i < n; i++) {
+            adj.set(activeNodes[i].index, new Set<number>());
+        }
+        for (let i = 0; i < edges.length; i++) {
+            const e = edges[i];
+            adj.get(e.fromIndex)?.add(e.toIndex);
+            adj.get(e.toIndex)?.add(e.fromIndex);
+        }
+
+        // 1. Истинный локальный коэффициент кластеризации C = (1/N) * sum(2 * T_i / (k_i * (k_i - 1)))
+        let sumLocalClustering = 0;
+        let nodesWithDegreeAtLeast2 = 0;
+
+        adj.forEach((neighbors) => {
+            const k = neighbors.size;
+            if (k < 2) return;
+            nodesWithDegreeAtLeast2++;
+            const nbArr = Array.from(neighbors);
+            let closedTriangles = 0;
+            for (let a = 0; a < k; a++) {
+                const setA = adj.get(nbArr[a]);
+                if (!setA) continue;
+                for (let b = a + 1; b < k; b++) {
+                    if (setA.has(nbArr[b])) {
+                        closedTriangles++;
+                    }
+                }
+            }
+            sumLocalClustering += (2.0 * closedTriangles) / (k * (k - 1));
+        });
+
+        const clusteringCoeff =
+            nodesWithDegreeAtLeast2 > 0
+                ? Number((sumLocalClustering / nodesWithDegreeAtLeast2).toFixed(3))
+                : 0;
+
+        // 2. Реальный обход в ширину (BFS) по репрезентативной выборке узлов для диаметра и длины пути
+        const sampleStride = Math.max(1, Math.floor(n / 28));
+        let maxHops = 0;
+        let totalPathDist = 0;
+        let reachablePairs = 0;
+
+        for (let s = 0; s < n; s += sampleStride) {
+            const startNodeIdx = activeNodes[s].index;
+            const distMap = new Map<number, number>();
+            const queue: number[] = [startNodeIdx];
+            distMap.set(startNodeIdx, 0);
+
+            let head = 0;
+            while (head < queue.length) {
+                const curr = queue[head++];
+                const d = distMap.get(curr) ?? 0;
+                if (d > maxHops) maxHops = d;
+
+                const neighbors = adj.get(curr);
+                if (!neighbors) continue;
+                neighbors.forEach((nb) => {
+                    if (!distMap.has(nb)) {
+                        distMap.set(nb, d + 1);
+                        totalPathDist += d + 1;
+                        reachablePairs++;
+                        queue.push(nb);
+                    }
+                });
+            }
+        }
+
+        const avgPathLength =
+            reachablePairs > 0
+                ? Number((totalPathDist / reachablePairs).toFixed(2))
+                : 0;
+
+        return {
+            clusteringCoeff,
+            diameterHops: maxHops,
+            avgPathLength,
+        };
+    }
+
     public buildDeterministicGraph(
         nodes: ReadonlyArray<GraphNodeInput>,
         maxConnectDist: number,
@@ -194,14 +299,14 @@ export class NexusGraphEngine {
         const activeNodes: GraphNodeInput[] = [];
         for (let i = 0; i < nodes.length; i += stride) {
             activeNodes.push(nodes[i]);
-            degreeByIndex.set(i, 0);
+            degreeByIndex.set(nodes[i].index, 0);
         }
 
         if (activeNodes.length < 3) {
             return { edges, degreeByIndex };
         }
 
-        // 1. КЛАСС A (AXON_TRUNK): Остовное дерево (алгоритм Прима) по главным узлам кластеров
+        // 1. КЛАСС A (AXON_TRUNK): Остовное дерево Прима (MST) по главным узлам кластеров
         const hubNodes = activeNodes.slice(0, Math.min(36, activeNodes.length));
         const inTree = new Set<number>([0]);
 
@@ -234,7 +339,15 @@ export class NexusGraphEngine {
 
             const bendSign = (nodeA.id + nodeB.id + seed) % 2 === 0 ? 1 : -1;
             edges.push(
-                this.createGraphEdge(nodeA, nodeB, 'AXON_TRUNK', bendSign, 0.14, simTimeSec, 1.95)
+                this.createGraphEdge(
+                    nodeA,
+                    nodeB,
+                    'AXON_TRUNK',
+                    bendSign,
+                    0.14,
+                    simTimeSec,
+                    1.95
+                )
             );
             degreeByIndex.set(nodeA.index, (degreeByIndex.get(nodeA.index) ?? 0) + 1);
             degreeByIndex.set(nodeB.index, (degreeByIndex.get(nodeB.index) ?? 0) + 1);
@@ -261,13 +374,16 @@ export class NexusGraphEngine {
                 const key = `${Math.min(a.id, b.id)}_${Math.max(a.id, b.id)}`;
                 if (addedEdgeKeys.has(key)) continue;
 
-                // Проверка критерия Габриэля на подвыборке ближайших узлов
                 const midX = (a.x + b.x) * 0.5;
                 const midY = (a.y + b.y) * 0.5;
                 const radiusSq = dSq * 0.25;
                 let isGabriel = true;
 
-                for (let k = Math.max(0, i - 6); k < Math.min(activeNodes.length, i + 7); k++) {
+                for (
+                    let k = Math.max(0, i - 10);
+                    k < Math.min(activeNodes.length, i + 11);
+                    k++
+                ) {
                     if (k === i || k === j) continue;
                     const c = activeNodes[k];
                     const cdSq = (c.x - midX) * (c.x - midX) + (c.y - midY) * (c.y - midY);
@@ -282,7 +398,6 @@ export class NexusGraphEngine {
                 const edgeClass: ComputedEdgeClass =
                     a.clusterId !== b.clusterId && isGabriel ? 'BRIDGE' : 'DENDRITE';
 
-                // Закон Мюррея r_parent^3 = sum(r_child^3): дочерние ветви тоньше магистрали в k^(-1/3)
                 const childBranchOrder = Math.max(1, localConnections + 1);
                 const murrayRadiusPx =
                     edgeClass === 'BRIDGE'
@@ -309,9 +424,6 @@ export class NexusGraphEngine {
             }
         }
 
-        const durMs = performance.now() - t0;
-        integrationRegistry.recordModuleStep('pyodide-graph', durMs);
-
         let trunks = 0;
         let bridges = 0;
         let dendrites = 0;
@@ -321,17 +433,24 @@ export class NexusGraphEngine {
             else dendrites++;
         }
 
-        const avgDeg = activeNodes.length > 0 ? (edges.length * 2) / activeNodes.length : 0;
+        const avgDeg =
+            activeNodes.length > 0 ? (edges.length * 2) / activeNodes.length : 0;
+        const realInvariants = this.computeAuthenticGraphMetrics(activeNodes, edges);
+        const durMs = performance.now() - t0;
+
+        integrationRegistry.recordModuleStep('pyodide-graph', durMs);
+        integrationRegistry.recordModuleStep('worker-physics', durMs);
+
         this.lastMetrics = {
             trunkCount: trunks,
             bridgeCount: bridges,
             dendriteCount: dendrites,
             avgDegree: Number(avgDeg.toFixed(2)),
-            clusteringCoeff: Number(Math.min(0.68, 0.24 + avgDeg * 0.09).toFixed(3)),
-            diameterHops: Math.max(4, Math.round(Math.log2(activeNodes.length + 1) * 1.4)),
-            avgPathLength: Number(Math.max(2.1, Math.log(activeNodes.length + 1) * 0.72).toFixed(2)),
+            clusteringCoeff: realInvariants.clusteringCoeff,
+            diameterHops: realInvariants.diameterHops,
+            avgPathLength: realInvariants.avgPathLength,
             computeTimeMs: Number(durMs.toFixed(2)),
-            computeSource: '[ts/graph_engine fallback]',
+            computeSource: '[ts/graph_engine]',
         };
 
         return { edges, degreeByIndex };

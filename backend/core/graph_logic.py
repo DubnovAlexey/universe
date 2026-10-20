@@ -1,18 +1,20 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/core/graph_logic.py
-# НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS (MST + Gabriel + Murray + LUT)
-# ЗАДАЧИ ФАЙЛА:
-# 1. Строить 3-уровневый граф связей без спагетти-линий O(N^2) (MASTER 03):
-#    - Класс A (AXON_TRUNK): минимальное остовное дерево (алгоритм Прима);
-#    - Класс B (BRIDGE): межкластерные мосты по критерию графа Габриэля;
-#    - Класс C (DENDRITE): локальные дендриты с сужением по закону Мюррея
-#      r_parent^3 = sum(r_child^3) -> r_child = r_parent * k^(-1/3).
-# 2. Вычислять 5-точечную таблицу длины дуги (length_lut) для квадратичных кривых Безье.
-# 3. Возвращать честную телеметрию графа для панели Layer3_Topology.tsx.
+# НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS (MST + Gabriel + Murray + BFS, v2.4)
+# АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+# 1. DTO-структуры узлов, криволинейных рёбер Безье и метрик топологии графа.
+# 2. Расчёт 5-точечной таблицы длины дуги (build_bezier_arc_length_lut) для
+#    равномерного движения синаптических импульсов.
+# 3. Синтез 3 классов связей (AXON_TRUNK по алгоритму Прима, BRIDGE по критерию
+#    Габриэля и DENDRITE по закону Мюррея r_parent^3 = sum r_child^3).
+# 4. Подлинное вычисление коэффициента кластеризации (по замкнутым треугольникам)
+#    и диаметра/среднего пути графа методом обхода в ширину (BFS) в полном
+#    паритете с frontend/src/bridge/simulationWorker.ts.
 # ============================================================================
 
 from __future__ import annotations
+from collections import deque
 from dataclasses import dataclass
 import math
 import time
@@ -126,6 +128,70 @@ def _make_curve_edge(
     )
 
 
+def _compute_authentic_invariants(
+        nodes: Sequence[GraphNodeDTO],
+        edges: Sequence[ComputedEdgeDTO],
+) -> tuple[float, int, float]:
+    """
+    Реально вычисляет коэффициент кластеризации Уоттса — Строгаца по треугольникам
+    и диаметр/средний путь графа через обход в ширину (BFS).
+    """
+    n_total = len(nodes)
+    if n_total < 3 or not edges:
+        return 0.0, 0, 0.0
+
+    adj: dict[int, set[int]] = {node.index: set() for node in nodes}
+    for edge in edges:
+        adj.setdefault(edge.from_index, set()).add(edge.to_index)
+        adj.setdefault(edge.to_index, set()).add(edge.from_index)
+
+    # 1. Истинный локальный коэффициент кластеризации
+    sum_local_c = 0.0
+    eligible_nodes = 0
+    for neighbors in adj.values():
+        k = len(neighbors)
+        if k < 2:
+            continue
+        eligible_nodes += 1
+        nb_list = list(neighbors)
+        closed_triangles = 0
+        for i in range(k):
+            nb_i_set = adj.get(nb_list[i], set())
+            for j in range(i + 1, k):
+                if nb_list[j] in nb_i_set:
+                    closed_triangles += 1
+        sum_local_c += (2.0 * closed_triangles) / (k * (k - 1))
+
+    clustering_coeff = round(sum_local_c / eligible_nodes, 3) if eligible_nodes > 0 else 0.0
+
+    # 2. Обход в ширину (BFS) для измерения реального диаметра и средней длины пути
+    sample_stride = max(1, n_total // 28)
+    max_hops = 0
+    total_path_dist = 0
+    reachable_pairs = 0
+
+    for idx in range(0, n_total, sample_stride):
+        start_node = nodes[idx].index
+        dist_map: dict[int, int] = {start_node: 0}
+        queue: deque[int] = deque([start_node])
+
+        while queue:
+            curr = queue.popleft()
+            d = dist_map[curr]
+            if d > max_hops:
+                max_hops = d
+
+            for nb in adj.get(curr, ()):
+                if nb not in dist_map:
+                    dist_map[nb] = d + 1
+                    total_path_dist += d + 1
+                    reachable_pairs += 1
+                    queue.append(nb)
+
+    avg_path_length = round(total_path_dist / reachable_pairs, 2) if reachable_pairs > 0 else 0.0
+    return clustering_coeff, max_hops, avg_path_length
+
+
 def compute_nexus_topology(
         nodes: Sequence[GraphNodeDTO],
         max_connect_dist: float = 210.0,
@@ -134,7 +200,7 @@ def compute_nexus_topology(
         source_tag: str = "[python/server]",
 ) -> tuple[list[ComputedEdgeDTO], dict[int, int], GraphTopologyMetricsDTO]:
     """
-    Строит детерминированную топологию NEXUS (MST + Gabriel + Murray) и метрики графа.
+    Строит детерминированную топологию NEXUS (MST + Gabriel + Murray) и честные метрики графа.
     """
     t0 = time.perf_counter()
     edges: list[ComputedEdgeDTO] = []
@@ -223,8 +289,8 @@ def compute_nexus_topology(
             rad_sq = d_sq * 0.25
             is_gabriel = True
 
-            k_start = max(0, i - 6)
-            k_end = min(n_total, i + 7)
+            k_start = max(0, i - 10)
+            k_end = min(n_total, i + 11)
             for k in range(k_start, k_end):
                 if k == i or k == j:
                     continue
@@ -255,20 +321,22 @@ def compute_nexus_topology(
             degree_by_index[a.index] = local_conn
             degree_by_index[b.index] = degree_by_index.get(b.index, 0) + 1
 
-    dur_ms = (time.perf_counter() - t0) * 1000.0
     trunks = sum(1 for e in edges if e.edge_class == "AXON_TRUNK")
     bridges = sum(1 for e in edges if e.edge_class == "BRIDGE")
     dendrites = len(edges) - trunks - bridges
 
     avg_deg = (len(edges) * 2.0) / max(1, n_total)
+    clustering_coeff, diameter_hops, avg_path_length = _compute_authentic_invariants(nodes, edges)
+    dur_ms = (time.perf_counter() - t0) * 1000.0
+
     metrics = GraphTopologyMetricsDTO(
         trunk_count=trunks,
         bridge_count=bridges,
         dendrite_count=dendrites,
         avg_degree=round(avg_deg, 2),
-        clustering_coeff=round(min(0.68, 0.24 + avg_deg * 0.09), 3),
-        diameter_hops=max(4, int(round(math.log2(n_total + 1) * 1.4))),
-        avg_path_length=round(max(2.1, math.log(n_total + 1) * 0.72), 2),
+        clustering_coeff=clustering_coeff,
+        diameter_hops=diameter_hops,
+        avg_path_length=avg_path_length,
         compute_time_ms=round(dur_ms, 2),
         compute_source=source_tag,
     )
