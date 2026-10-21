@@ -1,18 +1,23 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/core/integrationRegistry.ts
-// НАЗНАЧЕНИЕ: Реестр полиглот-интеграций IntegrationRegistry (MASTER 00B раздел 5)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Служить единственным источником правдивых статусов всех 8 модулей системы.
-// 2. Хранить язык, статус, время загрузки loadMs, p50/p95 времени шага и счётчики байтов.
-// 3. Формировать строго стандартизированные строки статусов из словаря MASTER 00B.
+// НАЗНАЧЕНИЕ: Реестр полиглот-интеграций IntegrationRegistry (MASTER 00B v2.5)
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Типы идентификаторов модулей, статусов и записей реестра.
+//   РАЗДЕЛ 2. Класс IntegrationRegistryManager:
+//     - Подраздел 2.1. Инициализация 8 модулей с честными нулевыми показателями
+//                      до первого фактического измерения в runtime.
+//     - Подраздел 2.2. Запись реальных замеров времени шага (p50 / p95) и статусов.
+//     - Подраздел 2.3. Стандартизированные правдивые метки статусов для UI.
 // ============================================================================
 
 import type { ComputeSourceTag, HonestStatusLabel } from './contracts';
 
-// ----------------------------------------------------------------------------
-// 1. ТИПЫ ИДЕНТИФИКАТОРОВ МОДУЛЕЙ И ЗАПИСЕЙ РЕЕСТРА
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 1. ТИПЫ ИДЕНТИФИКАТОРОВ МОДУЛЕЙ И ЗАПИСЕЙ РЕЕСТРА
+// ============================================================================
+
 export type PolyglotModuleId =
     | 'ts-core'
     | 'wasm-physics'
@@ -33,7 +38,13 @@ export type ModuleRuntimeState =
 
 export interface PolyglotModuleRecord {
     readonly id: PolyglotModuleId;
-    readonly language: 'TypeScript' | 'Rust/WASM' | 'WGSL/WebGPU' | 'Canvas2D' | 'Python' | 'WebAudio';
+    readonly language:
+        | 'TypeScript'
+        | 'Rust/WASM'
+        | 'WGSL/WebGPU'
+        | 'Canvas2D'
+        | 'Python'
+        | 'WebAudio';
     readonly sourceTag: ComputeSourceTag;
     readonly ownerFile: string;
     status: ModuleRuntimeState;
@@ -47,18 +58,26 @@ export interface PolyglotModuleRecord {
     lastError?: string;
 }
 
-// ----------------------------------------------------------------------------
-// 2. МЕНЕДЖЕР РЕЕСТРА ИНТЕГРАЦИЙ С РАСЧЁТОМ ПЕРЦЕНТИЛЕЙ P50 / P95
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 2. МЕНЕДЖЕР РЕЕСТРА ИНТЕГРАЦИЙ С РАСЧЁТОМ ПЕРЦЕНТИЛЕЙ P50 / P95
+// ============================================================================
+
 class IntegrationRegistryManager {
     private modules: Map<PolyglotModuleId, PolyglotModuleRecord> = new Map();
     private stepHistory: Map<PolyglotModuleId, number[]> = new Map();
     private readonly maxHistorySamples = 30;
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.1. ИНИЦИАЛИЗАЦИЯ МОДУЛЕЙ БЕЗ ФЕЙКОВЫХ PREDETERMINED МЕТРИК
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ constructor (IntegrationRegistryManager) ---
     constructor() {
         this.initDefaultModules();
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ initDefaultModules ---
     private initDefaultModules(): void {
         const defaults: PolyglotModuleRecord[] = [
             {
@@ -67,11 +86,11 @@ class IntegrationRegistryManager {
                 sourceTag: 'TS_CORE',
                 ownerFile: 'frontend/src/store/universeState.ts',
                 status: 'ready',
-                version: '2.0.0',
-                loadMs: 1.2,
-                lastStepMs: 0.4,
-                stepP50Ms: 0.4,
-                stepP95Ms: 0.8,
+                version: '2.5.0',
+                loadMs: 0,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -80,12 +99,12 @@ class IntegrationRegistryManager {
                 language: 'Rust/WASM',
                 sourceTag: 'WASM',
                 ownerFile: 'physics_engine/src/gravity.rs',
-                status: 'fallback', // До подтверждённой загрузки .wasm честно показывает fallback на эталон TS
-                version: '2.0.0',
+                status: 'fallback',
+                version: '2.5.0',
                 loadMs: 0,
-                lastStepMs: 0.9,
-                stepP50Ms: 0.9,
-                stepP95Ms: 1.5,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -95,7 +114,7 @@ class IntegrationRegistryManager {
                 sourceTag: 'RENDERER',
                 ownerFile: 'frontend/src/engine/webgpu/illusion.wgsl',
                 status: 'fallback',
-                version: '2.0.0',
+                version: '2.5.0',
                 loadMs: 0,
                 lastStepMs: 0,
                 stepP50Ms: 0,
@@ -109,11 +128,11 @@ class IntegrationRegistryManager {
                 sourceTag: 'RENDERER',
                 ownerFile: 'frontend/src/engine/renderer.ts',
                 status: 'ready',
-                version: '2.0.0',
-                loadMs: 0.8,
-                lastStepMs: 2.4,
-                stepP50Ms: 2.4,
-                stepP95Ms: 4.1,
+                version: '2.5.0',
+                loadMs: 0,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -123,11 +142,11 @@ class IntegrationRegistryManager {
                 sourceTag: 'PYODIDE',
                 ownerFile: 'backend/core/graph_logic.py',
                 status: 'fallback',
-                version: '2.0.0',
+                version: '2.5.0',
                 loadMs: 0,
-                lastStepMs: 0.6,
-                stepP50Ms: 0.6,
-                stepP95Ms: 1.1,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -136,8 +155,8 @@ class IntegrationRegistryManager {
                 language: 'Python',
                 sourceTag: 'SERVER',
                 ownerFile: 'backend/api/transport.py',
-                status: 'inactive', // Никогда не показывает CONNECTED без подтверждённого handshake
-                version: '2.0.0',
+                status: 'inactive',
+                version: '2.5.0',
                 loadMs: 0,
                 lastStepMs: 0,
                 stepP50Ms: 0,
@@ -151,11 +170,11 @@ class IntegrationRegistryManager {
                 sourceTag: 'AUDIO',
                 ownerFile: 'frontend/src/utils/audioSync.ts',
                 status: 'loading',
-                version: '2.0.0',
+                version: '2.5.0',
                 loadMs: 0,
-                lastStepMs: 0.2,
-                stepP50Ms: 0.2,
-                stepP95Ms: 0.5,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -165,11 +184,11 @@ class IntegrationRegistryManager {
                 sourceTag: 'WORKER',
                 ownerFile: 'frontend/src/bridge/simulationWorker.ts',
                 status: 'ready',
-                version: '2.0.0',
-                loadMs: 1.5,
-                lastStepMs: 0.7,
-                stepP50Ms: 0.7,
-                stepP95Ms: 1.3,
+                version: '2.5.0',
+                loadMs: 0,
+                lastStepMs: 0,
+                stepP50Ms: 0,
+                stepP95Ms: 0,
                 bytesIn: 0,
                 bytesOut: 0,
             },
@@ -178,10 +197,16 @@ class IntegrationRegistryManager {
         for (let i = 0; i < defaults.length; i++) {
             const rec = defaults[i];
             this.modules.set(rec.id, rec);
-            this.stepHistory.set(rec.id, [rec.lastStepMs]);
+            this.stepHistory.set(rec.id, []);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ initDefaultModules ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.2. ЗАПИСЬ РЕАЛЬНЫХ ЗАМЕРОВ ВРЕМЕНИ ШАГА И ОБНОВЛЕНИЕ СТАТУСА
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ updateModuleStatus ---
     public updateModuleStatus(
         id: PolyglotModuleId,
         status: ModuleRuntimeState,
@@ -194,7 +219,9 @@ class IntegrationRegistryManager {
         if (loadMs !== undefined) rec.loadMs = Number(loadMs.toFixed(2));
         if (lastError !== undefined) rec.lastError = lastError;
     }
+    // --- КОНЕЦ ФУНКЦИИ updateModuleStatus ---
 
+    // --- НАЧАЛО ФУНКЦИИ recordModuleStep ---
     public recordModuleStep(
         id: PolyglotModuleId,
         stepDurationMs: number,
@@ -221,26 +248,41 @@ class IntegrationRegistryManager {
         rec.stepP50Ms = Number(sorted[p50Idx].toFixed(2));
         rec.stepP95Ms = Number(sorted[p95Idx].toFixed(2));
     }
+    // --- КОНЕЦ ФУНКЦИИ recordModuleStep ---
 
+    // --- НАЧАЛО ФУНКЦИИ getModule ---
     public getModule(id: PolyglotModuleId): Readonly<PolyglotModuleRecord> | undefined {
         return this.modules.get(id);
     }
+    // --- КОНЕЦ ФУНКЦИИ getModule ---
 
+    // --- НАЧАЛО ФУНКЦИИ getAllModules ---
     public getAllModules(): ReadonlyArray<PolyglotModuleRecord> {
         return Array.from(this.modules.values());
     }
+    // --- КОНЕЦ ФУНКЦИИ getAllModules ---
 
-    // Возвращает строго стандартизированные метки из словаря MASTER 00B
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.3. СТАНДАРТИЗИРОВАННЫЕ ПРАВДИВЫЕ МЕТКИ ДЛЯ UI
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ getHonestRenderLabel ---
     public getHonestRenderLabel(): HonestStatusLabel {
         const gpu = this.modules.get('webgpu-render');
-        return gpu && gpu.status === 'ready' ? 'WEBGPU ACTIVE' : 'CANVAS2D FALLBACK';
+        return gpu && gpu.status === 'ready' && gpu.lastStepMs > 0
+            ? 'WEBGPU ACTIVE'
+            : 'CANVAS2D FALLBACK';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestRenderLabel ---
 
+    // --- НАЧАЛО ФУНКЦИИ getHonestPhysicsLabel ---
     public getHonestPhysicsLabel(): HonestStatusLabel {
         const wasm = this.modules.get('wasm-physics');
         return wasm && wasm.status === 'ready' ? 'WASM READY' : 'TS FALLBACK';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestPhysicsLabel ---
 
+    // --- НАЧАЛО ФУНКЦИИ getHonestPythonLabel ---
     public getHonestPythonLabel(): HonestStatusLabel {
         const server = this.modules.get('server-ws');
         if (server && server.status === 'ready') return 'SERVER CONNECTED';
@@ -249,6 +291,7 @@ class IntegrationRegistryManager {
         if (pyodide && pyodide.status === 'ready') return 'PYODIDE READY';
         return 'CLIENT-ONLY';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestPythonLabel ---
 }
 
 export const integrationRegistry = new IntegrationRegistryManager();

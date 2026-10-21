@@ -2,20 +2,19 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
-// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.3 (MASTER 00–99)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Инициализация стилей и метаданных: импорт глобальной системы стилей
-//    universe.css, конфигурации 5 фаз (UNIVERSE_PHASES) и расчёт базового
-//    пути BASE_URL для совместимости с GitHub Pages.
-// 2. Полноэкранный графический слой (Layer 1): размещение холста #universe-canvas
-//    и оптической виньетки .optical-vignette для рендеринга оптик ILLUSION,
-//    NEXUS, BREACH X-RAY и финального квантового одометра.
-// 3. Финальный семантический слой (Layer 5): точка монтирования #layer5-finale-root
-//    для интерактивной визитки GitHub, блока aria-live и перезапуска цикла.
-// 4. Парящий интерфейс телеметрии и управления (HUD Overlay): паспорт текущей
-//    фазы (.brand-card), полноразмерная правая колонка телеметрии Водопада
-//    (#layer2-metrics-root, #layer3-topology-root, #layer4-terminal-root)
-//    и нижний док переключения 5 фаз и инженерных режимов.
+// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.5 (MASTER 00–99)
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Инициализация стилей и метаданных: импорт глобальной системы стилей
+//             universe.css, конфигурации 5 фаз (UNIVERSE_PHASES) и расчёт базового
+//             пути BASE_URL для совместимости с GitHub Pages.
+//   РАЗДЕЛ 2. Полноэкранный графический слой (Layer 1): размещение холста
+//             #universe-canvas и оптической виньетки .optical-vignette.
+//   РАЗДЕЛ 3. Финальный семантический слой (Layer 5): точка монтирования
+//             #layer5-finale-root для интерактивной визитки DUBNOV ALEXEY.
+//   РАЗДЕЛ 4. Парящий интерфейс телеметрии и управления (HUD Overlay):
+//             верхний паспорт фазы (.brand-card), правая колонка Водопада
+//             (#layer2..4) и нижний док фаз, режимов и прямой ссылки в GitHub.
 // ============================================================================
 import '../styles/universe.css';
 import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
@@ -30,17 +29,17 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>UNIVERSE // NEUROVERSE — Interactive Polyglot Audiovisual Installation</title>
+	<title>UNIVERSE // NEUROVERSE — Interactive Polyglot Installation by Alexey Dubnov</title>
 	<meta
 		name="description"
-		content="Полноэкранная кинематографическая аудиовизуальная инсталляция «Из Нуля в Ноль» (108 секунд): Astro, TypeScript, React, WebGPU, Rust/WASM, Python."
+		content="Полноэкранная кинематографическая аудиовизуальная инсталляция «Из Нуля в Ноль» (108 секунд) — Alexey Dubnov: Astro, TypeScript, Custom JSX DOM, Canvas2D/WGSL, Rust/WASM, Python."
 	/>
 	<link rel="icon" type="image/svg+xml" href={`${baseUrl}favicon.svg`} />
 </head>
 
 <body>
 <main class="universe-viewport">
-	<!-- ЭТАП 1: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
+	<!-- РАЗДЕЛ 2: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
 	<canvas
 		id="universe-canvas"
 		aria-label="Интерактивное космическое и нейронное полотно UNIVERSE"
@@ -48,10 +47,10 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 
 	<div class="optical-vignette"></div>
 
-	<!-- ЭТАП 2 (АКТ D): Семантический DOM-контейнер кнопок финальной карточки GitHub и aria-live -->
+	<!-- РАЗДЕЛ 3 (АКТ D): Семантический DOM-контейнер финальной визитки GitHub и aria-live -->
 	<div id="layer5-finale-root"></div>
 
-	<!-- ЭТАП 3: Контейнер паспорта фазы, правой колонки Водопада телеметрии и нижнего дока управления -->
+	<!-- РАЗДЕЛ 4: Контейнер паспорта фазы, правой колонки Водопада телеметрии и нижнего дока управления -->
 	<div class="hud-overlay" id="hud-overlay-root">
 		<!-- ВЕРХНИЙ БАР: Паспорт текущей фазы слева + Полноразмерная колонка телеметрии справа (Layers 2, 3, 4) -->
 		<header class="hud-top-bar">
@@ -69,7 +68,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 			</div>
 		</header>
 
-		<!-- НИЖНИЙ БАР: Навигация по 5 фазам (108 с) и переключение режимов инспекции -->
+		<!-- НИЖНИЙ БАР: Навигация по 5 фазам (108 с), переключение режимов инспекции и выход в GitHub -->
 		<footer class="hud-bottom-bar">
 			<nav
 				class="hud-panel phase-timeline-dock"
@@ -98,7 +97,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 			<section
 				class="hud-panel controls-dock"
 				data-ui-panel="true"
-				aria-label="Управление звуком и инженерными оптиками"
+				aria-label="Управление звуком, инженерными оптиками и переходом в GitHub"
 			>
 				<button type="button" class="btn-cyber" id="btn-toggle-pause" title="Пауза / Продолжить (Клавиша P)">
 					⏸ PAUSE
@@ -109,18 +108,28 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 				<button type="button" class="btn-cyber" id="btn-toggle-audio" title="Включить / Выключить звук (Клавиша M)">
 					🔊 AUDIO: WAIT
 				</button>
-				<button type="button" class="btn-cyber" id="btn-toggle-metrics" title="Телеметрия полиглот-ядра (Клавиша 2)">
+				<button type="button" class="btn-cyber active-toggle" id="btn-toggle-metrics" title="Телеметрия полиглот-ядра (Клавиша 2)">
 					📊 METRICS
 				</button>
-				<button type="button" class="btn-cyber" id="btn-toggle-topology" title="Топология графа NEXUS (Клавиша 3)">
+				<button type="button" class="btn-cyber active-toggle" id="btn-toggle-topology" title="Топология графа NEXUS (Клавиша 3)">
 					🕸 TOPOLOGY
 				</button>
-				<button type="button" class="btn-cyber" id="btn-toggle-terminal" title="Терминал и IntegrationRegistry (Клавиша 4)">
+				<button type="button" class="btn-cyber active-toggle" id="btn-toggle-terminal" title="Терминал и IntegrationRegistry (Клавиша 4)">
 					⌨ TERMINAL
 				</button>
 				<button type="button" class="btn-cyber" id="btn-toggle-xray" title="Глобальный инженерный рентген X-RAY (Клавиша 5)">
 					🔬 X-RAY
 				</button>
+				<a
+					class="btn-cyber btn-github-profile"
+					id="link-hud-github"
+					href="https://github.com/DubnovAlexey"
+					target="_blank"
+					rel="noopener noreferrer"
+					title="Перейти на главную страницу профиля GitHub — Dubnov Alexey"
+				>
+					↗ GITHUB
+				</a>
 			</section>
 		</footer>
 	</div>

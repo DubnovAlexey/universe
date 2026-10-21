@@ -3,17 +3,17 @@
 // ФАЙЛ: frontend/src/layers/Layer2_Metrics.tsx
 // НАЗНАЧЕНИЕ: Автономная DOM/SVG JSX-фабрика, 60-FPS контроллер «Цифрового
 //             водопада / Звездопада» с синхронизацией от музыки и каскад LAYER_02
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Нативная DOM/SVG фабрика React.createElement: создание узлов HTML и SVG
-//    (http://www.w3.org/2000/svg) без сторонних runtime-зависимостей.
-// 2. Генератор спокойного волнового контура (buildLivingBreachContourPath)
-//    и плавной подзаголовочной волны (buildLivingHorizontalWavePath) с модуляцией
-//    амплитуды от низкочастотной огибающей музыки (audioSync).
-// 3. Контроллер 60-FPS анимации (TelemetryWaterfallAnimator): непрерывное
-//    обновление контуров, падающих буковок и дыхания цифр ([data-breath-slot])
-//    в такт треку cosmic_ambient.mp3 без пересоздания DOM (без replaceChildren).
-// 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
-//    mountLayer2Metrics): инкрементальное обновление текстовых узлов без мерцания.
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Нативная DOM/SVG фабрика React.createElement: создание узлов HTML и SVG
+//             (http://www.w3.org/2000/svg) без сторонних runtime-зависимостей.
+//   РАЗДЕЛ 2. Генератор спокойного волнового контура (buildLivingBreachContourPath)
+//             и плавной подзаголовочной волны (buildLivingHorizontalWavePath).
+//   РАЗДЕЛ 3. Контроллер 60-FPS анимации (TelemetryWaterfallAnimator): непрерывное
+//             обновление контуров, падающих буковок и дыхания цифр ([data-breath-slot])
+//             в такт треку cosmic_ambient.mp3 без пересоздания DOM.
+//   РАЗДЕЛ 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
+//             mountLayer2Metrics).
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
@@ -40,6 +40,7 @@ const SVG_TAG_NAMES = new Set<string>([
     'g',
 ]);
 
+// --- НАЧАЛО ФУНКЦИИ appendJsxChildren ---
 function appendJsxChildren(parent: Node, children: unknown[]): void {
     for (let i = 0; i < children.length; i++) {
         const child = children[i];
@@ -52,8 +53,10 @@ function appendJsxChildren(parent: Node, children: unknown[]): void {
         }
     }
 }
+// --- КОНЕЦ ФУНКЦИИ appendJsxChildren ---
 
 export const React = {
+    // --- НАЧАЛО ФУНКЦИИ createElement ---
     createElement(
         tag: string | ((props: Record<string, unknown>) => Element),
         props: Record<string, unknown> | null,
@@ -117,6 +120,7 @@ export const React = {
         appendJsxChildren(el, children);
         return el;
     },
+    // --- КОНЕЦ ФУНКЦИИ createElement ---
 };
 
 // ============================================================================
@@ -140,6 +144,7 @@ export interface StarfallDroplet {
 
 const STARFALL_GLYPH_POOL = '0123456789ABCDEF.+-xΔr∑';
 
+// --- НАЧАЛО ФУНКЦИИ buildLivingBreachContourPath ---
 /**
  * Вычисляет замкнутый SVG-путь живого контура панели:
  * плавная длинноволновая форма мягко дышит в такт низким частотам музыки (audioBoost).
@@ -215,7 +220,9 @@ export function buildLivingBreachContourPath(
     }
     return pathStr + ' Z';
 }
+// --- КОНЕЦ ФУНКЦИИ buildLivingBreachContourPath ---
 
+// --- НАЧАЛО ФУНКЦИИ buildLivingHorizontalWavePath ---
 /**
  * Вычисляет плавно изгибающуюся линию под заголовком панели (y = 42).
  */
@@ -244,6 +251,7 @@ export function buildLivingHorizontalWavePath(
     }
     return d;
 }
+// --- КОНЕЦ ФУНКЦИИ buildLivingHorizontalWavePath ---
 
 // ============================================================================
 // РАЗДЕЛ 3. КОНТРОЛЛЕР ПЛАВНОЙ 60-FPS АНИМАЦИИ В ТАКТ МУЗЫКЕ (БЕЗ СКАЧКОВ)
@@ -259,16 +267,21 @@ class TelemetryWaterfallAnimator {
     private smoothedMusicPulse = 0.22;
     private smoothedMusicLow = 0.2;
 
+    // --- НАЧАЛО ФУНКЦИИ getTimeSec ---
     public getTimeSec(): number {
         return typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ getTimeSec ---
 
+    // --- НАЧАЛО ФУНКЦИИ ensureRunning ---
     public ensureRunning(): void {
         if (this.rafId !== 0 || typeof window === 'undefined') return;
         this.lastMs = performance.now();
         this.rafId = window.requestAnimationFrame(this.tick);
     }
+    // --- КОНЕЦ ФУНКЦИИ ensureRunning ---
 
+    // --- НАЧАЛО ФУНКЦИИ tick ---
     private tick = (nowMs: number): void => {
         const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
         this.lastMs = nowMs;
@@ -277,7 +290,6 @@ class TelemetryWaterfallAnimator {
         const uState = universeStore.getState();
         if (!uState.isTabHidden && !uState.reducedMotion) {
             const audioSnap = audioSync.getSnapshot(timeSec);
-            // Мягкое экспоненциальное сглаживание музыкальной огибающей для плавного дыхания
             this.smoothedMusicPulse =
                 this.smoothedMusicPulse * 0.92 + audioSnap.pulse * 0.08;
             this.smoothedMusicLow =
@@ -291,7 +303,9 @@ class TelemetryWaterfallAnimator {
 
         this.rafId = window.requestAnimationFrame(this.tick);
     };
+    // --- КОНЕЦ ФУНКЦИИ tick ---
 
+    // --- НАЧАЛО ФУНКЦИИ stepDroplets ---
     private stepDroplets(dt: number, timeSec: number): void {
         const cascades: ReadonlyArray<2 | 3 | 4> = [2, 3, 4];
         const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
@@ -356,7 +370,9 @@ class TelemetryWaterfallAnimator {
         }
         this.droplets = active.slice(-28);
     }
+    // --- КОНЕЦ ФУНКЦИИ stepDroplets ---
 
+    // --- НАЧАЛО ФУНКЦИИ computeSlotBreathCss ---
     /**
      * Вычисляет C∞-гладкий стиль дыхания слота в такт музыке без резких ступенек.
      */
@@ -367,7 +383,6 @@ class TelemetryWaterfallAnimator {
     ): { transform: string; color: string; textShadow: string } {
         const ignitedAt = this.ignitedSlots.get(slotKey) ?? -10;
         const elapsed = timeSec - ignitedAt;
-        // Плавный синусоидальный импульс при отрыве капли вместо линейного скачка
         const reigniteWave =
             elapsed >= 0 && elapsed < 0.55
                 ? Math.sin((elapsed / 0.55) * Math.PI)
@@ -396,7 +411,9 @@ class TelemetryWaterfallAnimator {
                     )})`,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ computeSlotBreathCss ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateLiveDomElements ---
     /**
      * На 60 FPS плавно обновляет волновые контуры, падающие буковки и дыхание всех
      * элементов [data-breath-slot] напрямую в DOM (без пересоздания узлов).
@@ -504,11 +521,15 @@ class TelemetryWaterfallAnimator {
             });
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ updateLiveDomElements ---
 
+    // --- НАЧАЛО ФУНКЦИИ getDropletsForCascade ---
     public getDropletsForCascade(cascadeId: 2 | 3 | 4): ReadonlyArray<StarfallDroplet> {
         return this.droplets.filter((d: StarfallDroplet) => d.cascadeId === cascadeId);
     }
+    // --- КОНЕЦ ФУНКЦИИ getDropletsForCascade ---
 
+    // --- НАЧАЛО ФУНКЦИИ getBreathingSlotStyle ---
     public getBreathingSlotStyle(
         slotKey: string,
         phaseSeed: number
@@ -522,10 +543,12 @@ class TelemetryWaterfallAnimator {
             textShadow: css.textShadow,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ getBreathingSlotStyle ---
 }
 
 export const waterfallAnimator = new TelemetryWaterfallAnimator();
 
+// --- НАЧАЛО ФУНКЦИИ renderWaterfallMembraneDecor ---
 /**
  * Строит SVG-подложку с плавным волновым контуром, одной мягкой волнистой линией
  * под заголовком и 60-FPS слоем падающих буковок для каскадов 2, 3 и 4.
@@ -608,7 +631,7 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
                         opacity: drop.opacity.toFixed(3),
                         transform: `translate3d(${drop.xDriftPx.toFixed(
                             1
-                        )}px, drop.yOffsetPx.toFixed(1)}px, 0) scale(${drop.scale.toFixed(2)})`,
+                        )}px, ${drop.yOffsetPx.toFixed(1)}px, 0) scale(${drop.scale.toFixed(2)})`,
                     }}
                 >
                     {drop.glyph}
@@ -619,11 +642,13 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
 
     return [svgContour, streamOverlay, dropsLayer];
 }
+// --- КОНЕЦ ФУНКЦИИ renderWaterfallMembraneDecor ---
 
 // ============================================================================
 // РАЗДЕЛ 4. ПРЕДСТАВЛЕНИЕ И MOUNT-ONCE МОНТИРОВЩИК LAYER 2: METRICS
 // ============================================================================
 
+// --- НАЧАЛО ФУНКЦИИ renderLayer2MetricsView ---
 export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element {
     const t = snap.telemetry;
     const isVisible =
@@ -696,7 +721,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                     </div>
 
                     <div className="metric-box">
-                        <span className="label">NODES / EDGES [python/graph_logic.py]</span>
+                        <span className="label">NODES / EDGES [ts/graph_engine]</span>
                         <span
                             className="value"
                             data-bind="l2-nodes"
@@ -738,10 +763,12 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
         </aside>
     );
 }
+// --- КОНЕЦ ФУНКЦИИ renderLayer2MetricsView ---
 
+// --- НАЧАЛО ФУНКЦИИ mountLayer2Metrics ---
 /**
  * Монтирует DOM-дерево Layer 2 один раз и обновляет только текстовые узлы и класс видимости,
- * полностью исключая 10-герцовое пересоздание DOM через replaceChildren.
+ * полностью исключая пересоздание DOM через replaceChildren.
  */
 export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     if (!container) return () => {};
@@ -799,5 +826,6 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
 
     return universeStore.subscribe(update);
 }
+// --- КОНЕЦ ФУНКЦИИ mountLayer2Metrics ---
 
 export default renderLayer2MetricsView;
