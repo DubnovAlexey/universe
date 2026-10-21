@@ -1,32 +1,67 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/renderer.ts
-// НАЗНАЧЕНИЕ: Главный графический и физический конвейер рендеринга UNIVERSE v2.4
+// НАЗНАЧЕНИЕ: Главный графический и физический конвейер рендеринга UNIVERSE v2.5
 //             и клиентский оркестратор интерактивных слоёв (MASTER 00–05)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Процедурные шумовые поля и структуры фоновых явлений: симплекс-шум,
-//    многооктавный FBM с искривлением координат (Domain Warping), спиральные
-//    пылевые облака M31/NGC 3169, бездивергентные сигналы RK2 Curl-Noise
-//    и суб-квантовая решётка глубокого эшелона Z4 («обратная сторона Вселенной»).
-// 2. Главный класс UniverseRenderer: интеграция RenderPipeline (High-DPI +
-//    Blue-Noise Dither), фазового ядра VoidPhaseSimulation (01_void..05_singularity),
-//    контроллера упругой мембраны stressStore и реестра IntegrationRegistry.
-// 3. Полевой и астрофизический рендеринг фаз 01–05:
-//    - 01_VOID: нестабильные дышащие кольца светового эха цефеиды RS Puppis;
-//    - 02_GENESIS: спиральные пылевые рукава и тёмные каньоны поглощения света;
-//    - 03_EVOLUTION: 5 кеплеровских колец, полушария NEXUS, сплайны A/B/C и импульсы;
-//    - 05_SINGULARITY: C2-рождение Чёрной дыры и короны NGC 6543 строго из Точки Нуля
-//      и плавное тягучее спиральное схлопывание.
-// 4. Органическая оптика мембраны BREACH LENS и эшелон глубины Z4:
-//    C2-гладкое раскрытие рентгеновских геодезических ячеек без прямоугольных
-//    артефактов, суб-нейронные токи Z4, микротрещины и бесконтурные выноски узлов.
-// 5. Рендеринг барабанов квантового одометра (cipherOdometerEngine) в Акте D:
-//    многослойная холодная палитра с глубокими тенями (без ржаво-рыжего оттенка),
-//    хаотичная скорость центральной строки и C∞-дыхание визитки.
-// 6. Интерактивный контроллер угловых панелей (CornerPanelsQuantumController)
-//    и оркестратор DOM (bootstrapUniverseV2): при наведении курсора выбранный
-//    элемент остаётся неподвижным, а соседние элементы в ряду перебираются
-//    с холодными полутонами и тенями.
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+//
+// РАЗДЕЛ 1. МАТЕМАТИЧЕСКИЕ УТИЛИТЫ, ШУМОВЫЕ ПОЛЯ И СТРУКТУРЫ ФОНОВЫХ ЯВЛЕНИЙ
+//   - Подраздел 1.1. Базовые функции интерполяции и ограничения (clamp, lerp).
+//   - Подраздел 1.2. Детерминированный 2D-шум и фрактальное броуновское движение
+//                    (hash2D, valueNoise2D, fbm2D).
+//   - Подраздел 1.3. Интерфейсы спиральных облаков M31 (SpiralDustCloud),
+//                    криволинейных полевых сигналов (CurvedFieldSignal) и
+//                    глубинной суб-квантовой сети Z4 (SubQuantumNodeZ4).
+//
+// РАЗДЕЛ 2. КЛАСС ГЛАВНОГО РЕНДЕРЕРА (UniverseRenderer) — ИНИЦИАЛИЗАЦИЯ И СОСТОЯНИЕ
+//   - Подраздел 2.1. Поля класса и конструктор UniverseRenderer.
+//   - Подраздел 2.2. Генерация процедурных фоновых полей (initProceduralBackgroundFields,
+//                    spawnCurvedFieldSignal).
+//   - Подраздел 2.3. Безопасный доступ к данным симуляции, обработка resize и
+//                    указателя мыши (getSimParticles, getSimEdges, getSimPulses,
+//                    handleResize, setPointerState, stepBackgroundFields).
+//
+// РАЗДЕЛ 3. ПОЛЕВОЙ И АСТРОФИЗИЧЕСКИЙ РЕНДЕРИНГ ФАЗ 01–05
+//   - Подраздел 3.1. Главный диспетчер кадра (renderFrame).
+//   - Подраздел 3.2. Рендеринг дышащих колец светового эха цефеиды RS Кормы
+//                    в фазе 01_VOID (renderBreathingLightEchoRings).
+//   - Подраздел 3.3. Рендеринг спиральных рукавов пыли и каньонов поглощения
+//                    M31 / NGC 3169 в фазе 02_GENESIS (renderSpiralDustAndCanyons).
+//   - Подраздел 3.4. Рендеринг криволинейных полевых сигналов RK2 Curl-Noise
+//                    (renderCurvedFieldSignals).
+//   - Подраздел 3.5. Рендеринг 5 кеплеровских колец и когнитивных полушарий Мозга
+//                    в фазах 03_EVOLUTION и 04_COLLAPSE (renderCorticalHemispheresAndKeplerRings).
+//   - Подраздел 3.6. Рендеринг кривых Безье графа NEXUS (классы A/B/C) и комет
+//                    синаптических импульсов (renderTopologyEdgesAndPulses).
+//   - Подраздел 3.7. Рендеринг многоэшелонных частиц, сом нейронов и боке Z0..Z3
+//                    (renderMultiEchelonParticles).
+//
+// РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И ГЛУБИННЫЙ ЭШЕЛОН Z4
+//   - Подраздел 4.1. Рендеринг апертуры BREACH LENS, геодезической сетки X-RAY,
+//                    микротрещин и суб-нейронных токов Z4 (renderBreachLensAndSubQuantumZ4).
+//   - Подраздел 4.2. Рендеринг бесконтурных парящих выносок узлов
+//                    (renderBorderlessNodeCallout).
+//   - Подраздел 4.3. Рендеринг 7-оболочечной короны «Кошачьего глаза» NGC 6543,
+//                    Чёрной дыры и её полного сжатия в точку (renderSingularityCoronaAndBlackHole).
+//   - Подраздел 4.4. Рендеринг центральной микро-точки и кольца горизонта в Акте C
+//                    (renderZeroSilenceActC).
+//
+// РАЗДЕЛ 5. РЕНДЕРИНГ БАРАБАНОВ КВАНТОВОГО ОДОМЕТРА НА ХОЛСТЕ (АКТ D — LAYER 5)
+//   - Подраздел 5.1. Отрисовка разлёта символов из центральной точки и бесшовная
+//                    передача эстафеты видимой DOM-визитке (renderCipherOdometerStage).
+//
+// РАЗДЕЛ 6. ЗАЩИЩЁННЫЙ ГЛАВНЫЙ ЦИКЛ RAF И УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ
+//   - Подраздел 6.1. Методы запуска и остановки рендерера (start, stop).
+//   - Подраздел 6.2. Защищённый цикл кадра loop (try / catch / finally) с защитой
+//                    от остановки RAF и синхронизацией перезапуска цикла.
+//
+// РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
+//   - Подраздел 7.1. Функции управления каноническим текстом и плавным перебором
+//                    соседних элементов (setCanonicalElementText, stopElementScramble,
+//                    startNeighborElementScramble, bindCornerPanelsNeighborScramble).
+//   - Подраздел 7.2. Синхронизация элементов HUD с состоянием хранилища (syncHudDomWithState).
+//   - Подраздел 7.3. Главная функция клиентской инициализации (bootstrapUniverseV2).
 // ============================================================================
 
 import '../styles/universe.css';
@@ -62,22 +97,41 @@ import { mountLayer4Terminal } from '../layers/Layer4_Terminal';
 import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
 
 // ============================================================================
-// РАЗДЕЛ 1. ПРОЦЕДУРНЫЕ ШУМОВЫЕ ПОЛЯ И СТРУКТУРЫ ФОНОВЫХ ЯВЛЕНИЙ (M31 / Z4)
+// РАЗДЕЛ 1. МАТЕМАТИЧЕСКИЕ УТИЛИТЫ, ШУМОВЫЕ ПОЛЯ И СТРУКТУРЫ ФОНОВЫХ ЯВЛЕНИЙ
 // ============================================================================
 
 const TAU = Math.PI * 2;
 
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 1.1. БАЗОВЫЕ ФУНКЦИИ ИНТЕРПОЛЯЦИИ И ОГРАНИЧЕНИЯ
+// ----------------------------------------------------------------------------
+
+// --- НАЧАЛО ФУНКЦИИ clamp ---
+/**
+ * Ограничивает числовое значение v заданным диапазоном [min, max].
+ */
 function clamp(v: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, v));
 }
+// --- КОНЕЦ ФУНКЦИИ clamp ---
 
+// --- НАЧАЛО ФУНКЦИИ lerp ---
+/**
+ * Выполняет линейную интерполяцию между значениями a и b по коэффициенту t.
+ */
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
 }
+// --- КОНЕЦ ФУНКЦИИ lerp ---
 
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 1.2. ДЕТЕРМИНИРОВАННЫЙ 2D-ШУМ И ФРАКТАЛЬНОЕ БРОУНОВСКОЕ ДВИЖЕНИЕ
+// ----------------------------------------------------------------------------
+
+// --- НАЧАЛО ФУНКЦИИ hash2D ---
 /**
- * Детерминированный 2D-хеш и градиентный шум для расчёта деформации колец
- * светового эха RS Puppis, спиральных рукавов пыли M31 и контура BREACH LENS.
+ * Детерминированный целочисленный 2D-хеш для генерации решётки градиентного шума.
+ * Возвращает значение в полуинтервале [0.0, 1.0).
  */
 function hash2D(ix: number, iy: number): number {
     let n = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263)) >>> 0;
@@ -85,7 +139,13 @@ function hash2D(ix: number, iy: number): number {
     n = Math.imul(n, 1274126177) >>> 0;
     return ((n ^ (n >>> 16)) >>> 0) / 4294967296.0;
 }
+// --- КОНЕЦ ФУНКЦИИ hash2D ---
 
+// --- НАЧАЛО ФУНКЦИИ valueNoise2D ---
+/**
+ * Вычисляет сглаженный двумерный шум (Value Noise) в точке (x, y)
+ * с кубической интерполяцией Эрмита. Возвращает значение в диапазоне [-1.0, 1.0].
+ */
 function valueNoise2D(x: number, y: number): number {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
@@ -101,7 +161,13 @@ function valueNoise2D(x: number, y: number): number {
 
     return lerp(lerp(n00, n10, ux), lerp(n01, n11, ux), uy) * 2.0 - 1.0;
 }
+// --- КОНЕЦ ФУНКЦИИ valueNoise2D ---
 
+// --- НАЧАЛО ФУНКЦИИ fbm2D ---
+/**
+ * Вычисляет многооктавный фрактальный броуновский шум (FBM) для органической
+ * деформации колец светового эха RS Puppis, пылевых облаков M31 и контура линзы.
+ */
 function fbm2D(x: number, y: number, octaves = 4): number {
     let value = 0.0;
     let amp = 0.52;
@@ -113,6 +179,11 @@ function fbm2D(x: number, y: number, octaves = 4): number {
     }
     return value;
 }
+// --- КОНЕЦ ФУНКЦИИ fbm2D ---
+
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 1.3. ИНТЕРФЕЙСЫ ФОНОВЫХ ЯВЛЕНИЙ (M31, CURL-СИГНАЛЫ, ЭШЕЛОН Z4)
+// ----------------------------------------------------------------------------
 
 /**
  * Спиралевидное газопылевое облако или тёмный каньон поглощения света
@@ -131,7 +202,7 @@ interface SpiralDustCloud {
 
 /**
  * Криволинейный квантовый сигнал-импульс, редко пробегающий по полю от края до края
- * вдоль бездивергентных линий тока RK2 Curl-Noise (взамен прямых линий на фоне).
+ * вдоль бездивергентных линий тока RK2 Curl-Noise.
  */
 interface CurvedFieldSignal {
     xNorm: number;
@@ -160,10 +231,13 @@ interface SubQuantumNodeZ4 {
 }
 
 // ============================================================================
-// РАЗДЕЛ 2. ГЛАВНЫЙ КЛАСС РЕНДЕРЕРА И ОРКЕСТРАТОРА СЦЕНЫ (UniverseRenderer)
+// РАЗДЕЛ 2. КЛАСС ГЛАВНОГО РЕНДЕРЕРА (UniverseRenderer) — ИНИЦИАЛИЗАЦИЯ И СОСТОЯНИЕ
 // ============================================================================
 
 export class UniverseRenderer {
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.1. ПОЛЯ КЛАССА И КОНСТРУКТОР UniverseRenderer
+    // ------------------------------------------------------------------------
     private readonly canvas: HTMLCanvasElement;
     private readonly pipeline: RenderPipeline;
     private readonly simulation: VoidPhaseSimulation;
@@ -181,7 +255,10 @@ export class UniverseRenderer {
     private lastTrackedPhase: PhaseId = '01_VOID';
     private lastTrackedAct: SingularityAct = 'INACTIVE';
     private lastSeed = 0;
+    private lastCycleCount = 1;
+    private consecutiveFrameErrors = 0;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (UniverseRenderer) ---
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.pipeline = new RenderPipeline(canvas);
@@ -193,15 +270,22 @@ export class UniverseRenderer {
 
         const initialState = universeStore.getState();
         this.lastSeed = initialState.seed;
+        this.lastCycleCount = initialState.cycleCount;
         this.lastTrackedPhase = initialState.currentPhase;
         this.lastTrackedAct = initialState.singularityAct;
 
         this.initProceduralBackgroundFields(initialState.seed);
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (UniverseRenderer) ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.2. ГЕНЕРАЦИЯ ПРОЦЕДУРНЫХ ФОНОВЫХ ПОЛЕЙ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ initProceduralBackgroundFields ---
     /**
      * Инициализирует детерминированные спиральные облака пыли M31/NGC 3169,
-     * редкие криволинейные квантовые сигналы и суб-квантовую сеть Z4.
+     * редкие криволинейные квантовые сигналы и суб-квантовую сеть Z4 от текущего seed.
      */
     public initProceduralBackgroundFields(seed: number): void {
         const rng = new DeterministicPRNG(seed ^ 0x4f1bbcdc);
@@ -269,7 +353,12 @@ export class UniverseRenderer {
             a.ctrlBends = nearest.map(() => rng.nextRange(-0.22, 0.22));
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ initProceduralBackgroundFields ---
 
+    // --- НАЧАЛО ФУНКЦИИ spawnCurvedFieldSignal ---
+    /**
+     * Создаёт одиночный криволинейный полевой сигнал на одной из 4 границ экрана.
+     */
     private spawnCurvedFieldSignal(rng: DeterministicPRNG): CurvedFieldSignal {
         const side = rng.nextU32() % 4;
         let xNorm = 0;
@@ -307,7 +396,16 @@ export class UniverseRenderer {
             colorHex: rng.nextFloat() > 0.25 ? '#7dd3fc' : '#f8fafc',
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ spawnCurvedFieldSignal ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.3. ДОСТУП К ДАННЫМ СИМУЛЯЦИИ, ОБРАБОТКА RESIZE И УКАЗАТЕЛЯ МЫШИ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ getSimParticles ---
+    /**
+     * Возвращает массив активных квантовых частиц из фазового ядра VoidPhaseSimulation.
+     */
     private getSimParticles(): ReadonlyArray<QuantumParticle> {
         const sim = this.simulation as unknown as {
             getParticles?: () => ReadonlyArray<QuantumParticle>;
@@ -315,7 +413,12 @@ export class UniverseRenderer {
         };
         return sim.getParticles ? sim.getParticles() : (sim.particles ?? []);
     }
+    // --- КОНЕЦ ФУНКЦИИ getSimParticles ---
 
+    // --- НАЧАЛО ФУНКЦИИ getSimEdges ---
+    /**
+     * Возвращает массив криволинейных рёбер графа NEXUS из фазового ядра.
+     */
     private getSimEdges(): ReadonlyArray<TopologyEdge> {
         const sim = this.simulation as unknown as {
             getEdges?: () => ReadonlyArray<TopologyEdge>;
@@ -323,7 +426,12 @@ export class UniverseRenderer {
         };
         return sim.getEdges ? sim.getEdges() : (sim.edges ?? []);
     }
+    // --- КОНЕЦ ФУНКЦИИ getSimEdges ---
 
+    // --- НАЧАЛО ФУНКЦИИ getSimPulses ---
+    /**
+     * Возвращает массив активных комет синаптических импульсов из фазового ядра.
+     */
     private getSimPulses(): ReadonlyArray<SynapticPulse> {
         const sim = this.simulation as unknown as {
             getPulses?: () => ReadonlyArray<SynapticPulse>;
@@ -331,14 +439,25 @@ export class UniverseRenderer {
         };
         return sim.getPulses ? sim.getPulses() : (sim.pulses ?? []);
     }
+    // --- КОНЕЦ ФУНКЦИИ getSimPulses ---
 
+    // --- НАЧАЛО ФУНКЦИИ handleResize ---
+    /**
+     * Пересчитывает размеры холста и масштабирует координаты симуляции при изменении окна.
+     */
     public handleResize = (): void => {
         const { width, height } = this.pipeline.updateViewportSize();
         this.width = width;
         this.height = height;
         this.simulation.resize(width, height);
     };
+    // --- КОНЕЦ ФУНКЦИИ handleResize ---
 
+    // --- НАЧАЛО ФУНКЦИИ setPointerState ---
+    /**
+     * Передаёт координаты курсора/касания в контроллер упругой линзы stressStore
+     * и в движок квантового одометра cipherOdometerEngine.
+     */
     public setPointerState(
         clientX: number,
         clientY: number,
@@ -364,7 +483,13 @@ export class UniverseRenderer {
             }
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ setPointerState ---
 
+    // --- НАЧАЛО ФУНКЦИИ stepBackgroundFields ---
+    /**
+     * Интегрирует движение фоновых криволинейных сигналов RK2 Curl-Noise
+     * и узлов глубинной суб-квантовой решётки Z4.
+     */
     private stepBackgroundFields(dtSec: number, simTimeSec: number, seed: number): void {
         for (let i = 0; i < this.fieldSignals.length; i++) {
             const sig = this.fieldSignals[i];
@@ -398,11 +523,23 @@ export class UniverseRenderer {
             if (zNode.yNorm < -0.56) zNode.yNorm = 0.56;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ stepBackgroundFields ---
 
     // ============================================================================
     // РАЗДЕЛ 3. ПОЛЕВОЙ И АСТРОФИЗИЧЕСКИЙ РЕНДЕРИНГ ФАЗ 01–05
     // ============================================================================
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.1. ГЛАВНЫЙ ДИСПЕТЧЕР КАДРА (renderFrame)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderFrame ---
+    /**
+     * Выполняет полную послойную отрисовку текущего кадра симуляции:
+     * вакуум и дизеринг -> пылевые облака M31 -> полевые сигналы -> кольца RS Puppis ->
+     * полушария NEXUS -> Чёрная дыра и корона NGC 6543 -> мембрана BREACH LENS ->
+     * граф и кометы импульсов -> частицы Z0..Z3 -> квантовый одометр финала.
+     */
     private renderFrame(
         simTimeSec: number,
         state: Readonly<UniverseState>,
@@ -448,8 +585,23 @@ export class UniverseRenderer {
         const phase = state.currentPhase;
         const act = state.singularityAct;
 
-        // Специальный режим Акта C (ровно 2.5 секунды живой тишины: 93.0–95.5 с)
+        // Специальный режим Акта C (93.0–95.5 с): сохраняем тонкое фоновое дыхание
+        // космоса и рисуем центральную микро-точку перед выходом из неё визитки
         if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
+            ctx.save();
+            ctx.globalAlpha = 0.24;
+            this.renderSpiralDustAndCanyons(
+                ctx,
+                cx,
+                cy,
+                minSide * zoom,
+                simTimeSec,
+                phase,
+                audioSnap
+            );
+            this.renderCurvedFieldSignals(ctx, cx, cy, w, h, simTimeSec);
+            ctx.restore();
+
             this.renderZeroSilenceActC(ctx, cx, cy, minSide, simTimeSec);
             ctx.restore();
             integrationRegistry.recordModuleStep(
@@ -463,7 +615,7 @@ export class UniverseRenderer {
             phase === '05_SINGULARITY' &&
             (act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE');
         const sceneVisibility = isOdometerStage
-            ? Math.max(0.22, 1.0 - state.githubCardAssemblyProgress * 0.74)
+            ? Math.max(0.2, 1.0 - state.githubCardAssemblyProgress * 0.76)
             : 1.0;
 
         const particles = this.getSimParticles();
@@ -487,7 +639,7 @@ export class UniverseRenderer {
         // 3. Редкие криволинейные квантовые сигналы от края до края (RK2 Curl-Noise)
         this.renderCurvedFieldSignals(ctx, cx, cy, w, h, simTimeSec);
 
-        // 4. Нестабильные дышащие кольца светового эха RS Puppis (Фаза 01_VOID и плавный переход в 02_GENESIS)
+        // 4. Нестабильные дышащие кольца светового эха RS Puppis (Фаза 01_VOID и переход в 02_GENESIS)
         if (phase === '01_VOID' || phase === '02_GENESIS') {
             const voidWeight =
                 phase === '01_VOID'
@@ -576,7 +728,7 @@ export class UniverseRenderer {
 
         ctx.restore();
 
-        // 10. Квантовый одометр (cipherOdometerEngine) в Акте D (ACT_D_GITHUB_CARD / RESTART_COLLAPSE)
+        // 10. Квантовый одометр на холсте (эффект разлёта из центральной точки в Акте D)
         if (isOdometerStage) {
             this.renderCipherOdometerStage(ctx, w, h, state);
         }
@@ -587,9 +739,16 @@ export class UniverseRenderer {
             performance.now() - renderStartMs
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ renderFrame ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.2. РЕНДЕРИНГ ДЫШАЩИХ КОЛЕЦ СВЕТОВОГО ЭХА ЦЕФЕИДЫ RS КОРМЫ (01_VOID)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderBreathingLightEchoRings ---
     /**
-     * Отрисовывает нестабильные, живо дышащие концентрические кольца светового эха RS Puppis.
+     * Отрисовывает нестабильные, живо дышащие концентрические кольца светового эха
+     * переменной звезды RS Puppis с угловой модуляцией FBM и притяжением к сгусткам энергии.
      */
     private renderBreathingLightEchoRings(
         ctx: CanvasRenderingContext2D,
@@ -729,10 +888,16 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderBreathingLightEchoRings ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.3. РЕНДЕРИНГ СПИРАЛЬНЫХ ОБЛАКОВ ПЫЛИ И КАНЬОНОВ M31 / NGC 3169
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderSpiralDustAndCanyons ---
     /**
      * Отрисовывает многослойные спиралевидные газопылевые облака, тёмные каньоны поглощения
-     * света (#020308) и контровой свет Rim Light (#7DD3FC) по прообразу M31 и NGC 3169.
+     * света (#020308) и контровой свет Rim Light (#7DD3FC) с модуляцией от баса музыки.
      */
     private renderSpiralDustAndCanyons(
         ctx: CanvasRenderingContext2D,
@@ -813,7 +978,13 @@ export class UniverseRenderer {
         }
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderSpiralDustAndCanyons ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.4. РЕНДЕРИНГ КРИВОЛИНЕЙНЫХ ПОЛЕВЫХ СИГНАЛОВ RK2 CURL-NOISE
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderCurvedFieldSignals ---
     /**
      * Отрисовывает редкие криволинейные квантовые сигналы, пробегающие по полю от края до края.
      */
@@ -859,7 +1030,13 @@ export class UniverseRenderer {
         }
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderCurvedFieldSignals ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.5. РЕНДЕРИНГ 5 КЕПЛЕРОВСКИХ КОЛЕЦ И ПОЛУШАРИЙ МОЗГА (03 / 04)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderCorticalHemispheresAndKeplerRings ---
     /**
      * Отрисовывает 5 встречных кеплеровских колец (решение D-3) и скульптурную подсветку
      * двух когнитивных полушарий Мозга в фазах 03_EVOLUTION и 04_COLLAPSE.
@@ -916,7 +1093,14 @@ export class UniverseRenderer {
         for (let hSign = -1; hSign <= 1; hSign += 2) {
             const lobeX = cx + hSign * scaledW * 0.185;
             const lobeR = Math.min(scaledW, scaledH) * 0.34;
-            const lobeGrad = ctx.createRadialGradient(lobeX, cy, lobeR * 0.08, lobeX, cy, lobeR);
+            const lobeGrad = ctx.createRadialGradient(
+                lobeX,
+                cy,
+                lobeR * 0.08,
+                lobeX,
+                cy,
+                lobeR
+            );
             const pulse =
                 0.09 + 0.03 * Math.sin(simTimeSec * 1.8 + hSign + phaseProgress * Math.PI);
             lobeGrad.addColorStop(0.0, RenderPipeline.hexToRgba('#6366f1', pulse));
@@ -930,7 +1114,13 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderCorticalHemispheresAndKeplerRings ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.6. РЕНДЕРИНГ КРИВЫХ ГРАФА NEXUS И КОМЕТ СИНАПТИЧЕСКИХ ИМПУЛЬСОВ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderTopologyEdgesAndPulses ---
     /**
      * Отрисовывает 3 класса кривых Безье графа NEXUS (AXON_TRUNK, BRIDGE, DENDRITE)
      * с сужением по биофизическому закону Мюррея и движущиеся по длине дуги (lengthLUT)
@@ -1075,7 +1265,13 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderTopologyEdgesAndPulses ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.7. РЕНДЕРИНГ ЧАСТИЦ, СОМ НЕЙРОНОВ И БОКЕ ПО ЭШЕЛОНАМ Z0..Z3
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderMultiEchelonParticles ---
     /**
      * Отрисовывает частицы, трёхчастные сомы нейронов и боке переднего плана по 4 эшелонам Z0..Z3
      * с учётом C1/C2-преломления на кромке линзы BREACH LENS.
@@ -1149,7 +1345,10 @@ export class UniverseRenderer {
                 const haloGrad = ctx.createRadialGradient(sx, sy, 0.4, sx, sy, haloR);
                 haloGrad.addColorStop(
                     0.0,
-                    RenderPipeline.hexToRgba(haloColor, alpha * (isExcitedSoma ? 0.62 : 0.36))
+                    RenderPipeline.hexToRgba(
+                        haloColor,
+                        alpha * (isExcitedSoma ? 0.62 : 0.36)
+                    )
                 );
                 haloGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
                 ctx.fillStyle = haloGrad;
@@ -1175,14 +1374,20 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderMultiEchelonParticles ---
 
     // ============================================================================
     // РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И ГЛУБИННЫЙ ЭШЕЛОН Z4
     // ============================================================================
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 4.1. РЕНДЕРИНГ АПЕРТУРЫ BREACH LENS, СЕТКИ X-RAY И СЕТИ Z4
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderBreachLensAndSubQuantumZ4 ---
     /**
-     * Отрисовывает мембрану BREACH LENS, криволинейные геодезические клеточки рентгена
-     * и глубинный суб-квантовый слой Z4 («обратную сторону Вселенной») под клеточками.
+     * Отрисовывает мембрану BREACH LENS, криволинейные геодезические клеточки рентгена,
+     * микротрещины и глубинный суб-квантовый слой Z4 («обратную сторону Вселенной»).
      */
     private renderBreachLensAndSubQuantumZ4(
         ctx: CanvasRenderingContext2D,
@@ -1419,7 +1624,10 @@ export class UniverseRenderer {
                     const logLen = Math.log(1.0 + speed) * 9.5;
                     const ux = pt.vx / speed;
                     const uy = pt.vy / speed;
-                    ctx.strokeStyle = RenderPipeline.hexToRgba('#38bdf8', localMask * 0.48);
+                    ctx.strokeStyle = RenderPipeline.hexToRgba(
+                        '#38bdf8',
+                        localMask * 0.48
+                    );
                     ctx.lineWidth = 0.65;
                     ctx.beginPath();
                     ctx.moveTo(pt.x, pt.y);
@@ -1443,7 +1651,16 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderBreachLensAndSubQuantumZ4 ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 4.2. РЕНДЕРИНГ БЕСКОНТУРНЫХ ВЫНОСОК УЗЛОВ (renderBorderlessNodeCallout)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderBorderlessNodeCallout ---
+    /**
+     * Отрисовывает парящую инженерную выноску узла (ID + модуль-владелец) без прямоугольной рамки.
+     */
     private renderBorderlessNodeCallout(
         ctx: CanvasRenderingContext2D,
         nx: number,
@@ -1479,6 +1696,13 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderBorderlessNodeCallout ---
+
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 4.3. РЕНДЕРИНГ КОРОНЫ «КОШАЧЬЕГО ГЛАЗА» NGC 6543 И ЧЁРНОЙ ДЫРЫ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderSingularityCoronaAndBlackHole ---
     /**
      * Отрисовывает 7-оболочечную корону туманности «Кошачьего глаза» (NGC 6543),
      * допплеровский аккреционный диск и тень горизонта событий Чёрной дыры в фазе 05_SINGULARITY.
@@ -1494,7 +1718,6 @@ export class UniverseRenderer {
         actProgress: number,
         audioSnap: AudioModulationSnapshot
     ): void {
-        // Когда открывается финальная визитка (Акт D), Чёрная дыра уже полностью ушла в точку и исчезла
         if (act === 'ACT_D_GITHUB_CARD') {
             return;
         }
@@ -1512,7 +1735,6 @@ export class UniverseRenderer {
             if (actProgress > 0.32) {
                 const cNorm = (actProgress - 0.32) / 0.68;
                 const smoothCollapse = smootherstep(0.0, 1.0, cNorm);
-                // Полное сжатие радиуса в 0.0 и растворение к концу Акта B
                 volumeEnvelope = Math.max(0.0, Math.pow(1.0 - smoothCollapse, 2.15));
                 opacityEnvelope = 1.0 - smootherstep(0.72, 1.0, cNorm);
             }
@@ -1526,7 +1748,6 @@ export class UniverseRenderer {
             return;
         }
 
-        // 1. 7 лепестковых газовых оболочек звезды Вольфа — Райе («Кошачий глаз» NGC 6543)
         const shells = 7;
         for (let l = 1; l <= shells; l++) {
             const shellBirthDelay = (l - 1) * 0.04;
@@ -1576,7 +1797,6 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        // 2. Фотонное кольцо и сфера тени горизонта событий Чёрной дыры (уходит в чистую точку)
         const fullShadowR = scale * 0.068;
         const shadowR = fullShadowR * volumeEnvelope;
         const photonOuterR = Math.max(1.2, shadowR * 2.45);
@@ -1622,32 +1842,45 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderSingularityCoronaAndBlackHole ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 4.4. РЕНДЕРИНГ ЦЕНТРАЛЬНОЙ МИКРО-ТОЧКИ В АКТЕ C (93.0–95.5 с)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderZeroSilenceActC ---
     /**
      * Отрисовывает Акт C (93.0–95.5 с): Чёрная дыра уже схлопнулась в крошечную
-     * жемчужную микро-точку в центре экрана, которая замирает и растворяется
-     * непосредственно перед вылетом из неё финальной визитки DUBNOV ALEXEY.
+     * жемчужную микро-точку в центре экрана с тонким кольцом горизонта, которая
+     * плавно растворяется перед вылетом из неё финальной визитки DUBNOV ALEXEY.
      */
     private renderZeroSilenceActC(
         ctx: CanvasRenderingContext2D,
         cx: number,
         cy: number,
-        _minSide: number,
+        minSide: number,
         simTimeSec: number
     ): void {
         const uState = universeStore.getState();
         const actProg = clamp(uState.singularityActProgress, 0, 1);
-        // Микро-точка плавно гаснет к концу 2.5 с, уступая место вылетающей из неё визитке
-        const pointFade = 1.0 - smootherstep(0.65, 1.0, actProg);
+        const pointFade = 1.0 - smootherstep(0.68, 1.0, actProg);
         if (pointFade <= 0.01) return;
 
         const slowBreath = 1.0 + 0.08 * Math.sin(simTimeSec * TAU * 0.35);
-        const dotR = Math.max(0.8, 2.6 * slowBreath * pointFade);
-        const glowR = dotR * 6.5;
+        const dotR = Math.max(0.9, 2.8 * slowBreath * pointFade);
+        const glowR = dotR * 7.5;
+
+        // Тонкое призрачное кольцо горизонта вокруг центральной точки
+        const horizonR = minSide * 0.055 * (1.0 - 0.65 * actProg);
+        ctx.strokeStyle = RenderPipeline.hexToRgba('#7dd3fc', 0.18 * pointFade);
+        ctx.lineWidth = 0.75;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(2.0, horizonR), 0, TAU);
+        ctx.stroke();
 
         const halo = ctx.createRadialGradient(cx, cy, 0.2, cx, cy, glowR);
-        halo.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.95 * pointFade));
-        halo.addColorStop(0.35, RenderPipeline.hexToRgba('#7dd3fc', 0.42 * pointFade));
+        halo.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.96 * pointFade));
+        halo.addColorStop(0.35, RenderPipeline.hexToRgba('#7dd3fc', 0.44 * pointFade));
         halo.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
         ctx.fillStyle = halo;
@@ -1660,16 +1893,23 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, dotR, 0, TAU);
         ctx.fill();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderZeroSilenceActC ---
 
     // ============================================================================
-    // РАЗДЕЛ 5. РЕНДЕРИНГ БАРАБАНОВ КВАНТОВОГО ОДОМЕТРА (АКТ D — LAYER 5)
+    // РАЗДЕЛ 5. РЕНДЕРИНГ БАРАБАНОВ КВАНТОВОГО ОДОМЕТРА НА ХОЛСТЕ (АКТ D — LAYER 5)
     // ============================================================================
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 5.1. РАЗЛЁТ СИМВОЛОВ ИЗ ТОЧКИ И СИНХРОНИЗАЦИЯ С DOM-ВИЗИТКОЙ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ renderCipherOdometerStage ---
     /**
-     * Отрисовывает 5 строк квантового одометра из cipherOdometerEngine:
-     * ИСПРАВЛЕНО: Полностью исключён ржаво-рыжий цвет (#f59e0b) при переборе;
-     * используется многослойная холодная палитра полутонов (жемчуг, ледяной циан,
-     * серебристый сланец, графит) с глубокими объёмными тенями.
+     * Отрисовывает атмосферную подложку и 3D-разлёт символов квантового одометра
+     * из центральной Точки Нуля (cipherOdometerEngine).
+     * По мере фиксации видимой семантической DOM-карточки (Layer5_CipherFinale.tsx)
+     * плавно убирает дублирующие символы на Canvas, чтобы текст визитки оставался
+     * идеально чётким и никогда не двоился.
      */
     private renderCipherOdometerStage(
         ctx: CanvasRenderingContext2D,
@@ -1679,18 +1919,11 @@ export class UniverseRenderer {
     ): void {
         const assemblyProgress = state.githubCardAssemblyProgress;
 
-        const cells: OdometerGlyphCellState[] = cipherOdometerEngine.evaluateCells(
-            w,
-            h,
-            assemblyProgress,
-            state.reducedMotion
-        );
-
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        const backdropR = Math.min(w, h) * 0.44;
+        const backdropR = Math.min(w, h) * 0.46;
         const backdropGrad = ctx.createRadialGradient(
             w * 0.5,
             h * 0.5,
@@ -1700,11 +1933,26 @@ export class UniverseRenderer {
             backdropR
         );
         const veilAlpha = Math.min(1.0, assemblyProgress * 1.35);
-        backdropGrad.addColorStop(0.0, `rgba(3, 7, 18, ${(0.84 * veilAlpha).toFixed(3)})`);
-        backdropGrad.addColorStop(0.65, `rgba(2, 5, 14, ${(0.56 * veilAlpha).toFixed(3)})`);
+        backdropGrad.addColorStop(0.0, `rgba(3, 7, 18, ${(0.82 * veilAlpha).toFixed(3)})`);
+        backdropGrad.addColorStop(0.65, `rgba(2, 5, 14, ${(0.54 * veilAlpha).toFixed(3)})`);
         backdropGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
         ctx.fillStyle = backdropGrad;
         ctx.fillRect(0, 0, w, h);
+
+        // Когда видимая DOM-визитка полностью развернулась (assemblyProgress >= 0.78),
+        // текст отображается чистым DOM-слоем Layer5_CipherFinale.tsx без дублирования на Canvas
+        const canvasParticlesFade = 1.0 - smootherstep(0.38, 0.78, assemblyProgress);
+        if (canvasParticlesFade <= 0.01) {
+            ctx.restore();
+            return;
+        }
+
+        const cells: OdometerGlyphCellState[] = cipherOdometerEngine.evaluateCells(
+            w,
+            h,
+            assemblyProgress,
+            state.reducedMotion
+        );
 
         const ghostTonePool = ['#64748b', '#475569', '#38bdf8', '#94a3b8'];
 
@@ -1717,9 +1965,8 @@ export class UniverseRenderer {
             ctx.scale(1.0, c.verticalScale);
 
             ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px "JetBrains Mono", "Fira Code", monospace`;
-            const breathAlpha = c.glyphBreathAlpha ?? 0.92;
+            const breathAlpha = (c.glyphBreathAlpha ?? 0.92) * canvasParticlesFade;
 
-            // Для вращающихся барабанов рисуем многослойные верхний и нижний полутоновые следы колеса с тенью
             if (!c.isLocked) {
                 const ghostOffset = c.fontSizePx * 0.72;
                 ctx.shadowColor = 'rgba(2, 6, 23, 0.96)';
@@ -1727,7 +1974,8 @@ export class UniverseRenderer {
                 ctx.shadowOffsetY = 3;
 
                 ctx.globalAlpha = 0.28 * breathAlpha;
-                ctx.fillStyle = ghostTonePool[(c.charIndex + c.lineIndex) % ghostTonePool.length];
+                ctx.fillStyle =
+                    ghostTonePool[(c.charIndex + c.lineIndex) % ghostTonePool.length];
                 ctx.fillText(
                     c.upperChar,
                     0,
@@ -1744,12 +1992,11 @@ export class UniverseRenderer {
                 );
             }
 
-            // Глубокая тень основного символа + многотоновая холодная подсветка без рыжего цвета
             ctx.shadowColor = c.shadowColor || 'rgba(2, 6, 23, 0.95)';
             ctx.shadowBlur = c.shadowBlur ?? 11;
             ctx.shadowOffsetY = c.isLocked ? 2 : 3;
 
-            ctx.globalAlpha = c.isLocked ? 0.97 : breathAlpha;
+            ctx.globalAlpha = (c.isLocked ? 0.97 : 1.0) * breathAlpha;
             if (c.lockFlash > 0.26) {
                 ctx.fillStyle = c.charIndex % 2 === 0 ? '#f8fafc' : '#bae6fd';
             } else if (c.lockFlash > 0.08) {
@@ -1769,18 +2016,32 @@ export class UniverseRenderer {
 
         ctx.restore();
     }
+    // --- КОНЕЦ ФУНКЦИИ renderCipherOdometerStage ---
 
     // ============================================================================
-    // РАЗДЕЛ 6. ГЛАВНЫЙ ЦИКЛ RAF, УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ И МОНТИРОВАНИЕ UI
+    // РАЗДЕЛ 6. ЗАЩИЩЁННЫЙ ГЛАВНЫЙ ЦИКЛ RAF И УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ
     // ============================================================================
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 6.1. МЕТОДЫ ЗАПУСКА И ОСТАНОВКИ РЕНДЕРЕРА (start, stop)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ start ---
+    /**
+     * Запускает главный цикл requestAnimationFrame рендерера.
+     */
     public start(): void {
         if (this.isRunning) return;
         this.isRunning = true;
         this.lastFrameTimeMs = performance.now();
         this.rafId = requestAnimationFrame(this.loop);
     }
+    // --- КОНЕЦ ФУНКЦИИ start ---
 
+    // --- НАЧАЛО ФУНКЦИИ stop ---
+    /**
+     * Останавливает главный цикл requestAnimationFrame рендерера.
+     */
     public stop(): void {
         this.isRunning = false;
         if (this.rafId) {
@@ -1788,117 +2049,155 @@ export class UniverseRenderer {
             this.rafId = 0;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ stop ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 6.2. ЗАЩИЩЁННЫЙ ЦИКЛ КАДРА loop (TRY / CATCH / FINALLY)
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ loop ---
+    /**
+     * Главный цикл кадра requestAnimationFrame.
+     * Обёрнут в защитный блок try / catch / finally, гарантирующий, что даже при
+     * возникновении нештатного исключения планировщик requestAnimationFrame продолжит
+     * работу и сцена никогда не зависнет на мёртвом кадре.
+     */
     private loop = (nowMs: number): void => {
         if (!this.isRunning) return;
 
-        const rawDtMs = Math.max(1.0, nowMs - this.lastFrameTimeMs);
-        this.lastFrameTimeMs = nowMs;
-        const clampedDtSec = Math.min(0.05, rawDtMs / 1000.0);
+        try {
+            const rawDtMs = Math.max(1.0, nowMs - this.lastFrameTimeMs);
+            this.lastFrameTimeMs = nowMs;
+            const clampedDtSec = Math.min(0.05, rawDtMs / 1000.0);
 
-        const state = universeStore.getState();
+            const state = universeStore.getState();
 
-        if (state.seed !== this.lastSeed) {
-            this.lastSeed = state.seed;
-            this.initProceduralBackgroundFields(state.seed);
-        }
-
-        if (
-            state.currentPhase !== this.lastTrackedPhase ||
-            state.singularityAct !== this.lastTrackedAct
-        ) {
-            this.lastTrackedPhase = state.currentPhase;
-            this.lastTrackedAct = state.singularityAct;
-            audioSync.transitionToPhase(state.currentPhase, state.singularityAct);
-            stressStore.setTargetStress(state.phaseMeta.baseEntropy);
-        }
-
-        const isActiveSim = !state.isPaused && !state.isTabHidden;
-        // Масштабируем simDtSec один раз здесь и передаём timeScale = 1.0 в simulation.update
-        const simDtSec = isActiveSim ? clampedDtSec * state.timeScale : 0.0;
-        const nextSimSec = state.telemetry.simulationTimeSec + simDtSec;
-        const nextPhaseElapsed = state.telemetry.phaseElapsedSec + simDtSec;
-
-        const audioSnap = audioSync.updateRealtimeModulation(
-            nextSimSec,
-            state.currentPhase,
-            state.singularityAct === 'ACT_C_ZERO_SILENCE'
-        );
-
-        if (isActiveSim && simDtSec > 0) {
-            stressStore.stepPhysics(simDtSec);
-            this.stepBackgroundFields(simDtSec, nextSimSec, state.seed);
-            this.simulation.update(
-                simDtSec,
-                state.currentPhase,
-                1.0,
-                state.gravityMultiplier,
-                nextSimSec
-            );
-        }
-
-        this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
-
-        const latestState = universeStore.getState();
-        const particles = this.getSimParticles();
-        const edges = this.getSimEdges();
-        const pulses = this.getSimPulses();
-        const caps = this.pipeline.getCapabilities();
-
-        if (latestState.singularityAct === 'RESTART_COLLAPSE') {
-            universeStore.updateTelemetry({
-                frameTimeMs: Number(rawDtMs.toFixed(1)),
-                simulationTimeSec: Number(nextSimSec.toFixed(3)),
-                phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
-                audioStatus: audioSnap.status,
-                silenceRmsDb: audioSnap.rmsDb,
-            });
-            if (universeStore.getState().restartElapsedSec >= 1.65) {
-                resourceLedger.disposeCycleResources();
-                universeStore.completeRestartToVoid();
+            if (state.seed !== this.lastSeed) {
+                this.lastSeed = state.seed;
+                this.initProceduralBackgroundFields(state.seed);
             }
-        } else if (isActiveSim) {
-            universeStore.updateTelemetry({
-                frameTimeMs: Number(rawDtMs.toFixed(1)),
-                activeParticles: particles.length,
-                activeConnections: edges.length,
-                activePulses: pulses.length,
-                simulationTimeSec: Number(nextSimSec.toFixed(3)),
-                phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
-                engineBackend: caps.activeBackend,
-                wasmStatus:
-                    integrationRegistry.getModule('wasm-physics')?.status === 'ready'
-                        ? 'WASM_SIMD_ACTIVE'
-                        : 'TS_FALLBACK',
-                pythonBackendStatus:
-                    integrationRegistry.getModule('server-ws')?.status === 'ready'
-                        ? 'WS_CONNECTED'
-                        : integrationRegistry.getModule('pyodide-graph')?.status === 'ready'
-                            ? 'PYODIDE_LOCAL'
-                            : 'CLIENT_ONLY',
-                audioStatus: audioSnap.status,
-                silenceRmsDb: audioSnap.rmsDb,
-            });
-        }
 
-        this.rafId = requestAnimationFrame(this.loop);
+            if (state.cycleCount !== this.lastCycleCount) {
+                this.lastCycleCount = state.cycleCount;
+                resourceLedger.disposeCycleResources();
+            }
+
+            if (
+                state.currentPhase !== this.lastTrackedPhase ||
+                state.singularityAct !== this.lastTrackedAct
+            ) {
+                this.lastTrackedPhase = state.currentPhase;
+                this.lastTrackedAct = state.singularityAct;
+                audioSync.transitionToPhase(state.currentPhase, state.singularityAct);
+                stressStore.setTargetStress(state.phaseMeta.baseEntropy);
+            }
+
+            const isActiveSim = !state.isPaused && !state.isTabHidden;
+            const simDtSec = isActiveSim ? clampedDtSec * state.timeScale : 0.0;
+            const nextSimSec = state.telemetry.simulationTimeSec + simDtSec;
+            const nextPhaseElapsed = state.telemetry.phaseElapsedSec + simDtSec;
+
+            // Музыка звучит непрерывно на протяжении всего цикла без принудительного глушения
+            const audioSnap = audioSync.updateRealtimeModulation(
+                nextSimSec,
+                state.currentPhase,
+                false
+            );
+
+            if (isActiveSim && simDtSec > 0) {
+                stressStore.stepPhysics(simDtSec);
+                this.stepBackgroundFields(simDtSec, nextSimSec, state.seed);
+                this.simulation.update(
+                    simDtSec,
+                    state.currentPhase,
+                    1.0,
+                    state.gravityMultiplier,
+                    nextSimSec
+                );
+            }
+
+            this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
+
+            const latestState = universeStore.getState();
+            const particles = this.getSimParticles();
+            const edges = this.getSimEdges();
+            const pulses = this.getSimPulses();
+            const caps = this.pipeline.getCapabilities();
+
+            if (latestState.singularityAct === 'RESTART_COLLAPSE') {
+                universeStore.updateTelemetry({
+                    frameTimeMs: Number(rawDtMs.toFixed(1)),
+                    simulationTimeSec: Number(nextSimSec.toFixed(3)),
+                    phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
+                    audioStatus: audioSnap.status,
+                    silenceRmsDb: audioSnap.rmsDb,
+                });
+            } else if (isActiveSim) {
+                universeStore.updateTelemetry({
+                    frameTimeMs: Number(rawDtMs.toFixed(1)),
+                    activeParticles: particles.length,
+                    activeConnections: edges.length,
+                    activePulses: pulses.length,
+                    simulationTimeSec: Number(nextSimSec.toFixed(3)),
+                    phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
+                    engineBackend: caps.activeBackend,
+                    wasmStatus:
+                        integrationRegistry.getModule('wasm-physics')?.status === 'ready'
+                            ? 'WASM_SIMD_ACTIVE'
+                            : 'TS_FALLBACK',
+                    pythonBackendStatus:
+                        integrationRegistry.getModule('server-ws')?.status === 'ready'
+                            ? 'WS_CONNECTED'
+                            : integrationRegistry.getModule('pyodide-graph')?.status === 'ready'
+                                ? 'PYODIDE_LOCAL'
+                                : 'CLIENT_ONLY',
+                    audioStatus: audioSnap.status,
+                    silenceRmsDb: audioSnap.rmsDb,
+                });
+            }
+
+            this.consecutiveFrameErrors = 0;
+        } catch (err: unknown) {
+            this.consecutiveFrameErrors++;
+            if (this.consecutiveFrameErrors <= 3) {
+                const msg =
+                    err instanceof Error ? err.message : 'Неизвестное исключение кадра';
+                const storeWithReport = universeStore as unknown as {
+                    reportRendererError?: (m: string) => void;
+                    addTerminalLog: (m: string, tag?: string) => void;
+                };
+                if (storeWithReport.reportRendererError) {
+                    storeWithReport.reportRendererError(msg);
+                } else {
+                    storeWithReport.addTerminalLog(msg, 'renderer:error');
+                }
+            }
+        } finally {
+            if (this.isRunning) {
+                this.rafId = requestAnimationFrame(this.loop);
+            }
+        }
     };
+    // --- КОНЕЦ ФУНКЦИИ loop ---
 }
 
 export let activeRenderer: UniverseRenderer | null = null;
 
+// --- НАЧАЛО ФУНКЦИИ getUniverseRenderer ---
+/**
+ * Возвращает активный экземпляр рендерера Вселенной.
+ */
 export function getUniverseRenderer(): UniverseRenderer | null {
     return activeRenderer;
 }
+// --- КОНЕЦ ФУНКЦИИ getUniverseRenderer ---
 
 // ============================================================================
-// РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР СОСЕДНИХ ЭЛЕМЕНТОВ В УГЛОВЫХ ПАНЕЛЯХ
-// При наведении курсора на элемент в .brand-card, .phase-timeline-dock или
-// .controls-dock сам элемент под курсором остаётся неподвижным и чётким,
-// а соседние элементы в ряду плавно перебирают знаки в холодной гамме с тенями.
+// РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
 // ============================================================================
 
-const CORNER_SCRAMBLE_GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙◊◈';
+const CORNER_SCRAMBLE_GLYPHS =
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙◊◈';
 const CORNER_COLD_TONES: ReadonlyArray<{ color: string; shadow: string }> = [
     {
         color: '#f8fafc',
@@ -1924,17 +2223,30 @@ const CORNER_COLD_TONES: ReadonlyArray<{ color: string; shadow: string }> = [
 
 const activeScrambleTimers = new WeakMap<HTMLElement, number>();
 
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 7.1. УПРАВЛЕНИЕ КАНОНИЧЕСКИМ ТЕКСТОМ И ПЕРЕБОРОМ СОСЕДНИХ ЭЛЕМЕНТОВ
+// ----------------------------------------------------------------------------
+
+// --- НАЧАЛО ФУНКЦИИ setCanonicalElementText ---
+/**
+ * Сохраняет эталонный текст элемента в data-canonical-text и обновляет textContent,
+ * если элемент в данный момент не находится в фазе квантового перебора.
+ */
 function setCanonicalElementText(el: HTMLElement | null, nextText: string): void {
     if (!el) return;
     const prevCanonical = el.dataset.canonicalText;
     el.dataset.canonicalText = nextText;
 
-    // Если элемент сейчас не в процессе квантового перебора (или его канонический текст сменился), обновляем сразу
     if (el.dataset.scrambling !== '1' || prevCanonical !== nextText) {
         el.textContent = nextText;
     }
 }
+// --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
 
+// --- НАЧАЛО ФУНКЦИИ stopElementScramble ---
+/**
+ * Мгновенно останавливает квантовый перебор на элементе и возвращает его точный текст.
+ */
 function stopElementScramble(el: HTMLElement): void {
     const existingTimer = activeScrambleTimers.get(el);
     if (existingTimer !== undefined) {
@@ -1948,7 +2260,13 @@ function stopElementScramble(el: HTMLElement): void {
         el.textContent = el.dataset.canonicalText;
     }
 }
+// --- КОНЕЦ ФУНКЦИИ stopElementScramble ---
 
+// --- НАЧАЛО ФУНКЦИИ startNeighborElementScramble ---
+/**
+ * Запускает замедленный, плавный квантовый перебор на соседнем элементе угловой панели
+ * (шаг 88 мс, 10 шагов) с холодной полутоновой подсветкой без мельтешения мелкого шрифта.
+ */
 function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): void {
     stopElementScramble(el);
 
@@ -1985,8 +2303,6 @@ function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): vo
             ) {
                 out += ch;
             } else if ((i + step + siblingIndex) % 3 === 0) {
-                // Меняем только часть незафиксированных символов на каждом шаге,
-                // чтобы мелкий шрифт плавно переливался, а не дёргался
                 const gIdx =
                     (i * 7 + step * 3 + siblingIndex * 5) %
                     CORNER_SCRAMBLE_GLYPHS.length;
@@ -2007,7 +2323,9 @@ function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): vo
 
     activeScrambleTimers.set(el, timerId);
 }
+// --- КОНЕЦ ФУНКЦИИ startNeighborElementScramble ---
 
+// --- НАЧАЛО ФУНКЦИИ bindCornerPanelsNeighborScramble ---
 /**
  * Привязывает ко всем угловым панелям (.brand-card, #ui-phase-buttons, .controls-dock)
  * инверсный отклик: элемент под курсором мыши мгновенно фиксируется и стоит на месте,
@@ -2030,10 +2348,8 @@ function bindCornerPanelsNeighborScramble(): void {
             }
 
             el.addEventListener('pointerenter', () => {
-                // Выбранный под мышью элемент остаётся строго на месте и читается без искажений
                 stopElementScramble(el);
 
-                // Все соседние элементы в этой группе откликаются квантовым перебором
                 items.forEach((sibling, sIdx) => {
                     if (sibling !== el) {
                         startNeighborElementScramble(sibling, sIdx);
@@ -2043,7 +2359,13 @@ function bindCornerPanelsNeighborScramble(): void {
         });
     });
 }
+// --- КОНЕЦ ФУНКЦИИ bindCornerPanelsNeighborScramble ---
 
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 7.2. СИНХРОНИЗАЦИЯ ЭЛЕМЕНТОВ HUD С СОСТОЯНИЕМ ХРАНИЛИЩА
+// ----------------------------------------------------------------------------
+
+// --- НАЧАЛО ФУНКЦИИ syncHudDomWithState ---
 /**
  * Синхронизирует DOM-элементы паспорта фазы, шкалы прогресса и кнопок управления
  * в index.astro с актуальным состоянием UniverseStore.
@@ -2134,11 +2456,19 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
         btnXRay.classList.toggle('active-toggle', state.layers.layer5_truthXRayMode);
     }
 }
+// --- КОНЕЦ ФУНКЦИИ syncHudDomWithState ---
 
+// ----------------------------------------------------------------------------
+// ПОДРАЗДЕЛ 7.3. ГЛАВНАЯ ФУНКЦИЯ КЛИЕНТСКОЙ ИНИЦИАЛИЗАЦИИ (bootstrapUniverseV2)
+// ----------------------------------------------------------------------------
+
+// --- НАЧАЛО ФУНКЦИИ bootstrapUniverseV2 ---
 /**
  * Точка входа клиентской графической подсистемы: инициализирует холст #universe-canvas,
  * монтирует реактивные острова телеметрии Layer 2–5, привязывает кнопки управления,
  * активирует инверсный перебор соседних элементов в угловых панелях и запускает цикл симуляции.
+ * Подписки UI регистрируются как страничные (registerPageDisposable), чтобы оставаться
+ * активными после любого числа перезапусков Restart Universe.
  */
 export function bootstrapUniverseV2(): void {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -2160,17 +2490,22 @@ export function bootstrapUniverseV2(): void {
     const unsubL4 = mountLayer4Terminal(document.getElementById('layer4-terminal-root'));
     const unsubL5 = mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
 
-    resourceLedger.registerCycleDisposable(unsubL2);
-    resourceLedger.registerCycleDisposable(unsubL3);
-    resourceLedger.registerCycleDisposable(unsubL4);
-    resourceLedger.registerCycleDisposable(unsubL5);
-
     // 2. Подписываем обновление верхнего паспорта фазы и нижнего дока кнопок на UniverseStore
     const unsubHud = universeStore.subscribe((nextState: Readonly<UniverseState>) => {
         syncHudDomWithState(nextState);
     });
-    resourceLedger.registerCycleDisposable(unsubHud);
     syncHudDomWithState(universeStore.getState());
+
+    const ledgerWithPage = resourceLedger as unknown as {
+        registerPageDisposable?: (fn: () => void) => void;
+    };
+    if (ledgerWithPage.registerPageDisposable) {
+        ledgerWithPage.registerPageDisposable(unsubL2);
+        ledgerWithPage.registerPageDisposable(unsubL3);
+        ledgerWithPage.registerPageDisposable(unsubL4);
+        ledgerWithPage.registerPageDisposable(unsubL5);
+        ledgerWithPage.registerPageDisposable(unsubHud);
+    }
 
     // 3. Подключаем инверсный квантовый перебор соседей при наведении на угловые панели
     bindCornerPanelsNeighborScramble();
@@ -2294,6 +2629,7 @@ export function bootstrapUniverseV2(): void {
 
     renderer.start();
 }
+// --- КОНЕЦ ФУНКЦИИ bootstrapUniverseV2 ---
 
 if (typeof window !== 'undefined') {
     if (document.readyState === 'loading') {

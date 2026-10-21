@@ -2,17 +2,17 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
 // НАЗНАЧЕНИЕ: Движок квантового одометра и персональной визитки v2.5 (MASTER 05)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Канонические строки визитки (CANONICAL_FINALE_LINES) с выделенной первой
-//    строкой имени и фамилии автора ('DUBNOV ALEXEY') и 10-тоновая холодная
-//    палитра полутонов и глубоких теней (MONOCHROME_NEBULA_PALETTE).
-// 2. Контракт состояния ячейки барабана (OdometerGlyphCellState).
-// 3. Класс CipherOdometerEngine:
-//    - развёртывание всех строк визитки строго из центральной Точки Нуля (cx, cy),
-//      в которую перед этим схлопнулась Чёрная дыра;
-//    - синхронизация дыхания карточки (cardHeartbeat) с реальной музыкальной
-//      огибающей cosmic_ambient.mp3 через audioSync;
-//    - интерактивный квантовый ре-спин символов при наведении курсора мыши.
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Канонические строки визитки (CANONICAL_FINALE_LINES) с выделенной
+//             первой строкой автора ('DUBNOV ALEXEY'), честным описанием стека
+//             и 10-тоновой холодной палитрой полутонов (MONOCHROME_NEBULA_PALETTE).
+//   РАЗДЕЛ 2. Контракт состояния ячейки барабана (OdometerGlyphCellState).
+//   РАЗДЕЛ 3. Класс CipherOdometerEngine:
+//     - Подраздел 3.1. Накопление монотонной фазы вращения с ограниченной частотой
+//                      (без роста скорости от uptime страницы).
+//     - Подраздел 3.2. Развёртывание символов строго из центральной Точки Нуля (cx, cy)
+//                      и верификация отсутствия клиппинга на ширинах 320..1920 px.
 // ============================================================================
 
 import { DeterministicPRNG } from '../core/prng';
@@ -27,7 +27,7 @@ export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, s
     'DUBNOV ALEXEY',
     'POLYGLOT ARCHITECTURE : FROM ZERO TO ZERO (108 SEC)',
     '∑ ∆ Ω Ψ Φ Λ Π Ξ Θ ∇ ∂ ∫ ≈ ≠ ≡ ⊕ ⊗ ⊙ ◊ ◈ ✶ ✴ ⟨ ∞ ⟩',
-    'ASTRO · TYPESCRIPT · REACT · WEBGPU/WGSL · RUST/WASM · PYTHON',
+    'ASTRO · TYPESCRIPT · CUSTOM JSX DOM · CANVAS2D/WGSL · RUST/WASM · PYTHON',
     'SYMPLECTIC PHYSICS · KURAMOTO SYNC · GABRIEL-MURRAY NEXUS',
 ];
 
@@ -129,12 +129,21 @@ export class CipherOdometerEngine {
     private pointerX = -9999;
     private pointerY = -9999;
     private readonly hoverExcitedUntilMs: Map<number, number> = new Map();
+    private accumulatedSpinPhase = 0;
+    private lastEvalTimeSec = -1;
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.1. НАКОПЛЕНИЕ ОГРАНИЧЕННОЙ ФАЗЫ И ТИПОГРАФИКА СТРОК
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ notifyPointerHover ---
     public notifyPointerHover(clientX: number, clientY: number): void {
         this.pointerX = clientX;
         this.pointerY = clientY;
     }
+    // --- КОНЕЦ ФУНКЦИИ notifyPointerHover ---
 
+    // --- НАЧАЛО ФУНКЦИИ getLineTypography ---
     private getLineTypography(
         lineIndex: number,
         charCount: number,
@@ -168,8 +177,8 @@ export class CipherOdometerEngine {
             colorHex = '#cbd5e1';
             fontWeight = '600';
         } else if (lineIndex === 3) {
-            idealFontPx = 15.2;
-            idealStepRatio = 0.67;
+            idealFontPx = 14.2;
+            idealStepRatio = 0.66;
             colorHex = '#e2e8f0';
             fontWeight = '600';
         } else {
@@ -189,26 +198,44 @@ export class CipherOdometerEngine {
 
         return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
+    // --- КОНЕЦ ФУНКЦИИ getLineTypography ---
 
-    private computeChaoticWheelPosition(
+    // --- НАЧАЛО ФУНКЦИИ advanceBoundedSpinPhase ---
+    /**
+     * Монотонно накапливает фазу вращения барабанов через приращение dtSec
+     * с жёстко ограниченной положительной частотой [1.5 .. 3.2] Гц.
+     * Скорость никогда не растёт с увеличением uptime страницы (0 с, 100 с, 1000 с).
+     */
+    private advanceBoundedSpinPhase(
         liveTimeSec: number,
-        r1: number,
-        r2: number,
-        charIndex: number,
-        reducedMotion: boolean
+        reducedMotion: boolean,
+        heartbeat: number
     ): number {
+        if (this.lastEvalTimeSec < 0 || liveTimeSec < this.lastEvalTimeSec) {
+            this.lastEvalTimeSec = liveTimeSec;
+        }
+        const rawDt = liveTimeSec - this.lastEvalTimeSec;
+        this.lastEvalTimeSec = liveTimeSec;
+        const clampedDt = Math.max(0, Math.min(0.05, rawDt));
+
         if (reducedMotion) {
-            return liveTimeSec * 1.1 + charIndex * 0.25 + r1 * 6.0;
+            this.accumulatedSpinPhase += clampedDt * 0.65;
+            return this.accumulatedSpinPhase;
         }
 
-        const baseRate = 2.15 + r1 * 1.75;
-        const slowWave = 1.38 * Math.sin(liveTimeSec * 0.78 + r2 * 6.28 + charIndex * 0.21);
-        const midWave = 0.86 * Math.cos(liveTimeSec * 1.94 - r1 * 4.71 + charIndex * 0.35);
-        const fineWave = 0.42 * Math.sin(liveTimeSec * 3.85 + (r1 + r2) * 5.1);
-
-        return liveTimeSec * baseRate + slowWave + midWave + fineWave + r2 * 14.0;
+        // Положительная, строго ограниченная частота вращения [1.55 .. 3.15] шагов/с
+        const lfoMod = 0.55 * Math.sin(liveTimeSec * 0.72) + 0.25 * Math.cos(liveTimeSec * 1.35);
+        const boundedRateHz = Math.max(1.55, Math.min(3.15, 2.25 + lfoMod + heartbeat * 0.35));
+        this.accumulatedSpinPhase += clampedDt * boundedRateHz;
+        return this.accumulatedSpinPhase;
     }
+    // --- КОНЕЦ ФУНКЦИИ advanceBoundedSpinPhase ---
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 3.2. ВЫЧИСЛЕНИЕ ЯЧЕЕК ОДОМЕТРА И ПРОВЕРКА ВЁРСТКИ
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ evaluateCells ---
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
@@ -222,8 +249,13 @@ export class CipherOdometerEngine {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
-        // Синхронизируем дыхание визитки с реальной музыкальной огибающей cosmic_ambient.mp3
         const audioSnap = audioSync.getSnapshot(liveTimeSec);
+        const baseSpinPhase = this.advanceBoundedSpinPhase(
+            liveTimeSec,
+            reducedMotion,
+            audioSnap.heartbeat
+        );
+
         const breathEnvelope = reducedMotion ? 0.0 : smootherstep(0.6, 0.95, p);
         const musicBreathBoost = 1.0 + audioSnap.heartbeat * 0.45;
         const cardHeartbeat =
@@ -232,9 +264,7 @@ export class CipherOdometerEngine {
             (0.009 * musicBreathBoost * Math.sin(liveTimeSec * 1.35) +
                 0.004 * Math.cos(liveTimeSec * 2.7));
         const cardFloatY = breathEnvelope * Math.cos(liveTimeSec * 1.1) * 1.6;
-
-        // В самом начале выхода из центральной точки масштаб символов растёт от 0.15 до 1.0
-        const emergeScale = 0.15 + 0.85 * smootherstep(0.0, 0.28, p);
+        const emergeScale = 0.12 + 0.88 * smootherstep(0.0, 0.32, p);
 
         const lineOffsetsY = [-98, -50, -4, 42, 82];
         const cells: OdometerGlyphCellState[] = [];
@@ -261,16 +291,14 @@ export class CipherOdometerEngine {
                 const r1 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 7);
                 const r2 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 13);
 
-                // Все символы визитки выходят строго из центральной Точки Нуля (cx, cy),
-                // куда перед этим схлопнулась Чёрная дыра (радиус зарождения 0..5 px)
                 const startAngle = r1 * Math.PI * 2;
-                const pinpointRadius = r2 * 4.5;
+                const pinpointRadius = r2 * 4.0;
                 const originX = cx + Math.cos(startAngle) * pinpointRadius;
                 const originY = cy + Math.sin(startAngle) * pinpointRadius;
 
                 const gatherT = smootherstep(0.0, 0.46, p);
                 const spiralArc =
-                    Math.sin(gatherT * Math.PI) * (r1 - 0.5) * 28.0 * (1.0 - gatherT);
+                    Math.sin(gatherT * Math.PI) * (r1 - 0.5) * 26.0 * (1.0 - gatherT);
 
                 const currentX =
                     originX + (targetX - originX) * gatherT + spiralArc;
@@ -298,31 +326,28 @@ export class CipherOdometerEngine {
                     p >= Math.min(0.82, lockThreshold);
 
                 const hoverSpeedBoost = isHoverSpinning
-                    ? smootherstep(0, 860, hoverRemainingMs) * 1.85
+                    ? smootherstep(0, 860, hoverRemainingMs) * 1.65
                     : 0.0;
 
-                const chaoticWheelPos =
-                    this.computeChaoticWheelPosition(
-                        liveTimeSec,
-                        r1,
-                        r2,
-                        cIdx,
-                        reducedMotion
-                    ) + hoverSpeedBoost;
+                const cellWheelPos =
+                    baseSpinPhase * (0.85 + r1 * 0.35) +
+                    cIdx * 0.28 +
+                    r2 * 12.0 +
+                    hoverSpeedBoost;
 
-                const baseGlyphIdx = Math.floor(chaoticWheelPos) % nGlyphs;
-                const wheelPhaseFrac = isLocked ? 0 : (chaoticWheelPos % 1.0) - 0.5;
+                const baseGlyphIdx = Math.floor(cellWheelPos) % nGlyphs;
+                const wheelPhaseFrac = isLocked ? 0 : (cellWheelPos % 1.0) - 0.5;
 
                 const individualBreath = isEndlessLine
                     ? 0.92 +
-                    0.12 *
+                    0.1 *
                     musicBreathBoost *
-                    Math.sin(liveTimeSec * 1.85 + cIdx * 0.44 + r1 * 5.0)
+                    Math.sin(liveTimeSec * 1.65 + cIdx * 0.44 + r1 * 5.0)
                     : 1.0;
                 const verticalScale =
                     (isLocked
                         ? cardHeartbeat
-                        : Math.max(0.52, Math.cos(wheelPhaseFrac * 1.08)) *
+                        : Math.max(0.54, Math.cos(wheelPhaseFrac * 1.05)) *
                         individualBreath) * emergeScale;
 
                 const primaryChar = isLocked
@@ -343,8 +368,7 @@ export class CipherOdometerEngine {
                 if (isEndlessLine || isHoverSpinning || !isLocked) {
                     const shadeWave =
                         Math.floor(
-                            liveTimeSec * 2.1 +
-                            Math.sin(liveTimeSec * 1.1 + cIdx * 0.45) * 2.6 +
+                            baseSpinPhase * 0.9 +
                             cIdx * 0.7 +
                             lineIdx * 1.7 +
                             r1 * 5.0
@@ -355,12 +379,12 @@ export class CipherOdometerEngine {
                     shadowColor = shade.shadowColor;
                     shadowBlur = shade.shadowBlur;
                     glyphBreathAlpha =
-                        (0.66 +
-                            0.32 *
+                        (0.68 +
+                            0.3 *
                             (0.5 +
                                 0.5 *
                                 Math.sin(
-                                    liveTimeSec * 1.85 + cIdx * 0.55 + r2 * 4.0
+                                    liveTimeSec * 1.65 + cIdx * 0.55 + r2 * 4.0
                                 ))) *
                         smootherstep(0.0, 0.18, p);
                 }
@@ -412,7 +436,9 @@ export class CipherOdometerEngine {
 
         return cells;
     }
+    // --- КОНЕЦ ФУНКЦИИ evaluateCells ---
 
+    // --- НАЧАЛО ФУНКЦИИ verifyFinalLockedText ---
     public verifyFinalLockedText(viewportWidth = 1280, viewportHeight = 720): boolean {
         this.pointerX = -9999;
         this.pointerY = -9999;
@@ -427,6 +453,7 @@ export class CipherOdometerEngine {
                 c.targetX <= viewportWidth - 8
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ verifyFinalLockedText ---
 }
 
 export const cipherOdometerEngine = new CipherOdometerEngine();
