@@ -294,7 +294,7 @@ class FinaleCardDomAnimator {
                 }
             }
 
-            // ИСПРАВЛЕНО (Аудит P0 #2): Фаза бесконечной центральной строки накапливается
+            // Фаза бесконечной центральной строки накапливается
             // через dtSec * boundedRateHz (строго в диапазоне 1.8..3.2 шага/с).
             // Скорость всегда положительна, комфортна для глаз и не растёт со временем страницы.
             if (isSimActive && !state.reducedMotion) {
@@ -302,8 +302,8 @@ class FinaleCardDomAnimator {
                     0.45 * Math.sin(this.lfoClockSec * 0.65) +
                     0.25 * Math.cos(this.lfoClockSec * 1.4);
                 const boundedRateHz = Math.max(
-                    1.8,
-                    Math.min(3.2, 2.35 + lfoWave + audioSnap.heartbeat * 0.35)
+                    5.5,
+                    Math.min(9.5, 7.2 + lfoWave * 2.0 + audioSnap.heartbeat * 0.8)
                 );
                 this.accumulatedQuantumPhase += dtSec * boundedRateHz;
             }
@@ -317,7 +317,7 @@ class FinaleCardDomAnimator {
                     const baseLine = CANONICAL_FINALE_LINES[2];
                     const chars = baseLine.split('');
                     for (let i = 0; i < chars.length; i++) {
-                        if (chars[i] !== ' ' && (i + qStep) % 5 === 0) {
+                        if (chars[i] !== ' ' && (i + qStep) % 3 === 0) {
                             const gIdx =
                                 (i * 11 + qStep * 3) % SCRAMBLE_GLYPHS.length;
                             chars[i] = SCRAMBLE_GLYPHS[gIdx];
