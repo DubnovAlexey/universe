@@ -4,7 +4,7 @@
 // НАЗНАЧЕНИЕ: Главный графический и физический конвейер рендеринга UNIVERSE v2.5
 //             и клиентский оркестратор интерактивных слоёв (MASTER 00–05)
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// ПОДРОБНОЕ ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ (ДЛЯ ОБСЛУЖИВАНИЯ):
 //
 // РАЗДЕЛ 1. МАТЕМАТИЧЕСКИЕ УТИЛИТЫ, ШУМОВЫЕ ПОЛЯ И СТРУКТУРЫ ФОНОВЫХ ЯВЛЕНИЙ
 //   - Подраздел 1.1. Базовые функции интерполяции и ограничения (clamp, lerp).
@@ -37,14 +37,16 @@
 //   - Подраздел 3.7. Рендеринг многоэшелонных частиц, сом нейронов и боке Z0..Z3
 //                    (renderMultiEchelonParticles).
 //
-// РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И ГЛУБИННЫЙ ЭШЕЛОН Z4
+// РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И СИНГУЛЯРНОСТЬ ФАЗЫ 05
 //   - Подраздел 4.1. Рендеринг апертуры BREACH LENS, геодезической сетки X-RAY,
-//                    микротрещин и суб-нейронных токов Z4 (renderBreachLensAndSubQuantumZ4).
+//                    микротрещин и суб-нейронных токов Z4 со сжатием в точку в Акте B
+//                    (renderBreachLensAndSubQuantumZ4).
 //   - Подраздел 4.2. Рендеринг бесконтурных парящих выносок узлов
 //                    (renderBorderlessNodeCallout).
 //   - Подраздел 4.3. Рендеринг 7-оболочечной короны «Кошачьего глаза» NGC 6543,
-//                    Чёрной дыры и её полного сжатия в точку (renderSingularityCoronaAndBlackHole).
-//   - Подраздел 4.4. Рендеринг центральной микро-точки и кольца горизонта в Акте C
+//                    Чёрной дыры и её полного сжатия в Точку Нуля
+//                    (renderSingularityCoronaAndBlackHole).
+//   - Подраздел 4.4. Рендеринг импульса центральной микро-точки перед вылетом визитки
 //                    (renderZeroSilenceActC).
 //
 // РАЗДЕЛ 5. РЕНДЕРИНГ БАРАБАНОВ КВАНТОВОГО ОДОМЕТРА НА ХОЛСТЕ (АКТ D — LAYER 5)
@@ -53,8 +55,8 @@
 //
 // РАЗДЕЛ 6. ЗАЩИЩЁННЫЙ ГЛАВНЫЙ ЦИКЛ RAF И УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ
 //   - Подраздел 6.1. Методы запуска и остановки рендерера (start, stop).
-//   - Подраздел 6.2. Защищённый цикл кадра loop (try / catch / finally) с защитой
-//                    от остановки RAF и синхронизацией перезапуска цикла.
+//   - Подраздел 6.2. Защищённый цикл кадра loop (try / catch / finally) с единой
+//                    точкой продвижения часов и защитой от остановки RAF.
 //
 // РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
 //   - Подраздел 7.1. Функции управления каноническим текстом и плавным перебором
@@ -585,11 +587,11 @@ export class UniverseRenderer {
         const phase = state.currentPhase;
         const act = state.singularityAct;
 
-        // Специальный режим Акта C (93.0–95.5 с): сохраняем тонкое фоновое дыхание
-        // космоса и рисуем центральную микро-точку перед выходом из неё визитки
+        // Короткий 0.45-секундный импульс максимального сжатия в Точке Нуля (Акт C)
+        // непосредственно перед вылетом из неё визитки DUBNOV ALEXEY
         if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
             ctx.save();
-            ctx.globalAlpha = 0.24;
+            ctx.globalAlpha = 0.36;
             this.renderSpiralDustAndCanyons(
                 ctx,
                 cx,
@@ -615,7 +617,7 @@ export class UniverseRenderer {
             phase === '05_SINGULARITY' &&
             (act === 'ACT_D_GITHUB_CARD' || act === 'RESTART_COLLAPSE');
         const sceneVisibility = isOdometerStage
-            ? Math.max(0.2, 1.0 - state.githubCardAssemblyProgress * 0.76)
+            ? Math.max(0.32, 1.0 - state.githubCardAssemblyProgress * 0.58)
             : 1.0;
 
         const particles = this.getSimParticles();
@@ -728,7 +730,7 @@ export class UniverseRenderer {
 
         ctx.restore();
 
-        // 10. Квантовый одометр на холсте (эффект разлёта из центральной точки в Акте D)
+        // 10. Квантовый одометр на холсте (разлёт символов из Точки Нуля в Акте D)
         if (isOdometerStage) {
             this.renderCipherOdometerStage(ctx, w, h, state);
         }
@@ -1143,12 +1145,14 @@ export class UniverseRenderer {
                     ? 0.25 + phaseProgress * 0.45
                     : phase === '01_VOID'
                         ? 0.16
-                        : 0.48;
+                        : 0.42;
 
         ctx.save();
 
         for (let i = 0; i < edges.length; i++) {
             const e = edges[i];
+            if (e.arcLength < 8.0) continue;
+
             const revealBoost = Math.max(baseGraphWeight, e.truthVisibility * 0.95);
             const alpha = clamp(
                 (e.edgeClass === 'AXON_TRUNK'
@@ -1306,7 +1310,7 @@ export class UniverseRenderer {
                     : p.depthTier === 'BACKGROUND'
                         ? 0.75
                         : 1.0),
-                0.12,
+                0.08,
                 0.98
             );
 
@@ -1377,7 +1381,7 @@ export class UniverseRenderer {
     // --- КОНЕЦ ФУНКЦИИ renderMultiEchelonParticles ---
 
     // ============================================================================
-    // РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И ГЛУБИННЫЙ ЭШЕЛОН Z4
+    // РАЗДЕЛ 4. ОРГАНИЧЕСКАЯ ОПТИКА МЕМБРАНЫ BREACH LENS И СИНГУЛЯРНОСТЬ ФАЗЫ 05
     // ============================================================================
 
     // ------------------------------------------------------------------------
@@ -1388,6 +1392,8 @@ export class UniverseRenderer {
     /**
      * Отрисовывает мембрану BREACH LENS, криволинейные геодезические клеточки рентгена,
      * микротрещины и глубинный суб-квантовый слой Z4 («обратную сторону Вселенной»).
+     * ИСПРАВЛЕНО: В Акте B (ACT_B_LOGIC) радиус схождения оптики сжимается строго в 0 px
+     * вместе с Чёрной дырой, поэтому на экране никогда не застревает гигантский статичный круг.
      */
     private renderBreachLensAndSubQuantumZ4(
         ctx: CanvasRenderingContext2D,
@@ -1401,25 +1407,53 @@ export class UniverseRenderer {
         audioSnap: AudioModulationSnapshot
     ): void {
         const sState = stressStore.getState();
-        const fullXRay =
-            state.layers.layer5_truthXRayMode || state.opticalWeights.logicConvergence > 0.15;
+        const userFullXRay = state.layers.layer5_truthXRayMode;
+        const isLogicActB =
+            state.currentPhase === '05_SINGULARITY' &&
+            state.singularityAct === 'ACT_B_LOGIC';
 
-        const activeRadius = fullXRay
-            ? Math.min(w, h) * 0.44
-            : sState.currentBreachRadius;
-        const revealStrength = fullXRay
-            ? Math.max(0.85, state.opticalWeights.logicConvergence)
-            : Math.max(
-                sState.revealIntensity,
-                sState.isPointerInside ? 0.42 : 0.0
-            );
-
-        if (activeRadius < 6.0 || revealStrength < 0.02) {
+        // В Акте D (во время показа визитки) линза рентгена отключена, если пользователь
+        // явно не включил кнопку X-RAY и не зажимает кнопку мыши
+        if (
+            state.currentPhase === '05_SINGULARITY' &&
+            (state.singularityAct === 'ACT_D_GITHUB_CARD' ||
+                state.singularityAct === 'RESTART_COLLAPSE') &&
+            !userFullXRay &&
+            !sState.isBreaching
+        ) {
             return;
         }
 
-        const lx = fullXRay && !sState.isPointerInside ? cx : sState.lensX;
-        const ly = fullXRay && !sState.isPointerInside ? cy : sState.lensY;
+        let activeRadius = sState.currentBreachRadius;
+        let revealStrength = Math.max(
+            sState.revealIntensity,
+            sState.isPointerInside ? 0.42 : 0.0
+        );
+
+        if (userFullXRay) {
+            activeRadius = Math.min(w, h) * 0.44;
+            revealStrength = 0.88;
+        } else if (isLogicActB) {
+            // Плавное сжатие радиуса оптического кольца из 42% экрана строго в 0 px (Точку Нуля)
+            const collapseT = smootherstep(0.05, 0.98, state.singularityActProgress);
+            const shrinkEnv = Math.pow(1.0 - collapseT, 1.85);
+            activeRadius = Math.max(
+                sState.currentBreachRadius,
+                Math.min(w, h) * 0.42 * shrinkEnv
+            );
+            revealStrength = Math.max(
+                revealStrength,
+                Math.sin(collapseT * Math.PI) * 0.78
+            );
+        }
+
+        if (activeRadius < 5.0 || revealStrength < 0.02) {
+            return;
+        }
+
+        const useCenterLock = (userFullXRay || isLogicActB) && !sState.isPointerInside;
+        const lx = useCenterLock ? cx : sState.lensX;
+        const ly = useCenterLock ? cy : sState.lensY;
 
         ctx.save();
 
@@ -1553,17 +1587,18 @@ export class UniverseRenderer {
             ctx.beginPath();
             for (let s = s0; s <= s1; s++) {
                 const theta = (s / rimSegs) * TAU;
-                const deformedR = fullXRay
-                    ? activeRadius *
-                    (1.0 + 0.03 * Math.sin(theta * 4.0 + simTimeSec * 1.8))
-                    : stressStore.getDeformedLensRadiusAtAngle(theta, simTimeSec) *
-                    (1.0 +
-                        0.028 *
-                        fbm2D(
-                            Math.cos(theta) * 2.0,
-                            Math.sin(theta) * 2.0 + simTimeSec * 0.5,
-                            3
-                        ));
+                const deformedR =
+                    userFullXRay || isLogicActB
+                        ? activeRadius *
+                        (1.0 + 0.03 * Math.sin(theta * 4.0 + simTimeSec * 1.8))
+                        : stressStore.getDeformedLensRadiusAtAngle(theta, simTimeSec) *
+                        (1.0 +
+                            0.028 *
+                            fbm2D(
+                                Math.cos(theta) * 2.0,
+                                Math.sin(theta) * 2.0 + simTimeSec * 0.5,
+                                3
+                            ));
                 const px = lx + Math.cos(theta) * deformedR;
                 const py = ly + Math.sin(theta) * deformedR;
                 if (s === s0) ctx.moveTo(px, py);
@@ -1706,7 +1741,7 @@ export class UniverseRenderer {
     /**
      * Отрисовывает 7-оболочечную корону туманности «Кошачьего глаза» (NGC 6543),
      * допплеровский аккреционный диск и тень горизонта событий Чёрной дыры в фазе 05_SINGULARITY.
-     * В Акте A вырастает из Точки Нуля, а в Акте B полностью сжимается обратно в точку и исчезает.
+     * В Акте A вырастает из Точки Нуля, а в Акте B непрерывно сжимается в яркую микро-точку.
      */
     private renderSingularityCoronaAndBlackHole(
         ctx: CanvasRenderingContext2D,
@@ -1728,18 +1763,15 @@ export class UniverseRenderer {
         let opacityEnvelope = 1.0;
 
         if (act === 'ACT_A_ACCRETION' || act === 'NONE' || act === 'INACTIVE') {
-            const birthCurve = smootherstep(0.0, 0.46, actProgress);
-            volumeEnvelope = 0.012 + 0.988 * birthCurve;
-            opacityEnvelope = smootherstep(0.0, 0.25, actProgress);
+            const birthCurve = smootherstep(0.0, 0.44, actProgress);
+            volumeEnvelope = 0.015 + 0.985 * birthCurve;
+            opacityEnvelope = smootherstep(0.0, 0.24, actProgress);
         } else if (act === 'ACT_B_LOGIC') {
-            if (actProgress > 0.32) {
-                const cNorm = (actProgress - 0.32) / 0.68;
-                const smoothCollapse = smootherstep(0.0, 1.0, cNorm);
-                volumeEnvelope = Math.max(0.0, Math.pow(1.0 - smoothCollapse, 2.15));
-                opacityEnvelope = 1.0 - smootherstep(0.72, 1.0, cNorm);
-            }
+            const smoothCollapse = smootherstep(0.05, 0.98, actProgress);
+            volumeEnvelope = Math.max(0.008, Math.pow(1.0 - smoothCollapse, 1.95));
+            opacityEnvelope = 1.0 - smootherstep(0.82, 1.0, smoothCollapse) * 0.4;
         } else if (act === 'RESTART_COLLAPSE') {
-            volumeEnvelope = Math.max(0.0, 0.18 * (1.0 - actProgress));
+            volumeEnvelope = Math.max(0.0, 0.16 * (1.0 - actProgress));
             opacityEnvelope = Math.max(0.0, 1.0 - actProgress);
         }
 
@@ -1769,7 +1801,7 @@ export class UniverseRenderer {
                 (0.85 + 0.25 * audioSnap.pulse) *
                 opacityEnvelope,
                 0.01,
-                0.32
+                0.34
             );
 
             ctx.beginPath();
@@ -1799,12 +1831,12 @@ export class UniverseRenderer {
 
         const fullShadowR = scale * 0.068;
         const shadowR = fullShadowR * volumeEnvelope;
-        const photonOuterR = Math.max(1.2, shadowR * 2.45);
+        const photonOuterR = Math.max(2.4, shadowR * 2.45);
 
         const photonGrad = ctx.createRadialGradient(
             cx - shadowR * 0.16,
             cy,
-            Math.max(0.2, shadowR * 0.75),
+            Math.max(0.2, shadowR * 0.65),
             cx,
             cy,
             photonOuterR
@@ -1816,15 +1848,15 @@ export class UniverseRenderer {
         );
         photonGrad.addColorStop(
             0.48,
-            RenderPipeline.hexToRgba('#f8fafc', 0.92 * opacityEnvelope)
+            RenderPipeline.hexToRgba('#f8fafc', 0.94 * opacityEnvelope)
         );
         photonGrad.addColorStop(
             0.68,
-            RenderPipeline.hexToRgba('#7dd3fc', 0.48 * opacityEnvelope)
+            RenderPipeline.hexToRgba('#7dd3fc', 0.52 * opacityEnvelope)
         );
         photonGrad.addColorStop(
             0.86,
-            RenderPipeline.hexToRgba('#6366f1', 0.22 * opacityEnvelope)
+            RenderPipeline.hexToRgba('#6366f1', 0.24 * opacityEnvelope)
         );
         photonGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
@@ -1833,10 +1865,16 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, photonOuterR, 0, TAU);
         ctx.fill();
 
-        if (shadowR > 0.6) {
+        if (shadowR > 1.2) {
             ctx.fillStyle = `rgba(2, 3, 8, ${opacityEnvelope.toFixed(3)})`;
             ctx.beginPath();
             ctx.arc(cx, cy, shadowR * 0.9, 0, TAU);
+            ctx.fill();
+        } else {
+            // В финале сжатия (когда shadowR <= 1.2 px) загорается яркая жемчужная Точка Нуля
+            ctx.fillStyle = '#f8fafc';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 2.6, 0, TAU);
             ctx.fill();
         }
 
@@ -1845,42 +1883,40 @@ export class UniverseRenderer {
     // --- КОНЕЦ ФУНКЦИИ renderSingularityCoronaAndBlackHole ---
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 4.4. РЕНДЕРИНГ ЦЕНТРАЛЬНОЙ МИКРО-ТОЧКИ В АКТЕ C (93.0–95.5 с)
+    // ПОДРАЗДЕЛ 4.4. РЕНДЕРИНГ ИМПУЛЬСА ЦЕНТРАЛЬНОЙ МИКРО-ТОЧКИ В АКТЕ C
     // ------------------------------------------------------------------------
 
     // --- НАЧАЛО ФУНКЦИИ renderZeroSilenceActC ---
     /**
-     * Отрисовывает Акт C (93.0–95.5 с): Чёрная дыра уже схлопнулась в крошечную
-     * жемчужную микро-точку в центре экрана с тонким кольцом горизонта, которая
-     * плавно растворяется перед вылетом из неё финальной визитки DUBNOV ALEXEY.
+     * Отрисовывает короткий 0.45-секундный импульс Точки Нуля (Акт C):
+     * Чёрная дыра сжалась в яркую жемчужную точку, которая сразу же начинает
+     * раскрывать волну рождения визитки DUBNOV ALEXEY без паузы.
      */
     private renderZeroSilenceActC(
         ctx: CanvasRenderingContext2D,
         cx: number,
         cy: number,
         minSide: number,
-        simTimeSec: number
+        _simTimeSec: number
     ): void {
         const uState = universeStore.getState();
         const actProg = clamp(uState.singularityActProgress, 0, 1);
-        const pointFade = 1.0 - smootherstep(0.68, 1.0, actProg);
-        if (pointFade <= 0.01) return;
 
-        const slowBreath = 1.0 + 0.08 * Math.sin(simTimeSec * TAU * 0.35);
-        const dotR = Math.max(0.9, 2.8 * slowBreath * pointFade);
-        const glowR = dotR * 7.5;
+        const pulseArc = Math.sin(actProg * Math.PI);
+        const dotR = 2.4 + 3.2 * pulseArc;
+        const glowR = dotR * (7.0 + 6.0 * actProg);
 
-        // Тонкое призрачное кольцо горизонта вокруг центральной точки
-        const horizonR = minSide * 0.055 * (1.0 - 0.65 * actProg);
-        ctx.strokeStyle = RenderPipeline.hexToRgba('#7dd3fc', 0.18 * pointFade);
-        ctx.lineWidth = 0.75;
+        // Сходящееся и тут же расходящееся тонкое кольцо импульса возрождения
+        const horizonR = minSide * (0.015 + 0.045 * actProg);
+        ctx.strokeStyle = RenderPipeline.hexToRgba('#7dd3fc', 0.36 * (1.0 - actProg * 0.5));
+        ctx.lineWidth = 0.9;
         ctx.beginPath();
         ctx.arc(cx, cy, Math.max(2.0, horizonR), 0, TAU);
         ctx.stroke();
 
         const halo = ctx.createRadialGradient(cx, cy, 0.2, cx, cy, glowR);
-        halo.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.96 * pointFade));
-        halo.addColorStop(0.35, RenderPipeline.hexToRgba('#7dd3fc', 0.44 * pointFade));
+        halo.addColorStop(0.0, RenderPipeline.hexToRgba('#f8fafc', 0.98));
+        halo.addColorStop(0.35, RenderPipeline.hexToRgba('#7dd3fc', 0.54));
         halo.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
 
         ctx.fillStyle = halo;
@@ -1888,7 +1924,7 @@ export class UniverseRenderer {
         ctx.arc(cx, cy, glowR, 0, TAU);
         ctx.fill();
 
-        ctx.fillStyle = RenderPipeline.hexToRgba('#f8fafc', pointFade);
+        ctx.fillStyle = '#f8fafc';
         ctx.beginPath();
         ctx.arc(cx, cy, dotR, 0, TAU);
         ctx.fill();
@@ -1933,15 +1969,15 @@ export class UniverseRenderer {
             backdropR
         );
         const veilAlpha = Math.min(1.0, assemblyProgress * 1.35);
-        backdropGrad.addColorStop(0.0, `rgba(3, 7, 18, ${(0.82 * veilAlpha).toFixed(3)})`);
-        backdropGrad.addColorStop(0.65, `rgba(2, 5, 14, ${(0.54 * veilAlpha).toFixed(3)})`);
+        backdropGrad.addColorStop(0.0, `rgba(3, 7, 18, ${(0.76 * veilAlpha).toFixed(3)})`);
+        backdropGrad.addColorStop(0.65, `rgba(2, 5, 14, ${(0.48 * veilAlpha).toFixed(3)})`);
         backdropGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
         ctx.fillStyle = backdropGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Когда видимая DOM-визитка полностью развернулась (assemblyProgress >= 0.78),
+        // Когда видимая DOM-визитка развернулась (assemblyProgress >= 0.74),
         // текст отображается чистым DOM-слоем Layer5_CipherFinale.tsx без дублирования на Canvas
-        const canvasParticlesFade = 1.0 - smootherstep(0.38, 0.78, assemblyProgress);
+        const canvasParticlesFade = 1.0 - smootherstep(0.32, 0.74, assemblyProgress);
         if (canvasParticlesFade <= 0.01) {
             ctx.restore();
             return;
@@ -2116,14 +2152,14 @@ export class UniverseRenderer {
                 );
             }
 
-            this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
-
             const latestState = universeStore.getState();
             const particles = this.getSimParticles();
             const edges = this.getSimEdges();
             const pulses = this.getSimPulses();
             const caps = this.pipeline.getCapabilities();
 
+            // Сначала продвигаем часы фазы и подакта сингулярности,
+            // чтобы renderFrame всегда рисовал актуальный подакт текущего кадра
             if (latestState.singularityAct === 'RESTART_COLLAPSE') {
                 universeStore.updateTelemetry({
                     frameTimeMs: Number(rawDtMs.toFixed(1)),
@@ -2156,6 +2192,7 @@ export class UniverseRenderer {
                 });
             }
 
+            this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
             this.consecutiveFrameErrors = 0;
         } catch (err: unknown) {
             this.consecutiveFrameErrors++;
@@ -2337,7 +2374,7 @@ function bindCornerPanelsNeighborScramble(): void {
     const groupsSelectors = [
         '.brand-card > .phase-codename, .brand-card > .phase-title, .brand-card > .phase-subtitle, .brand-card > .phase-philosophy',
         '#ui-phase-buttons > button.phase-pill',
-        '.controls-dock > button.btn-cyber',
+        '.controls-dock > button.btn-cyber, .controls-dock > a.btn-cyber',
     ];
 
     groupsSelectors.forEach((selector) => {
