@@ -11,10 +11,9 @@
 //     - Подраздел 3.2. Сторожевой монитор рендерера (Watchdog) без ложного продвижения
 //                      фаз при остановке requestAnimationFrame.
 //     - Подраздел 3.3. Геттеры, подписки и управление фазами, паузой, автоциклом и слоями.
-//     - Подраздел 3.4. Журнал событий и хореография перезапуска (Restart Universe).
-//     - Подраздел 3.5. Главный метод обновления часов и телеметрии updateTelemetry():
-//                      бесшовный переход Чёрной дыры в Точку Нуля и мгновенное
-//                      возрождение в визитку DUBNOV ALEXEY без мёртвых пауз.
+//     - Подраздел 3.4. Журнал событий и хореография перезапуска с сохранением
+//                      полупрозрачной визитки на последующих циклах (finaleReachedOnce).
+//     - Подраздел 3.5. Главный метод обновления часов и телеметрии updateTelemetry().
 // ============================================================================
 
 import { type InspectionLevel, type PhaseId } from '../core/contracts';
@@ -123,6 +122,7 @@ export interface UniverseState {
     isTabHidden: boolean;
     autoCyclePhases: boolean;
     isFinaleCardHovered: boolean;
+    finaleReachedOnce: boolean;
     timeScale: number;
     gravityMultiplier: number;
     audioEnabled: boolean;
@@ -285,6 +285,7 @@ class UniverseStore {
             isTabHidden: false,
             autoCyclePhases: true,
             isFinaleCardHovered: false,
+            finaleReachedOnce: false,
             timeScale: 1.0,
             gravityMultiplier: 1.0,
             audioEnabled: true,
@@ -478,9 +479,7 @@ class UniverseStore {
 
     // --- НАЧАЛО ФУНКЦИИ setFinaleCardHovered ---
     /**
-     * Устанавливает флаг наведения курсора на финальную визитку, чтобы
-     * автоматический перезапуск цикла не закрывал карточку, пока посетитель
-     * выбирает кнопку перехода на GitHub.
+     * Устанавливает флаг наведения курсора на финальную визитку.
      */
     public setFinaleCardHovered(hovered: boolean): void {
         if (this.state.isFinaleCardHovered === hovered) return;
@@ -512,12 +511,12 @@ class UniverseStore {
             this.state.singularityAct = 'ACT_A_ACCRETION';
             this.state.singularityActProgress = 0;
             this.state.zeroSilenceElapsedMs = 0;
-            this.state.githubCardAssemblyProgress = 0;
+            this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce ? 1.0 : 0;
         } else {
             this.state.singularityAct = 'INACTIVE';
             this.state.singularityActProgress = 0;
             this.state.zeroSilenceElapsedMs = 0;
-            this.state.githubCardAssemblyProgress = 0;
+            this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce ? 1.0 : 0;
         }
 
         this.appendLogEvent(
@@ -679,9 +678,14 @@ class UniverseStore {
     // --- КОНЕЦ ФУНКЦИИ appendLogEvent ---
 
     // --- НАЧАЛО ФУНКЦИИ triggerUniverseRestart ---
+    /**
+     * Запускает переход к новому циклу. При этом флаг finaleReachedOnce сохраняется,
+     * чтобы визитка не пропадала, а оставалась полупрозрачно парить поверх космоса.
+     */
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.isFinaleCardHovered = false;
+        this.state.finaleReachedOnce = true;
         this.state.singularityAct = 'RESTART_COLLAPSE';
         this.state.restartElapsedSec = 0;
         this.state.singularityActProgress = 0;
@@ -695,6 +699,11 @@ class UniverseStore {
     // --- КОНЕЦ ФУНКЦИИ triggerUniverseRestart ---
 
     // --- НАЧАЛО ФУНКЦИИ completeRestartToVoid ---
+    /**
+     * Открывает новый цикл в фазе 01_VOID. Если финал уже был достигнут (finaleReachedOnce),
+     * githubCardAssemblyProgress остаётся равным 1.0, чтобы визитка продолжала
+     * полупрозрачно висеть на фоне движущейся по кругу симуляции.
+     */
     public completeRestartToVoid(): void {
         this.state.cycleCount += 1;
         this.emittedEventKeys.clear();
@@ -704,7 +713,7 @@ class UniverseStore {
         this.state.singularityAct = 'INACTIVE';
         this.state.singularityActProgress = 0;
         this.state.zeroSilenceElapsedMs = 0;
-        this.state.githubCardAssemblyProgress = 0;
+        this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce ? 1.0 : 0;
         this.state.restartElapsedSec = 0;
         this.state.isFinaleCardHovered = false;
         this.state.opticalWeights.logicConvergence = 0;
@@ -714,7 +723,7 @@ class UniverseStore {
         this.sceneBuffer.reset(this.state.seed);
         this.appendLogEvent(
             'cycle:new',
-            `Цикл #${this.state.cycleCount} открыт в фазе 01_VOID.`
+            `Цикл #${this.state.cycleCount} открыт в фазе 01_VOID (визитка активна на фоне).`
         );
         this.notifyListeners(true);
     }
@@ -725,12 +734,6 @@ class UniverseStore {
     // ------------------------------------------------------------------------
 
     // --- НАЧАЛО ФУНКЦИИ updateTelemetry ---
-    /**
-     * Обновляет телеметрию и продвигает часы симуляции.
-     * ВАЖНО: Если вызов пришёл из промежуточного физического шага (без поля phaseElapsedSec),
-     * метод обновляет только численные метрики физики и НЕ выполняет переключение фаз,
-     * что полностью исключает перезапись phaseElapsedSec внутри одного кадра.
-     */
     public updateTelemetry(partial: Partial<UniverseTelemetryState>): void {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         this.lastTelemetryUpdateMs = nowMs;
@@ -791,10 +794,10 @@ class UniverseStore {
             this.state.restartElapsedSec += dtSec > 0 ? dtSec : 0.016;
             const collapseProg = Math.min(1.0, this.state.restartElapsedSec / 1.45);
             this.state.singularityActProgress = smootherstep(0.0, 1.0, collapseProg);
-            this.state.githubCardAssemblyProgress = Math.max(
-                0.0,
-                1.0 - this.state.singularityActProgress
-            );
+            // Если визитка уже открыта, удерживаем её собранной (1.0), пока фон перезапускается
+            this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
+                ? 1.0
+                : Math.max(0.0, 1.0 - this.state.singularityActProgress);
             this.state.opticalWeights.logicConvergence = 0;
             if (collapseProg >= 0.999) {
                 this.completeRestartToVoid();
@@ -805,8 +808,6 @@ class UniverseStore {
         }
 
         // Бесшовная партитура 5-й фазы (79–108 с, длительность 29 с) БЕЗ мёртвых пауз:
-        // Акт A (0..8.5 с) -> Акт B сжатие в точку (8.5..13.6 с) ->
-        // Акт C мгновенный импульс Точки Нуля (13.6..14.05 с) -> Акт D возрождение в визитку (14.05..29.0 с)
         if (this.state.currentPhase === '05_SINGULARITY') {
             const el = this.state.telemetry.phaseElapsedSec;
             const prevAct = this.state.singularityAct;
@@ -816,7 +817,9 @@ class UniverseStore {
                 this.state.singularityAct = 'ACT_A_ACCRETION';
                 this.state.singularityActProgress = smootherstep(0, 8.5, el);
                 this.state.zeroSilenceElapsedMs = 0;
-                this.state.githubCardAssemblyProgress = 0;
+                this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
+                    ? 1.0
+                    : 0;
                 this.state.opticalWeights.logicConvergence = 0;
             } else if (el < 13.6) {
                 // 87.5 – 92.6 с: Акт B (Непрерывное спиральное сжатие Чёрной дыры и короны строго в Точку Нуля)
@@ -824,8 +827,9 @@ class UniverseStore {
                 const actBProg = smootherstep(8.5, 13.6, el);
                 this.state.singularityActProgress = actBProg;
                 this.state.zeroSilenceElapsedMs = 0;
-                this.state.githubCardAssemblyProgress = 0;
-                // Оптический вес плавно гаснет в 0 вместе со сжатием в точку
+                this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
+                    ? 1.0
+                    : 0;
                 this.state.opticalWeights.logicConvergence =
                     Math.sin(actBProg * Math.PI) * 0.65;
                 this.emitEventOnce(
@@ -834,7 +838,7 @@ class UniverseStore {
                     `Акт B (LOGIC): Спиральное сжатие в Точку Нуля. StateDigest=${this.state.telemetry.stateDigestHex}`
                 );
             } else if (el < 14.05) {
-                // 92.6 – 93.05 с (0.45 с): Мгновенный импульс максимального сжатия в Точке Нуля без замирания
+                // 92.6 – 93.05 с (0.45 с): Мгновенный импульс максимального сжатия в Точке Нуля
                 this.state.singularityAct = 'ACT_C_ZERO_SILENCE';
                 const actCProg = (el - 13.6) / 0.45;
                 this.state.singularityActProgress = Math.max(0, Math.min(1, actCProg));
@@ -842,7 +846,9 @@ class UniverseStore {
                     2500,
                     Math.round(this.state.singularityActProgress * 2500)
                 );
-                this.state.githubCardAssemblyProgress = 0;
+                this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
+                    ? 1.0
+                    : 0;
                 this.state.opticalWeights.logicConvergence = 0;
                 this.emitEventOnce(
                     'zero_silence_start',
@@ -850,15 +856,16 @@ class UniverseStore {
                     'Точка Нуля достигнута: мгновенное перерождение в визитку DUBNOV ALEXEY'
                 );
             } else {
-                // 93.05 – 108.0 с: Акт D (Немедленный выход визитки DUBNOV ALEXEY и одометра из Точки Нуля)
+                // 93.05 – 108.0 с: Акт D (Развёртывание визитки DUBNOV ALEXEY из Точки Нуля)
                 this.state.singularityAct = 'ACT_D_GITHUB_CARD';
+                this.state.finaleReachedOnce = true;
                 this.state.zeroSilenceElapsedMs = 2500;
                 this.state.opticalWeights.logicConvergence = 0;
                 const cardElapsed = el - 14.05;
-                this.state.githubCardAssemblyProgress = Math.max(
-                    0,
-                    Math.min(1, cardElapsed / 4.8)
-                );
+                this.state.githubCardAssemblyProgress =
+                    this.state.cycleCount > 1
+                        ? 1.0
+                        : Math.max(0, Math.min(1, cardElapsed / 4.5));
                 this.state.singularityActProgress =
                     this.state.githubCardAssemblyProgress;
                 this.emitEventOnce(
@@ -869,8 +876,8 @@ class UniverseStore {
             }
 
             // По достижении конца 108-секундного цикла (el >= 29.0 с):
-            // Если включён AUTO: ON и пользователь сейчас НЕ держит курсор мыши над визиткой,
-            // плавно запускаем обратное схлопывание и новый цикл.
+            // Если включён AUTO: ON и курсор не над визиткой, запускаем следующий цикл космоса,
+            // при этом сама визитка остаётся полупрозрачно парить на экране.
             if (
                 this.state.autoCyclePhases &&
                 !this.state.isPaused &&

@@ -1,12 +1,14 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/main.py
-# НАЗНАЧЕНИЕ: Главная точка входа Python-бэкенда UNIVERSE v2.0 (MASTER 00B / 03 / 05)
-# ЗАДАЧИ ФАЙЛА:
-# 1. Поддерживать режим самопроверки паритета из командной строки:
-#    python -m backend.main --verify
-# 2. Запускать HTTP/JSON сервер телеметрии на стандартной библиотеке Python
-#    (или через FastAPI/Uvicorn, если они установлены в окружении).
+# НАЗНАЧЕНИЕ: Главная точка входа Python-бэкенда UNIVERSE v2.5 (MASTER 00B / 03 / 05)
+# ============================================================================
+# ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+#   РАЗДЕЛ 1. Инициализация путей репозитория и счётчика монотонных тиков.
+#   РАЗДЕЛ 2. Класс HTTP-обработчика UniverseTelemetryHTTPHandler с точной
+#             маршрутизацией (/api/frame.bin с монотонным tick, /api/health,
+#             /api/verify-parity, /api/topology и 404 для неизвестных путей).
+#   РАЗДЕЛ 3. CLI-верификация (`python -m backend.main --verify`) и запуск сервера.
 # ============================================================================
 
 from __future__ import annotations
@@ -15,32 +17,81 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-# Гарантируем, что корневая директория репозитория доступна в sys.path
+# ============================================================================
+# РАЗДЕЛ 1. НАСТРОЙКА ПУТЕЙ И МОНОТОННОГО СЧЁТЧИКА КАДРОВ
+# ============================================================================
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.api.transport import build_health_and_parity_report, generate_live_binary_step
+from backend.api.transport import (  # noqa: E402
+    build_health_and_parity_report,
+    generate_live_binary_step,
+)
 
+_SERVER_TICK_COUNTER: int = 0
+
+
+# --- НАЧАЛО ФУНКЦИИ next_monotonic_tick ---
+def next_monotonic_tick() -> int:
+    """Возвращает строго возрастающий номер тика для каждого бинарного кадра."""
+    global _SERVER_TICK_COUNTER
+    _SERVER_TICK_COUNTER += 1
+    return _SERVER_TICK_COUNTER
+# --- КОНЕЦ ФУНКЦИИ next_monotonic_tick ---
+
+
+# ============================================================================
+# РАЗДЕЛ 2. АВТОНОМНЫЙ HTTP-ОБРАБОТЧИК ТЕЛЕМЕТРИИ И БИНАРНЫХ КАДРОВ 'UNVS'
+# ============================================================================
 
 class UniverseTelemetryHTTPHandler(BaseHTTPRequestHandler):
-    """Автономный HTTP-обработчик телеметрии и бинарных кадров 'UNVS'."""
+    """Автономный HTTP-обработчик телеметрии, топологии и бинарных кадров 'UNVS'."""
 
-    def _send_cors_headers(self, content_type: str = "application/json; charset=utf-8") -> None:
+    # --- НАЧАЛО ФУНКЦИИ _send_cors_headers ---
+    def _send_cors_headers(
+            self, content_type: str = "application/json; charset=utf-8"
+    ) -> None:
         self.send_header("Content-Type", content_type)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
+    # --- КОНЕЦ ФУНКЦИИ _send_cors_headers ---
 
+    # --- НАЧАЛО ФУНКЦИИ _send_json ---
+    def _send_json(self, status_code: int, data: dict[str, object]) -> None:
+        payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(status_code)
+        self._send_cors_headers()
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+    # --- КОНЕЦ ФУНКЦИИ _send_json ---
+
+    # --- НАЧАЛО ФУНКЦИИ do_OPTIONS ---
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self._send_cors_headers()
         self.end_headers()
+    # --- КОНЕЦ ФУНКЦИИ do_OPTIONS ---
 
+    # --- НАЧАЛО ФУНКЦИИ do_GET ---
     def do_GET(self) -> None:  # noqa: N802
-        if self.path.startswith("/api/frame.bin"):
-            binary_frame = generate_live_binary_step(tick=1)
+        parsed = urlparse(self.path)
+        route = parsed.path.rstrip("/") or "/"
+
+        if route == "/api/frame.bin":
+            query = parse_qs(parsed.query)
+            requested_tick = query.get("tick", [None])[0]
+            if requested_tick is not None and requested_tick.isdigit():
+                tick_val = max(1, int(requested_tick))
+            else:
+                tick_val = next_monotonic_tick()
+
+            binary_frame = generate_live_binary_step(tick=tick_val)
             self.send_response(200)
             self._send_cors_headers("application/octet-stream")
             self.send_header("Content-Length", str(len(binary_frame)))
@@ -48,26 +99,58 @@ class UniverseTelemetryHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(binary_frame)
             return
 
-        report = build_health_and_parity_report()
-        payload = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(200)
-        self._send_cors_headers()
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        if route in ("/", "/api/health", "/api/verify-parity"):
+            report = build_health_and_parity_report()
+            self._send_json(200, report)
+            return
 
+        if route == "/api/topology":
+            report = build_health_and_parity_report()
+            self._send_json(
+                200,
+                {
+                    "status": report.get("status"),
+                    "goldenSeed": report.get("goldenSeed"),
+                    "nexusTopology": report.get("nexusTopology"),
+                },
+            )
+            return
+
+        self._send_json(
+            404,
+            {
+                "status": "not_found",
+                "path": route,
+                "availableEndpoints": [
+                    "/api/health",
+                    "/api/verify-parity",
+                    "/api/topology",
+                    "/api/frame.bin",
+                ],
+            },
+        )
+    # --- КОНЕЦ ФУНКЦИИ do_GET ---
+
+    # --- НАЧАЛО ФУНКЦИИ log_message ---
     def log_message(self, format_str: str, *args: object) -> None:
-        # Тихий логгинг без засорения консоли
         return
+    # --- КОНЕЦ ФУНКЦИИ log_message ---
 
 
+# ============================================================================
+# РАЗДЕЛ 3. CLI-ВЕРИФИКАЦИЯ ПАРИТЕТА И ЗАПУСК СЕРВЕРА
+# ============================================================================
+
+# --- НАЧАЛО ФУНКЦИИ run_cli_verification ---
 def run_cli_verification() -> int:
-    """Запускает проверку побитового паритета PRNG, графа NEXUS и пакета 'UNVS'."""
+    """Запускает проверку побитового паритета PRNG, графа NEXUS, оптики и пакета 'UNVS'."""
     report = build_health_and_parity_report()
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report.get("status") == "ok" else 1
+# --- КОНЕЦ ФУНКЦИИ run_cli_verification ---
 
 
+# --- НАЧАЛО ФУНКЦИИ run_standalone_server ---
 def run_standalone_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     server = HTTPServer((host, port), UniverseTelemetryHTTPHandler)
     print(f"[UNIVERSE Python Core] Listening on http://{host}:{port}/api/health")
@@ -75,6 +158,7 @@ def run_standalone_server(host: str = "127.0.0.1", port: int = 8000) -> None:
         server.serve_forever()
     except KeyboardInterrupt:
         server.server_close()
+# --- КОНЕЦ ФУНКЦИИ run_standalone_server ---
 
 
 if __name__ == "__main__":

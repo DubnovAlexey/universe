@@ -2,20 +2,21 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer5_CipherFinale.tsx
 // НАЗНАЧЕНИЕ: Видимый семантический DOM-слой финальной визитки DUBNOV ALEXEY,
-//             живой квантовой строки с ограниченной скоростью и кнопок перехода
-//             в профиль GitHub, репозиторий и перезапуска цикла (MASTER 05 v2.5)
+//             быстрой парящей в воздухе квантовой строки (~3.5x быстрее) и
+//             постоянного полупрозрачного режима на фоне цикла (MASTER 05 v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Константы глифов и контроллер плавного квантового перебора при
+//   РАЗДЕЛ 1. Расширенный пул квантовых глифов и контроллер перебора при
 //             наведении мыши (triggerLineOrButtonScramble).
 //   РАЗДЕЛ 2. Контроллер 60-FPS анимации визитки (FinaleCardDomAnimator):
-//     - Подраздел 2.1. Жизненный цикл RAF (запускается ТОЛЬКО в Акте D / Restart
-//                      и гарантированно останавливается в фазах 01–04).
-//     - Подраздел 2.2. Накопление фазы бесконечной строки через dtSec с жёстко
-//                      ограниченной частотой (1.8–3.2 Гц независимо от uptime).
-//   РАЗДЕЛ 3. Семантический компонент визитки (renderLayer5CipherFinaleView):
-//             заголовок h1 ('DUBNOV ALEXEY'), подзаголовок, живая строка, стек
-//             и 3 кнопки (Профиль GitHub, Репозиторий проекта, Перезапуск цикла).
+//     - Подраздел 2.1. Жизненный цикл RAF (активен в Акте D и в постоянном
+//                      полупрозрачном фоновом режиме после первого цикла).
+//     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
+//                      индивидуальное вращение каждого знака без рамок) и
+//                      гарантированная 100%-ная фиксация строк 0, 1, 3, 4.
+//   РАЗДЕЛ 3. Семантический компонент визитки (renderLayer5CipherFinaleView)
+//             с поддержкой полупрозрачного режима .ambient-loop и защитой
+//             aria-hidden / tabIndex при скрытом состоянии.
 //   РАЗДЕЛ 4. Mount-once монтировщик (mountLayer5CipherFinale).
 // ============================================================================
 
@@ -29,14 +30,15 @@ import { audioSync } from '../utils/audioSync';
 // ============================================================================
 
 const SCRAMBLE_GLYPHS =
-    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙◊◈✶✴⟨∞⟩';
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡∷';
 
 const activeScrambleTimers = new WeakMap<HTMLElement, number>();
 
 // --- НАЧАЛО ФУНКЦИИ triggerLineOrButtonScramble ---
 /**
- * Запускает плавный, комфортный для глаз квантовый перебор символов на строке
- * визитки или кнопке при наведении мыши (шаг 72 мс, без мельтешения).
+ * Запускает плавный квантовый перебор символов на статической строке визитки
+ * или кнопке при наведении мыши (шаг 52 мс) с гарантированным возвратом
+ * точного канонического текста.
  */
 function triggerLineOrButtonScramble(el: HTMLElement, canonicalText: string): void {
     if (universeStore.getState().reducedMotion) {
@@ -80,13 +82,13 @@ function triggerLineOrButtonScramble(el: HTMLElement, canonicalText: string): vo
                 ) {
                     return ch;
                 }
-                if ((idx + step) % 3 !== 0) {
+                if ((idx + step) % 2 !== 0) {
                     return ch;
                 }
-                return SCRAMBLE_GLYPHS[(idx * 7 + step * 3) % SCRAMBLE_GLYPHS.length];
+                return SCRAMBLE_GLYPHS[(idx * 11 + step * 5) % SCRAMBLE_GLYPHS.length];
             })
             .join('');
-    }, 72);
+    }, 52);
 
     activeScrambleTimers.set(el, timer);
 }
@@ -144,13 +146,14 @@ class FinaleCardDomAnimator {
     // --- КОНЕЦ ФУНКЦИИ stop ---
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.2. ОГРАНИЧЕННАЯ АНИМАЦИЯ СБОРКИ И БЕСКОНЕЧНОЙ СТРОКИ
+    // ПОДРАЗДЕЛ 2.2. АНИМАЦИЯ СБОРКИ И УСКОРЕННОЙ В ~3.5 РАЗА КВАНТОВОЙ СТРОКИ
     // ------------------------------------------------------------------------
 
     // --- НАЧАЛО ФУНКЦИИ formatOdometerLineForProgress ---
     /**
-     * Формирует строку с эффектом барабана одометра во время начальной сборки (p < 0.82),
-     * защёлкивая символы слева направо с комфортной ограниченной скоростью.
+     * Формирует строку с эффектом барабана одометра во время начальной сборки (p < 0.76).
+     * ИСПРАВЛЕНО: порог lockThreshold уложен в [0.14 .. 0.72], чтобы правый край
+     * 3-й и 4-й строк гарантированно фиксировался в канонический текст без остатков глифов.
      */
     private formatOdometerLineForProgress(
         canonical: string,
@@ -158,12 +161,13 @@ class FinaleCardDomAnimator {
         progress: number,
         assemblyWheelStep: number
     ): string {
-        if (progress >= 0.82) return canonical;
+        if (progress >= 0.76) return canonical;
         const len = canonical.length;
         let out = '';
         for (let i = 0; i < len; i++) {
             const ch = canonical[i];
-            const lockThreshold = 0.24 + lineIndex * 0.08 + (i / Math.max(1, len)) * 0.38;
+            const lockThreshold =
+                0.14 + lineIndex * 0.055 + (i / Math.max(1, len)) * 0.34;
             if (
                 progress >= lockThreshold ||
                 ch === ' ' ||
@@ -175,7 +179,7 @@ class FinaleCardDomAnimator {
                 out += ch;
             } else {
                 const wheelIdx =
-                    (assemblyWheelStep + i * 3 + lineIndex * 7) % SCRAMBLE_GLYPHS.length;
+                    (assemblyWheelStep + i * 5 + lineIndex * 9) % SCRAMBLE_GLYPHS.length;
                 out += SCRAMBLE_GLYPHS[wheelIdx];
             }
         }
@@ -189,9 +193,10 @@ class FinaleCardDomAnimator {
         const state = universeStore.getState();
         const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
         const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
+        const isPersistentCard = state.finaleReachedOnce;
 
-        // Если мы не в финальном акте — полностью останавливаем RAF-цикл визитки
-        if (!isActD && !isCollapsing) {
+        // Если визитка ещё ни разу не открывалась и сейчас не Акт D — останавливаем RAF
+        if (!isActD && !isCollapsing && !isPersistentCard) {
             return;
         }
 
@@ -202,7 +207,9 @@ class FinaleCardDomAnimator {
         this.lastFrameMs = nowMs;
 
         if (this.cardBoxEl) {
-            const p = Math.max(0, Math.min(1, state.githubCardAssemblyProgress));
+            const p = isPersistentCard && state.cycleCount > 1
+                ? 1.0
+                : Math.max(0, Math.min(1, state.githubCardAssemblyProgress));
             const isSimActive = !state.isPaused && !state.isTabHidden;
 
             if (isSimActive) {
@@ -211,42 +218,35 @@ class FinaleCardDomAnimator {
 
             const audioSnap = audioSync.getSnapshot(this.lfoClockSec);
 
-            // Плавный C2-выход всей визитки прямо из центральной Точки Нуля (масштаб от 0.04 до 1.0)
-            const emergeScale = state.reducedMotion
-                ? 1.0
-                : isCollapsing
-                    ? Math.max(0.02, Math.pow(p, 1.5))
-                    : 0.04 + 0.96 * smootherstep(0.0, 0.48, p);
-            const emergeOpacity = state.reducedMotion
-                ? 1.0
-                : isCollapsing
-                    ? smootherstep(0.0, 0.85, p)
-                    : smootherstep(0.0, 0.28, p);
+            // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении
+            const emergeScale =
+                state.reducedMotion || (isPersistentCard && state.cycleCount > 1)
+                    ? 1.0
+                    : 0.04 + 0.96 * smootherstep(0.0, 0.46, p);
 
             // Спокойное дыхание зафиксированной визитки в такт низкочастотной огибающей музыки
             const breathEnv =
-                state.reducedMotion || !isSimActive ? 0 : smootherstep(0.52, 0.92, p);
-            const musicPulse = 1.0 + audioSnap.heartbeat * 0.4;
+                state.reducedMotion || !isSimActive ? 0 : smootherstep(0.48, 0.88, p);
+            const musicPulse = 1.0 + audioSnap.heartbeat * 0.42;
             const heartbeatScale =
                 1.0 +
                 breathEnv *
-                (0.009 * musicPulse * Math.sin(this.lfoClockSec * 1.3) +
+                (0.008 * musicPulse * Math.sin(this.lfoClockSec * 1.3) +
                     0.003 * Math.cos(this.lfoClockSec * 2.5));
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
             const finalScale = emergeScale * heartbeatScale;
-            this.cardBoxEl.style.opacity = emergeOpacity.toFixed(3);
             this.cardBoxEl.style.transform = `translate3d(0, ${floatY.toFixed(
                 1
             )}px, 0) scale(${finalScale.toFixed(4)})`;
 
-            // Накопление фазы сборки со строго ограниченной частотой 4.2 шага/с
+            // Накопление фазы начальной сборки
             if (isSimActive && !state.reducedMotion) {
-                this.accumulatedAssemblyPhase += dtSec * 4.2;
+                this.accumulatedAssemblyPhase += dtSec * 9.5;
             }
             const assemblyStep = Math.floor(this.accumulatedAssemblyPhase);
 
-            if (p < 0.82 && !state.reducedMotion) {
+            if (p < 0.76 && !state.reducedMotion) {
                 if (this.line0El && !activeScrambleTimers.has(this.line0El)) {
                     this.line0El.textContent = this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[0],
@@ -294,16 +294,17 @@ class FinaleCardDomAnimator {
                 }
             }
 
-            // Фаза бесконечной центральной строки накапливается
-            // через dtSec * boundedRateHz (строго в диапазоне 1.8..3.2 шага/с).
-            // Скорость всегда положительна, комфортна для глаз и не растёт со временем страницы.
+            // УСКОРЕНО В ~3.5 РАЗА (по запросу пользователя и Аудиту P1 #4):
+            // Фаза накапливается через dtSec * boundedRateHz в диапазоне [18.0 .. 26.0] шагов/с.
+            // При этом каждый не-пробельный символ вращается по индивидуальной скорости,
+            // обеспечивая ~8–11 живых смен в секунду на каждый знак без зависимости от uptime.
             if (isSimActive && !state.reducedMotion) {
                 const lfoWave =
-                    0.45 * Math.sin(this.lfoClockSec * 0.65) +
-                    0.25 * Math.cos(this.lfoClockSec * 1.4);
+                    3.2 * Math.sin(this.lfoClockSec * 0.85) +
+                    1.8 * Math.cos(this.lfoClockSec * 1.75);
                 const boundedRateHz = Math.max(
-                    5.5,
-                    Math.min(9.5, 7.2 + lfoWave * 2.0 + audioSnap.heartbeat * 0.8)
+                    18.0,
+                    Math.min(26.0, 21.5 + lfoWave + audioSnap.heartbeat * 2.5)
                 );
                 this.accumulatedQuantumPhase += dtSec * boundedRateHz;
             }
@@ -316,12 +317,16 @@ class FinaleCardDomAnimator {
                 } else {
                     const baseLine = CANONICAL_FINALE_LINES[2];
                     const chars = baseLine.split('');
+                    const nGlyphs = SCRAMBLE_GLYPHS.length;
                     for (let i = 0; i < chars.length; i++) {
-                        if (chars[i] !== ' ' && (i + qStep) % 3 === 0) {
-                            const gIdx =
-                                (i * 11 + qStep * 3) % SCRAMBLE_GLYPHS.length;
-                            chars[i] = SCRAMBLE_GLYPHS[gIdx];
-                        }
+                        if (chars[i] === ' ') continue;
+                        // Индивидуальный делитель темпа (1 или 2) для каждого слота,
+                        // чтобы все знаки строки активно и разнообразно перебирались в воздухе
+                        const slotStride = (i % 3 === 0) ? 1 : 2;
+                        const charTick = Math.floor((qStep + i * 7) / slotStride);
+                        const gIdx =
+                            (i * 19 + charTick * 7 + (i % 5) * 13) % nGlyphs;
+                        chars[i] = SCRAMBLE_GLYPHS[gIdx];
                     }
                     this.line2QuantumEl.textContent = chars.join('');
                 }
@@ -341,16 +346,16 @@ const finaleCardAnimator = new FinaleCardDomAnimator();
 
 // --- НАЧАЛО ФУНКЦИИ renderLayer5CipherFinaleView ---
 export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): Element {
-    const isActDOrCollapse =
-        state.singularityAct === 'ACT_D_GITHUB_CARD' ||
-        state.singularityAct === 'RESTART_COLLAPSE';
+    const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
+    const isPersistentAmbient = state.finaleReachedOnce && !isActD;
+    const isCardVisible = isActD || state.finaleReachedOnce;
     const isInteractive =
-        state.singularityAct === 'ACT_D_GITHUB_CARD' &&
-        state.githubCardAssemblyProgress >= 0.3;
-    const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
+        isPersistentAmbient ||
+        (isActD && state.githubCardAssemblyProgress >= 0.25);
 
-    const stageVisibleClass = isActDOrCollapse ? ' visible' : '';
-    const actionsVisibleClass = isInteractive && !isCollapsing ? ' visible' : '';
+    const stageVisibleClass = isCardVisible ? ' visible' : '';
+    const ambientLoopClass = isPersistentAmbient ? ' ambient-loop' : '';
+    const actionsVisibleClass = isInteractive ? ' visible' : '';
 
     const profileLabel = '[ ↗ GITHUB PROFILE : DUBNOV ALEXEY ]';
     const repoLabel = '[ ↗ PROJECT REPOSITORY ]';
@@ -362,6 +367,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
             data-github-card="true"
             role="region"
             aria-label="Финальная визитка автора — Dubnov Alexey"
+            aria-hidden={isCardVisible ? 'false' : 'true'}
         >
             <div
                 className="sr-only-manifesto"
@@ -373,7 +379,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
             </div>
 
             <article
-                className="finale-manifesto-card"
+                className={`finale-manifesto-card${ambientLoopClass}`}
                 data-bind="l5-card-box"
                 onMouseEnter={(): void => {
                     universeStore.setFinaleCardHovered(true);
@@ -460,7 +466,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         href="https://github.com/DubnovAlexey"
                         target="_blank"
                         rel="noopener noreferrer"
-                        tabIndex={isInteractive && !isCollapsing ? 0 : -1}
+                        tabIndex={isInteractive ? 0 : -1}
                         onMouseEnter={(e: MouseEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
@@ -479,7 +485,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         href="https://github.com/DubnovAlexey/universe"
                         target="_blank"
                         rel="noopener noreferrer"
-                        tabIndex={isInteractive && !isCollapsing ? 0 : -1}
+                        tabIndex={isInteractive ? 0 : -1}
                         onMouseEnter={(e: MouseEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
@@ -496,8 +502,8 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         type="button"
                         className="btn-cipher-action"
                         id="btn-restart-universe"
-                        disabled={!isInteractive || isCollapsing}
-                        tabIndex={isInteractive && !isCollapsing ? 0 : -1}
+                        disabled={!isInteractive}
+                        tabIndex={isInteractive ? 0 : -1}
                         onMouseEnter={(e: MouseEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
@@ -528,6 +534,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     if (!container) return () => {};
 
     let rootEl: HTMLElement | null = null;
+    let cardBoxEl: HTMLElement | null = null;
     let manifestoEl: HTMLElement | null = null;
     let actionsEl: HTMLElement | null = null;
     let profileLinkEl: HTMLAnchorElement | null = null;
@@ -538,6 +545,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer5CipherFinaleView(state) as HTMLElement;
             container.replaceChildren(rootEl);
+            cardBoxEl = rootEl.querySelector<HTMLElement>('[data-bind="l5-card-box"]');
             manifestoEl = rootEl.querySelector<HTMLElement>('[data-bind="l5-manifesto"]');
             actionsEl = rootEl.querySelector<HTMLElement>('[data-bind="l5-actions"]');
             profileLinkEl = rootEl.querySelector<HTMLAnchorElement>('#link-open-profile');
@@ -546,19 +554,19 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
             finaleCardAnimator.bindElements(rootEl);
         }
 
-        const isActDOrCollapse =
-            state.singularityAct === 'ACT_D_GITHUB_CARD' ||
-            state.singularityAct === 'RESTART_COLLAPSE';
-        const isInteractive =
-            state.singularityAct === 'ACT_D_GITHUB_CARD' &&
-            state.githubCardAssemblyProgress >= 0.3;
-        const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
-        const showActions = isInteractive && !isCollapsing;
+        const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
+        const isPersistentAmbient = state.finaleReachedOnce && !isActD;
+        const isCardVisible = isActD || state.finaleReachedOnce;
+        const showActions =
+            isPersistentAmbient ||
+            (isActD && state.githubCardAssemblyProgress >= 0.25);
 
-        rootEl.classList.toggle('visible', isActDOrCollapse);
+        rootEl.classList.toggle('visible', isCardVisible);
+        rootEl.setAttribute('aria-hidden', isCardVisible ? 'false' : 'true');
+        cardBoxEl?.classList.toggle('ambient-loop', isPersistentAmbient);
         actionsEl?.classList.toggle('visible', showActions);
 
-        if (isActDOrCollapse) {
+        if (isCardVisible) {
             finaleCardAnimator.startIfNeeded();
         } else {
             finaleCardAnimator.stop();

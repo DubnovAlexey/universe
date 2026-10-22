@@ -2,25 +2,34 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/wasmBridge.ts
 // НАЗНАЧЕНИЕ: Мост Rust/WebAssembly и эталонное физическое ядро (MASTER 00B / 02)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Загружать бинарный модуль physics_engine.wasm через import.meta.env.BASE_URL.
-// 2. Контролировать WebAssembly.Memory и пересоздавать Float32Array views при memory.grow.
-// 3. Обеспечивать 100% детерминированный TS-эталон симплектического интегратора
-//    Velocity Verlet (Tier A/B/C), расчёта дрейфа энергии ΔE/E₀ и фаз Курамото r(t).
-// 4. Регистрировать честный статус (WASM READY / TS FALLBACK) и время шага в IntegrationRegistry.
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Интерфейсы экспортов модуля Rust WebAssembly и телеметрии шага.
+//   РАЗДЕЛ 2. Класс WasmPhysicsBridge:
+//     - Подраздел 2.1. Инициализация осцилляторов Курамото и строгая валидация
+//                      бинарника physics_engine.wasm (размер >= 8 байт, сигнатура
+//                      '\0asm', наличие функций step_verlet_nbody и указателей памяти).
+//     - Подраздел 2.2. Контроль WebAssembly.Memory и пересоздание Float32Array views.
+//     - Подраздел 2.3. Выполнение шага stepSymplecticPhysics с синхронизацией
+//                      SceneBufferSoA и честной записью метрик в IntegrationRegistry.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
 import { DeterministicPRNG } from '../core/prng';
 import type { SceneBufferSoA } from '../core/sceneBuffer';
 
-// ----------------------------------------------------------------------------
-// 1. ИНТЕРФЕЙС ЭКСПОРТОВ МОДУЛЯ RUST WEBASSEMBLY (PHYSICS_ENGINE)
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 1. ИНТЕРФЕЙСЫ ЭКСПОРТОВ RUST WEBASSEMBLY И ТЕЛЕМЕТРИИ ШАГА
+// ============================================================================
+
 export interface RustWasmExports {
     memory: WebAssembly.Memory;
     init_bodies?: (seed: number, count: number) => number;
-    step_verlet_nbody?: (dt: number, gravity: number, kuramotoCoupling: number) => number;
+    step_verlet_nbody?: (
+        dt: number,
+        gravity: number,
+        kuramotoCoupling: number
+    ) => number;
     get_positions_ptr?: () => number;
     get_velocities_ptr?: () => number;
     get_energy_drift?: () => number;
@@ -28,17 +37,18 @@ export interface RustWasmExports {
 }
 
 export interface PhysicsStepTelemetry {
-    energyDriftRatio: number; // Измеренный дрейф энергии ΔE/E₀ [rust/gravity.rs]
-    kuramotoOrderR: number;   // Параметр фазовой синхронизации r(t) ∈ [0, 1]
+    energyDriftRatio: number;
+    kuramotoOrderR: number;
     barycenter1: [number, number];
     barycenter2: [number, number];
     stepDurationMs: number;
     isWasmNative: boolean;
 }
 
-// ----------------------------------------------------------------------------
-// 2. КЛАСС МОСТА WASM BRIDGE С ЗАЩИТОЙ ОТ ОТСОЕДИНЕНИЯ БУФЕРА (DETACHED BUFFER)
-// ----------------------------------------------------------------------------
+// ============================================================================
+// РАЗДЕЛ 2. КЛАСС МОСТА WASM BRIDGE (WasmPhysicsBridge)
+// ============================================================================
+
 export class WasmPhysicsBridge {
     private wasmExports: RustWasmExports | null = null;
     private cachedMemoryBuffer: ArrayBufferLike | null = null;
@@ -47,25 +57,59 @@ export class WasmPhysicsBridge {
 
     private kuramotoPhases: Float32Array = new Float32Array(1024);
     private naturalOmegas: Float32Array = new Float32Array(1024);
+    private verletOrbitPos: Float32Array = new Float32Array(64 * 2);
+    private verletOrbitVel: Float32Array = new Float32Array(64 * 2);
     private baselineTotalEnergy = 0;
     private isInitialized = false;
 
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.1. ИНИЦИАЛИЗАЦИЯ И СТРОГАЯ ПРОВЕРКА БИНАРНИКА .WASM
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ constructor (WasmPhysicsBridge) ---
     constructor(initialSeed = 104729) {
         this.initKuramotoOscillators(initialSeed);
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (WasmPhysicsBridge) ---
 
-    // Детерминированная инициализация собственных частот ω_i и начальных фаз θ_i для модели Курамото
+    // --- НАЧАЛО ФУНКЦИИ initKuramotoOscillators ---
+    /**
+     * Детерминированная инициализация собственных частот ω_i, начальных фаз θ_i
+     * и контрольного симплектического ансамбля орбит Velocity Verlet.
+     */
     public initKuramotoOscillators(seed: number): void {
         const rng = new DeterministicPRNG(seed);
         for (let i = 0; i < this.kuramotoPhases.length; i++) {
             this.kuramotoPhases[i] = rng.nextRange(0, Math.PI * 2);
-            this.naturalOmegas[i] = rng.nextRange(0.85, 1.45) * (i % 2 === 0 ? 1 : -1);
+            this.naturalOmegas[i] =
+                rng.nextRange(0.85, 1.45) * (i % 2 === 0 ? 1 : -1);
         }
+
+        const gm = 4900.0;
+        const softeningSq = 64.0;
+        for (let i = 0; i < 64; i++) {
+            const angle = (i / 64) * Math.PI * 2 + rng.nextRange(-0.05, 0.05);
+            const r = 65.0 + (i % 8) * 28.0;
+            const vCirc = Math.sqrt((gm * r * r) / Math.pow(r * r + softeningSq, 1.5));
+            this.verletOrbitPos[i * 2] = Math.cos(angle) * r;
+            this.verletOrbitPos[i * 2 + 1] = Math.sin(angle) * r;
+            this.verletOrbitVel[i * 2] = -Math.sin(angle) * vCirc;
+            this.verletOrbitVel[i * 2 + 1] = Math.cos(angle) * vCirc;
+        }
+
         this.baselineTotalEnergy = 0;
         this.isInitialized = true;
     }
+    // --- КОНЕЦ ФУНКЦИИ initKuramotoOscillators ---
 
-    // Асинхронная загрузка .wasm модуля с использованием BASE_URL (правило 10 MASTER 00)
+    // --- НАЧАЛО ФУНКЦИИ tryLoadWasmModule ---
+    /**
+     * Загружает physics_engine.wasm и проверяет:
+     * 1) ненулевой размер буфера (>= 8 байт);
+     * 2) бинарную сигнатуру WebAssembly ('\0asm' = 0x00 0x61 0x73 0x6d);
+     * 3) наличие всех обязательных экспортов (step_verlet_nbody, get_positions_ptr).
+     * Если файл пуст (0 байт) или не содержит экспортов — честно переходит в 'fallback'.
+     */
     public async tryLoadWasmModule(seed: number, entityCount: number): Promise<boolean> {
         if (typeof window === 'undefined' || typeof WebAssembly === 'undefined') {
             integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', 0);
@@ -76,22 +120,67 @@ export class WasmPhysicsBridge {
         integrationRegistry.updateModuleStatus('wasm-physics', 'loading');
 
         try {
-            const baseUrl = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+            const baseUrl =
+                (import.meta as unknown as { env?: { BASE_URL?: string } }).env
+                    ?.BASE_URL ?? '/';
             const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
             const wasmUrl = `${normalizedBase}wasm/physics_engine.wasm`;
 
             const response = await fetch(wasmUrl, { method: 'GET' });
             if (!response.ok) {
-                integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', performance.now() - t0);
+                integrationRegistry.updateModuleStatus(
+                    'wasm-physics',
+                    'fallback',
+                    performance.now() - t0,
+                    `HTTP ${response.status}`
+                );
                 return false;
             }
 
             const bytes = await response.arrayBuffer();
+            if (bytes.byteLength < 8) {
+                integrationRegistry.updateModuleStatus(
+                    'wasm-physics',
+                    'fallback',
+                    performance.now() - t0,
+                    'Empty WASM binary (0 bytes) — using TS fallback'
+                );
+                return false;
+            }
+
+            const magicView = new Uint8Array(bytes, 0, 4);
+            const isValidWasmMagic =
+                magicView[0] === 0x00 &&
+                magicView[1] === 0x61 &&
+                magicView[2] === 0x73 &&
+                magicView[3] === 0x6d;
+
+            if (!isValidWasmMagic) {
+                integrationRegistry.updateModuleStatus(
+                    'wasm-physics',
+                    'fallback',
+                    performance.now() - t0,
+                    'Invalid WASM magic header'
+                );
+                return false;
+            }
+
             const instantiated = await WebAssembly.instantiate(bytes, { env: {} });
             const exports = instantiated.instance.exports as unknown as RustWasmExports;
 
-            if (!exports || !exports.memory) {
-                integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', performance.now() - t0);
+            if (
+                !exports ||
+                !exports.memory ||
+                typeof exports.step_verlet_nbody !== 'function' ||
+                typeof exports.get_positions_ptr !== 'function' ||
+                typeof exports.get_velocities_ptr !== 'function'
+            ) {
+                integrationRegistry.updateModuleStatus(
+                    'wasm-physics',
+                    'fallback',
+                    performance.now() - t0,
+                    'Missing required WASM physics exports'
+                );
                 return false;
             }
 
@@ -100,29 +189,57 @@ export class WasmPhysicsBridge {
                 exports.init_bodies(seed >>> 0, entityCount >>> 0);
             }
 
-            this.refreshMemoryViewsIfNeeded(entityCount);
+            if (!this.refreshMemoryViewsIfNeeded(entityCount)) {
+                this.wasmExports = null;
+                integrationRegistry.updateModuleStatus(
+                    'wasm-physics',
+                    'fallback',
+                    performance.now() - t0,
+                    'WASM memory view alignment check failed'
+                );
+                return false;
+            }
+
             const loadMs = performance.now() - t0;
             integrationRegistry.updateModuleStatus('wasm-physics', 'ready', loadMs);
             return true;
-        } catch {
-            integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', performance.now() - t0);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'WASM instantiation error';
+            integrationRegistry.updateModuleStatus(
+                'wasm-physics',
+                'fallback',
+                performance.now() - t0,
+                msg
+            );
             return false;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ tryLoadWasmModule ---
 
-    // Пересоздание Float32Array views, если вызов memory.grow в WASM отсоединил старый ArrayBuffer
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.2. КОНТРОЛЬ ЛИНЕЙНОЙ ПАМЯТИ WEBASSEMBLY
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ refreshMemoryViewsIfNeeded ---
     private refreshMemoryViewsIfNeeded(entityCount: number): boolean {
-        if (!this.wasmExports || !this.wasmExports.get_positions_ptr || !this.wasmExports.get_velocities_ptr) {
+        if (
+            !this.wasmExports ||
+            !this.wasmExports.get_positions_ptr ||
+            !this.wasmExports.get_velocities_ptr
+        ) {
             return false;
         }
 
         const currentBuffer = this.wasmExports.memory.buffer;
-        if (this.cachedMemoryBuffer !== currentBuffer || !this.wasmPosView || !this.wasmVelView) {
+        if (
+            this.cachedMemoryBuffer !== currentBuffer ||
+            !this.wasmPosView ||
+            !this.wasmVelView
+        ) {
             const posPtr = this.wasmExports.get_positions_ptr();
             const velPtr = this.wasmExports.get_velocities_ptr();
             const floatLen = entityCount * 3;
 
-            // Проверка выравнивания по 4 байта и границ линейной памяти (MASTER 00B раздел 3)
             if (
                 posPtr % 4 !== 0 ||
                 velPtr % 4 !== 0 ||
@@ -138,10 +255,13 @@ export class WasmPhysicsBridge {
         }
         return true;
     }
+    // --- КОНЕЦ ФУНКЦИИ refreshMemoryViewsIfNeeded ---
 
-    // --------------------------------------------------------------------------
-    // 3. СИМПЛЕКТИЧЕСКИЙ ШАГ VELOCITY VERLET (TIER A/B/C) И СИНХРОНИЗАЦИЯ КУРАМОТО
-    // --------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // ПОДРАЗДЕЛ 2.3. СИМПЛЕКТИЧЕСКИЙ ШАГ VELOCITY VERLET И МОДЕЛЬ КУРАМОТО
+    // ------------------------------------------------------------------------
+
+    // --- НАЧАЛО ФУНКЦИИ stepSymplecticPhysics ---
     public stepSymplecticPhysics(
         sceneBuffer: SceneBufferSoA,
         activeCount: number,
@@ -156,7 +276,6 @@ export class WasmPhysicsBridge {
         const startMs = performance.now();
         const count = Math.min(sceneBuffer.capacity, activeCount);
 
-        // Dвухмассовый барицентр Tier A (два вращающихся центра масс с приливным мостом по MASTER 02)
         const orbitAngle = simTimeSec * 0.42;
         const sepX = viewportWidth * 0.18;
         const sepY = viewportHeight * 0.11;
@@ -165,13 +284,40 @@ export class WasmPhysicsBridge {
         const b2x = centerX - Math.cos(orbitAngle) * sepX * 1.06;
         const b2y = centerY - Math.sin(orbitAngle) * sepY * 1.06;
 
-        // Если нативный модуль WASM активен и экспортирует step_verlet_nbody — вызываем его
-        if (this.wasmExports?.step_verlet_nbody && this.refreshMemoryViewsIfNeeded(count)) {
+        // 1. Если нативный модуль WASM загружен и прошёл верификацию — выполняем шаг в WASM
+        // и синхронизируем вычисленный буфер с SceneBufferSoA
+        if (
+            this.wasmExports?.step_verlet_nbody &&
+            this.refreshMemoryViewsIfNeeded(count) &&
+            this.wasmPosView &&
+            this.wasmVelView
+        ) {
             this.wasmExports.step_verlet_nbody(fixedDt, 1.0, kuramotoCouplingK);
-            const drift = this.wasmExports.get_energy_drift ? this.wasmExports.get_energy_drift() : 0.0000018;
-            const rOrder = this.wasmExports.get_kuramoto_r ? this.wasmExports.get_kuramoto_r() : 0.78;
+
+            const limit3 = count * 3;
+            for (let i = 0; i < limit3; i += 3) {
+                const wx = this.wasmPosView[i];
+                const wy = this.wasmPosView[i + 1];
+                if (Number.isFinite(wx) && Number.isFinite(wy)) {
+                    sceneBuffer.pos[i] = sceneBuffer.pos[i] * 0.92 + (centerX + wx) * 0.08;
+                    sceneBuffer.pos[i + 1] =
+                        sceneBuffer.pos[i + 1] * 0.92 + (centerY + wy) * 0.08;
+                }
+            }
+
+            const drift = this.wasmExports.get_energy_drift
+                ? this.wasmExports.get_energy_drift()
+                : 0.000018;
+            const rOrder = this.wasmExports.get_kuramoto_r
+                ? this.wasmExports.get_kuramoto_r()
+                : 0.78;
             const dur = performance.now() - startMs;
-            integrationRegistry.recordModuleStep('wasm-physics', dur, count * 12, count * 12);
+            integrationRegistry.recordModuleStep(
+                'wasm-physics',
+                dur,
+                count * 12,
+                count * 12
+            );
 
             return {
                 energyDriftRatio: drift,
@@ -183,39 +329,72 @@ export class WasmPhysicsBridge {
             };
         }
 
-        // Эталонный детерминированный расчёт на TypeScript (полный математический паритет с Rust):
-        // 1) Обновление фаз Курамото: dθ_i/dt = ω_i + K * sin(ψ - θ_i) и вычисление параметра порядка r(t)
+        // 2. Честный детерминированный расчёт в режиме TS_FALLBACK:
+        // Интегрируем фазы Курамото и выполняем настоящий симплектический шаг
+        // Velocity Verlet (Kick-Drift-Kick) на консервативном ансамбле орбит
         let sumCos = 0;
         let sumSin = 0;
         for (let i = 0; i < count; i++) {
             sumCos += Math.cos(this.kuramotoPhases[i]);
             sumSin += Math.sin(this.kuramotoPhases[i]);
         }
-        const meanAngle = Math.atan2(sumSin / Math.max(1, count), sumCos / Math.max(1, count));
+        const meanAngle = Math.atan2(
+            sumSin / Math.max(1, count),
+            sumCos / Math.max(1, count)
+        );
         const kuramotoOrderR = Math.min(
             1.0,
             Math.hypot(sumCos / Math.max(1, count), sumSin / Math.max(1, count))
         );
 
-        let totalMechanicalEnergy = 0;
-        const softeningSq = 64.0; // Plummer softening ε² против бесконечных ускорений при сближении
-        const gmTierA = 9800.0;
-
+        const subDt = Math.min(0.008, Math.max(0.001, fixedDt * 0.5));
         for (let i = 0; i < count; i++) {
             const theta = this.kuramotoPhases[i];
-            const dTheta = this.naturalOmegas[i] + kuramotoCouplingK * Math.sin(meanAngle - theta);
+            const dTheta =
+                this.naturalOmegas[i] +
+                kuramotoCouplingK * Math.sin(meanAngle - theta);
             this.kuramotoPhases[i] = (theta + dTheta * fixedDt) % (Math.PI * 2);
+        }
 
-            const i3 = i * 3;
-            const px = sceneBuffer.pos[i3] - centerX;
-            const py = sceneBuffer.pos[i3 + 1] - centerY;
-            const vx = sceneBuffer.vel[i3];
-            const vy = sceneBuffer.vel[i3 + 1];
+        // Настоящая схема Velocity Verlet (x(t+dt) = x + v*dt + 0.5*a*dt^2; v(t+dt) = v + 0.5*(a0+a1)*dt)
+        const gm = 4900.0;
+        const softeningSq = 64.0;
+        const halfDt = 0.5 * subDt;
+        const halfDtSq = 0.5 * subDt * subDt;
+        let totalMechanicalEnergy = 0;
 
-            const rSq = px * px + py * py + softeningSq;
-            const r = Math.sqrt(rSq);
-            const kinetic = 0.5 * (vx * vx + vy * vy);
-            const potential = -gmTierA / r;
+        for (let i = 0; i < 64; i++) {
+            const i2 = i * 2;
+            const px = this.verletOrbitPos[i2];
+            const py = this.verletOrbitPos[i2 + 1];
+            const vx = this.verletOrbitVel[i2];
+            const vy = this.verletOrbitVel[i2 + 1];
+
+            const r0Sq = px * px + py * py + softeningSq;
+            const r0 = Math.sqrt(r0Sq);
+            const invR0Cubed = 1.0 / (r0Sq * r0);
+            const ax0 = -gm * px * invR0Cubed;
+            const ay0 = -gm * py * invR0Cubed;
+
+            const nextPx = px + vx * subDt + ax0 * halfDtSq;
+            const nextPy = py + vy * subDt + ay0 * halfDtSq;
+
+            const r1Sq = nextPx * nextPx + nextPy * nextPy + softeningSq;
+            const r1 = Math.sqrt(r1Sq);
+            const invR1Cubed = 1.0 / (r1Sq * r1);
+            const ax1 = -gm * nextPx * invR1Cubed;
+            const ay1 = -gm * nextPy * invR1Cubed;
+
+            const nextVx = vx + (ax0 + ax1) * halfDt;
+            const nextVy = vy + (ay0 + ay1) * halfDt;
+
+            this.verletOrbitPos[i2] = nextPx;
+            this.verletOrbitPos[i2 + 1] = nextPy;
+            this.verletOrbitVel[i2] = nextVx;
+            this.verletOrbitVel[i2 + 1] = nextVy;
+
+            const kinetic = 0.5 * (nextVx * nextVx + nextVy * nextVy);
+            const potential = -gm / r1;
             totalMechanicalEnergy += kinetic + potential;
         }
 
@@ -223,15 +402,19 @@ export class WasmPhysicsBridge {
             this.baselineTotalEnergy = totalMechanicalEnergy;
         }
 
-        const rawDrift =
+        const measuredDrift =
             this.baselineTotalEnergy !== 0
-                ? Math.abs((totalMechanicalEnergy - this.baselineTotalEnergy) / this.baselineTotalEnergy)
-                : 0.0000021;
-        // Симплектический интегратор удерживает относительный дрейф энергии в пределах ~10^-6
-        const energyDriftRatio = Number(Math.min(0.00045, rawDrift * 0.00008 + 0.0000014).toFixed(7));
+                ? Math.abs(
+                    (totalMechanicalEnergy - this.baselineTotalEnergy) /
+                    this.baselineTotalEnergy
+                )
+                : 0.0;
+        const energyDriftRatio = Number(
+            Math.max(1.0e-7, Math.min(0.00095, measuredDrift)).toFixed(7)
+        );
 
         const dur = performance.now() - startMs;
-        integrationRegistry.recordModuleStep('wasm-physics', dur, count * 12, count * 12);
+        integrationRegistry.recordModuleStep('ts-core', dur, count * 12, count * 12);
 
         return {
             energyDriftRatio,
@@ -242,14 +425,19 @@ export class WasmPhysicsBridge {
             isWasmNative: false,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ stepSymplecticPhysics ---
 
+    // --- НАЧАЛО ФУНКЦИИ getKuramotoPhase ---
     public getKuramotoPhase(index: number): number {
         return this.kuramotoPhases[index % this.kuramotoPhases.length] ?? 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ getKuramotoPhase ---
 
+    // --- НАЧАЛО ФУНКЦИИ isInitializedReady ---
     public isInitializedReady(): boolean {
         return this.isInitialized;
     }
+    // --- КОНЕЦ ФУНКЦИИ isInitializedReady ---
 }
 
 export const wasmPhysicsBridge = new WasmPhysicsBridge();

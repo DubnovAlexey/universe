@@ -9,8 +9,8 @@
 //             и 10-тоновой холодной палитрой полутонов (MONOCHROME_NEBULA_PALETTE).
 //   РАЗДЕЛ 2. Контракт состояния ячейки барабана (OdometerGlyphCellState).
 //   РАЗДЕЛ 3. Класс CipherOdometerEngine:
-//     - Подраздел 3.1. Накопление монотонной фазы вращения с ограниченной частотой
-//                      (без роста скорости от uptime страницы).
+//     - Подраздел 3.1. Накопление монотонной фазы вращения с учётом паузы
+//                      (isPaused / isTabHidden) и ограниченной частотой.
 //     - Подраздел 3.2. Развёртывание символов строго из центральной Точки Нуля (cx, cy)
 //                      и верификация отсутствия клиппинга на ширинах 320..1920 px.
 // ============================================================================
@@ -130,6 +130,7 @@ export class CipherOdometerEngine {
     private pointerY = -9999;
     private readonly hoverExcitedUntilMs: Map<number, number> = new Map();
     private accumulatedSpinPhase = 0;
+    private lfoClockSec = 0;
     private lastEvalTimeSec = -1;
 
     // ------------------------------------------------------------------------
@@ -203,12 +204,13 @@ export class CipherOdometerEngine {
     // --- НАЧАЛО ФУНКЦИИ advanceBoundedSpinPhase ---
     /**
      * Монотонно накапливает фазу вращения барабанов через приращение dtSec
-     * с жёстко ограниченной положительной частотой [1.5 .. 3.2] Гц.
-     * Скорость никогда не растёт с увеличением uptime страницы (0 с, 100 с, 1000 с).
+     * с учётом флагов isPaused / isTabHidden и жёстко ограниченной положительной
+     * частотой [6.5 .. 10.5] Гц на символ. Скорость не зависит от uptime страницы.
      */
     private advanceBoundedSpinPhase(
         liveTimeSec: number,
         reducedMotion: boolean,
+        isSimActive: boolean,
         heartbeat: number
     ): number {
         if (this.lastEvalTimeSec < 0 || liveTimeSec < this.lastEvalTimeSec) {
@@ -216,16 +218,26 @@ export class CipherOdometerEngine {
         }
         const rawDt = liveTimeSec - this.lastEvalTimeSec;
         this.lastEvalTimeSec = liveTimeSec;
-        const clampedDt = Math.max(0, Math.min(0.05, rawDt));
 
-        if (reducedMotion) {
-            this.accumulatedSpinPhase += clampedDt * 0.65;
+        if (!isSimActive) {
             return this.accumulatedSpinPhase;
         }
 
-        // Положительная, строго ограниченная частота вращения [1.55 .. 3.15] шагов/с
-        const lfoMod = 0.55 * Math.sin(liveTimeSec * 0.72) + 0.25 * Math.cos(liveTimeSec * 1.35);
-        const boundedRateHz = Math.max(1.55, Math.min(3.15, 2.25 + lfoMod + heartbeat * 0.35));
+        const clampedDt = Math.max(0, Math.min(0.05, rawDt));
+        this.lfoClockSec += clampedDt;
+
+        if (reducedMotion) {
+            this.accumulatedSpinPhase += clampedDt * 0.85;
+            return this.accumulatedSpinPhase;
+        }
+
+        const lfoMod =
+            1.4 * Math.sin(this.lfoClockSec * 0.85) +
+            0.8 * Math.cos(this.lfoClockSec * 1.75);
+        const boundedRateHz = Math.max(
+            6.5,
+            Math.min(10.5, 8.2 + lfoMod + heartbeat * 1.1)
+        );
         this.accumulatedSpinPhase += clampedDt * boundedRateHz;
         return this.accumulatedSpinPhase;
     }
@@ -243,27 +255,31 @@ export class CipherOdometerEngine {
         reducedMotion: boolean
     ): OdometerGlyphCellState[] {
         const p = Math.max(0, Math.min(1, assemblyProgress));
-        const seed = universeStore.getState().seed;
+        const uState = universeStore.getState();
+        const seed = uState.seed;
+        const isSimActive = !uState.isPaused && !uState.isTabHidden;
         const cx = viewportWidth * 0.5;
         const cy = viewportHeight * 0.5;
         const nowMs = typeof performance !== 'undefined' ? performance.now() : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
-        const audioSnap = audioSync.getSnapshot(liveTimeSec);
+        const audioSnap = audioSync.getSnapshot(this.lfoClockSec);
         const baseSpinPhase = this.advanceBoundedSpinPhase(
             liveTimeSec,
             reducedMotion,
+            isSimActive,
             audioSnap.heartbeat
         );
 
-        const breathEnvelope = reducedMotion ? 0.0 : smootherstep(0.6, 0.95, p);
+        const breathEnvelope =
+            reducedMotion || !isSimActive ? 0.0 : smootherstep(0.55, 0.92, p);
         const musicBreathBoost = 1.0 + audioSnap.heartbeat * 0.45;
         const cardHeartbeat =
             1.0 +
             breathEnvelope *
-            (0.009 * musicBreathBoost * Math.sin(liveTimeSec * 1.35) +
-                0.004 * Math.cos(liveTimeSec * 2.7));
-        const cardFloatY = breathEnvelope * Math.cos(liveTimeSec * 1.1) * 1.6;
+            (0.008 * musicBreathBoost * Math.sin(this.lfoClockSec * 1.3) +
+                0.003 * Math.cos(this.lfoClockSec * 2.5));
+        const cardFloatY = breathEnvelope * Math.cos(this.lfoClockSec * 1.05) * 1.6;
         const emergeScale = 0.12 + 0.88 * smootherstep(0.0, 0.32, p);
 
         const lineOffsetsY = [-98, -50, -4, 42, 82];
@@ -296,7 +312,7 @@ export class CipherOdometerEngine {
                 const originX = cx + Math.cos(startAngle) * pinpointRadius;
                 const originY = cy + Math.sin(startAngle) * pinpointRadius;
 
-                const gatherT = smootherstep(0.0, 0.46, p);
+                const gatherT = smootherstep(0.0, 0.44, p);
                 const spiralArc =
                     Math.sin(gatherT * Math.PI) * (r1 - 0.5) * 26.0 * (1.0 - gatherT);
 
@@ -310,7 +326,7 @@ export class CipherOdometerEngine {
                     this.pointerY - targetY
                 );
                 const hoverRadius = lineIdx === 0 ? 38 : 30;
-                if (distToPointer < hoverRadius && p > 0.5) {
+                if (distToPointer < hoverRadius && p > 0.5 && isSimActive) {
                     this.hoverExcitedUntilMs.set(globalIdx, nowMs + 860);
                 }
                 const excitedUntil = this.hoverExcitedUntilMs.get(globalIdx) ?? 0;
@@ -319,19 +335,19 @@ export class CipherOdometerEngine {
 
                 const isEndlessLine = lineIdx === ENDLESS_SPIN_LINE_INDEX;
                 const lockThreshold =
-                    0.42 + lineIdx * 0.08 + (cIdx / Math.max(1, len)) * 0.22;
+                    0.18 + lineIdx * 0.06 + (cIdx / Math.max(1, len)) * 0.32;
                 const isLocked =
                     !isEndlessLine &&
                     !isHoverSpinning &&
-                    p >= Math.min(0.82, lockThreshold);
+                    p >= Math.min(0.76, lockThreshold);
 
                 const hoverSpeedBoost = isHoverSpinning
-                    ? smootherstep(0, 860, hoverRemainingMs) * 1.65
+                    ? smootherstep(0, 860, hoverRemainingMs) * 2.4
                     : 0.0;
 
                 const cellWheelPos =
-                    baseSpinPhase * (0.85 + r1 * 0.35) +
-                    cIdx * 0.28 +
+                    baseSpinPhase * (0.85 + r1 * 0.45) +
+                    cIdx * 0.35 +
                     r2 * 12.0 +
                     hoverSpeedBoost;
 
@@ -342,7 +358,7 @@ export class CipherOdometerEngine {
                     ? 0.92 +
                     0.1 *
                     musicBreathBoost *
-                    Math.sin(liveTimeSec * 1.65 + cIdx * 0.44 + r1 * 5.0)
+                    Math.sin(this.lfoClockSec * 1.65 + cIdx * 0.44 + r1 * 5.0)
                     : 1.0;
                 const verticalScale =
                     (isLocked
@@ -384,7 +400,9 @@ export class CipherOdometerEngine {
                             (0.5 +
                                 0.5 *
                                 Math.sin(
-                                    liveTimeSec * 1.65 + cIdx * 0.55 + r2 * 4.0
+                                    this.lfoClockSec * 1.65 +
+                                    cIdx * 0.55 +
+                                    r2 * 4.0
                                 ))) *
                         smootherstep(0.0, 0.18, p);
                 }

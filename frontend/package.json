@@ -1,17 +1,22 @@
 {
   "name": "frontend",
   "type": "module",
-  "version": "0.0.1",
+  "version": "2.5.0",
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "astro dev",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"import('vite').then(async ({createServer}) => { const s = await createServer({logLevel:'error'}); try { const m = await s.ssrLoadModule('/src/tests/parityAndSeams.test.ts'); const r = m.runUniverseVerificationSuite(); console.log(r.details.join('\\n')); console.log('Summary:', r.passedChecks + '/' + r.totalChecks, r.passed ? 'PASSED' : 'FAILED'); process.exitCode = r.passed ? 0 : 1; } finally { await s.close(); } })\"",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^7.3.8"
+    "astro": "7.2.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
   }
 }

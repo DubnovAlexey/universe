@@ -1,12 +1,16 @@
 # noinspection SpellCheckingInspection,PyUnresolvedReferences
 # ============================================================================
 # ФАЙЛ: backend/api/transport.py
-# НАЗНАЧЕНИЕ: Транспортный слой API и WebSocket-телеметрии (с безопасным фолбэком)
-# ЗАДАЧИ ФАЙЛА:
-# 1. Формировать JSON и бинарные снимки состояния ('UNVS') для фронтенда.
-# 2. Предоставлять обработчики /api/health, /api/verify-parity и /api/topology.
-# 3. Поддерживать работу как с установленным FastAPI, так и со встроенным HTTP-сервером
-#    стандартной библиотеки Python (чтобы IDE никогда не выдавала ошибок импорта).
+# НАЗНАЧЕНИЕ: Транспортный слой API и верификации инвариантов Python-ядра (v2.5)
+# ============================================================================
+# ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+#   РАЗДЕЛ 1. Импорты математических ядер (PRNG, граф NEXUS, рефракция BREACH,
+#             оптика Чёрной дыры, бинарный упаковщик 'UNVS').
+#   РАЗДЕЛ 2. Функция полной верификации паритета build_health_and_parity_report():
+#             проверяет PRNG, бинарный заголовок, непустую топологию NEXUS,
+#             ненулевую рефракцию на кольце BREACH LENS (d ≈ 0.94) и оптику
+#             Чёрной дыры (устраняет замечание Аудита P0 #3).
+#   РАЗДЕЛ 3. Генератор монотонных бинарных кадров generate_live_binary_step().
 # ============================================================================
 
 from __future__ import annotations
@@ -24,11 +28,23 @@ from backend.core.prng import (
 from backend.core.graph_logic import GraphNodeDTO, compute_nexus_topology
 from backend.core.stress_solver import evaluate_breach_lens_refraction
 from backend.core.singularity import evaluate_black_hole_optics
-from backend.utils.binary_packer import pack_scene_binary_frame, unpack_and_validate_header
+from backend.utils.binary_packer import (
+    pack_scene_binary_frame,
+    unpack_and_validate_header,
+)
 
 
+# ============================================================================
+# РАЗДЕЛ 2. ПОЛНЫЙ ОТЧЁТ О ЗДОРОВЬЕ И МАТЕМАТИЧЕСКОМ ПАРИТЕТЕ ЯДРА
+# ============================================================================
+
+# --- НАЧАЛО ФУНКЦИИ build_health_and_parity_report ---
 def build_health_and_parity_report() -> dict[str, Any]:
-    """Возвращает полный отчёт о здоровье Python-ядра и паритете Golden-векторов."""
+    """
+    Возвращает полный отчёт о здоровье Python-ядра и паритете всех 5 подсистем:
+    PRNG, бинарного пакета 'UNVS', графа NEXUS, кольца преломления BREACH LENS
+    и релятивистской оптики Чёрной дыры.
+    """
     prng_ok = verify_golden_prng_parity()
 
     rng = DeterministicPRNG(GOLDEN_SEED)
@@ -64,17 +80,44 @@ def build_health_and_parity_report() -> dict[str, Any]:
     unpacked = unpack_and_validate_header(packet)
 
     edges, _deg, metrics = compute_nexus_topology(nodes, 220.0, GOLDEN_SEED, 1.0)
-    lens_sample = evaluate_breach_lens_refraction(120.0, 80.0, 100.0, 80.0, 140.0, 0.85)
-    bh_sample = evaluate_black_hole_optics(65.0, 0.0, 0.0, 0.0, 38.0, 1.0)
+
+    # ИСПРАВЛЕНО (Аудит P0 #3): Точка (232.0, 80.0) относительно центра линзы (100.0, 80.0)
+    # при радиусе 140.0 лежит непосредственно в кольце преломления (dist=132, d≈0.94, u<1.0),
+    # что даёт ненулевые значения dx, dy, rim_bell и truth_reveal_factor.
+    lens_sample = evaluate_breach_lens_refraction(
+        px=232.0,
+        py=80.0,
+        lens_x=100.0,
+        lens_y=80.0,
+        lens_radius=140.0,
+        reveal_intensity=0.85,
+        global_stress=0.35,
+        sim_time_sec=1.0,
+    )
+    bh_sample = evaluate_black_hole_optics(56.0, 0.0, 0.0, 0.0, 38.0, 1.0)
+
+    header_ok = (
+            unpacked is not None
+            and unpacked.count == len(nodes)
+            and unpacked.digest == digest
+    )
+    topology_ok = len(edges) > 0 and metrics.trunk_count > 0
+    lens_ok = lens_sample.rim_bell > 0.0 and abs(lens_sample.dx) > 0.0
+    bh_ok = (
+            bh_sample.einstein_deflection_alpha > 0.0
+            and bh_sample.photon_ring_intensity > 0.0
+    )
+
+    all_checks_ok = prng_ok and header_ok and topology_ok and lens_ok and bh_ok
 
     return {
-        "status": "ok" if (prng_ok and unpacked is not None) else "degraded",
+        "status": "ok" if all_checks_ok else "degraded",
         "goldenSeed": GOLDEN_SEED,
         "goldenVectorsParity": prng_ok,
         "goldenVectors": list(GOLDEN_U32_VECTORS),
         "stateDigestHex": format_digest_hex(digest),
         "binaryPacketBytes": len(packet),
-        "binaryHeaderValid": unpacked is not None,
+        "binaryHeaderValid": header_ok,
         "nexusTopology": {
             "totalEdges": len(edges),
             "trunks": metrics.trunk_count,
@@ -82,29 +125,44 @@ def build_health_and_parity_report() -> dict[str, Any]:
             "dendrites": metrics.dendrite_count,
             "avgDegree": metrics.avg_degree,
             "clusteringCoeff": metrics.clustering_coeff,
+            "diameterHops": metrics.diameter_hops,
+            "avgPathLength": metrics.avg_path_length,
             "computeTimeMs": metrics.compute_time_ms,
         },
         "breachLensSample": {
             "dx": lens_sample.dx,
             "dy": lens_sample.dy,
             "rimBell": lens_sample.rim_bell,
+            "truthRevealFactor": lens_sample.truth_reveal_factor,
         },
         "blackHoleOpticsSample": {
             "einsteinDeflectionAlpha": bh_sample.einstein_deflection_alpha,
+            "photonRingIntensity": bh_sample.photon_ring_intensity,
             "dopplerBeamingFactor": bh_sample.doppler_beaming_factor,
             "catsEyeShellFactor": bh_sample.cats_eye_shell_factor,
             "rsPuppisLightEcho": bh_sample.rs_puppis_light_echo,
         },
     }
+# --- КОНЕЦ ФУНКЦИИ build_health_and_parity_report ---
 
 
-def generate_live_binary_step(tick: int, seed: int = GOLDEN_SEED, count: int = 64) -> bytes:
-    """Генерирует бинарный кадр 'UNVS' для отправки по WebSocket."""
+# ============================================================================
+# РАЗДЕЛ 3. ГЕНЕРАЦИЯ МОНОТОННОГО БИНАРНОГО КАДРА 'UNVS'
+# ============================================================================
+
+# --- НАЧАЛО ФУНКЦИИ generate_live_binary_step ---
+def generate_live_binary_step(
+        tick: int,
+        seed: int = GOLDEN_SEED,
+        count: int = 64,
+) -> bytes:
+    """Генерирует бинарный кадр 'UNVS' для заданного монотонного номера тика."""
+    safe_tick = max(1, int(tick))
     rng = DeterministicPRNG(seed)
     pos_xyz: list[float] = []
     vel_xyz: list[float] = []
     energies: list[float] = []
-    sim_t = tick * (1.0 / 60.0)
+    sim_t = safe_tick * (1.0 / 60.0)
 
     for i in range(count):
         base_angle = rng.next_range(0.0, math.tau) + sim_t * 0.25
@@ -120,5 +178,6 @@ def generate_live_binary_step(tick: int, seed: int = GOLDEN_SEED, count: int = 6
         vel_xyz.extend([vx, vy, 0.0])
         energies.append(e)
 
-    digest = compute_state_digest_fnv1a(tick, count, pos_xyz, vel_xyz, energies)
-    return pack_scene_binary_frame(tick, seed, digest, pos_xyz)
+    digest = compute_state_digest_fnv1a(safe_tick, count, pos_xyz, vel_xyz, energies)
+    return pack_scene_binary_frame(safe_tick, seed, digest, pos_xyz)
+# --- КОНЕЦ ФУНКЦИИ generate_live_binary_step ---

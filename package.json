@@ -1,19 +1,29 @@
 {
-  "name": "frontend",
+  "name": "universe-polyglot-monorepo",
+  "private": true,
   "type": "module",
-  "version": "0.0.1",
+  "version": "2.5.0",
   "engines": {
     "node": ">=22.12.0"
   },
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "dev": "astro dev",
-    "typecheck": "tsc --noEmit",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro",
-    "dev:frontend": "npm run dev --workspace=frontend"
+    "dev": "npm --prefix frontend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "test": "npm --prefix frontend run test",
+    "verify:python": "python -m backend.main --verify",
+    "verify:all": "python -m backend.main --verify && npm --prefix frontend run typecheck && npm --prefix frontend run test",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "astro": "npm --prefix frontend run astro"
   },
   "dependencies": {
-    "astro": "7.4.1"
+    "astro": "7.2.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
   }
 }

@@ -3,16 +3,13 @@
 // ФАЙЛ: frontend/src/utils/audioSync.ts
 // НАЗНАЧЕНИЕ: Непрерывный аудио-движок синхронизации cosmic_ambient.mp3 и
 //             спектрального анализа ритма/дыхания сцены (UNIVERSE v2.5)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Загрузка аудиопотока через import.meta.env.BASE_URL: бесшовное непрерывное
-//    воспроизведение трека cosmic_ambient.mp3 без пауз при переключении фаз
-//    или нажатии кнопки паузы симуляции (пользователь изучает сцену под музыку).
-// 2. Граф Web Audio API (MediaElementAudioSourceNode -> GainNode -> AnalyserNode):
-//    точный размер временного буфера Float32Array(fftSize) для расчёта RMS dBFS
-//    и разделение спектра на Sub-Bass (20–90 Гц), Low (90–250 Гц), Mid и High.
-// 3. Детектор музыкального дыхания (heartbeat и pulse): извлечение плавной
-//    низкочастотной волны из реального аудиопотока для синхронизации дыхания
-//    колец, туманностей, цифр водопада и финальной визитки с музыкой.
+// ============================================================================
+// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 1. Инициализация и предзагрузка трека cosmic_ambient.mp3 через BASE_URL.
+//   РАЗДЕЛ 2. Граф Web Audio API (MediaElementAudioSourceNode -> GainNode -> AnalyserNode).
+//   РАЗДЕЛ 3. Единый мастер-расчёт спектра на кадр (updateRealtimeModulation) и
+//             неблокирующее чтение кешированного снимка (getSnapshot) для UI-слоёв
+//             (устраняет замечание Аудита P1 #9 о множественном чтении AnalyserNode).
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -56,7 +53,6 @@ export class AudioSyncEngine {
     private unlockBound = false;
     private currentPhase: PhaseId = '01_VOID';
 
-    // Смещение старта в секундах для пропуска начальной тихой паузы в файле MP3
     private readonly INTRO_SKIP_OFFSET_SEC = 2.6;
     private readonly TARGET_VOLUME = 0.85;
 
@@ -68,13 +64,31 @@ export class AudioSyncEngine {
     private smoothedHeartbeat = 0.35;
     private shockwaveBoost = 0.0;
 
+    private lastMasterUpdatePerfMs = -100;
+    private cachedSnapshot: AudioModulationSnapshot = {
+        rmsDb: -60.0,
+        rmsLinear: 0.0,
+        low: 0.2,
+        mid: 0.16,
+        high: 0.12,
+        subBass: 0.2,
+        brilliance: 0.12,
+        pulse: 0.22,
+        heartbeat: 0.35,
+        isPlaying: false,
+        status: 'AWAITING_GESTURE',
+    };
+
+    // --- НАЧАЛО ФУНКЦИИ constructor (AudioSyncEngine) ---
     constructor() {
         if (typeof window !== 'undefined') {
             this.prepareAudioElement();
             this.bindAutoStartListeners();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ resolveAudioUrl ---
     /**
      * Формирует корректный путь к MP3 с учётом подкаталога BASE_URL (/universe/ на GitHub Pages).
      */
@@ -84,7 +98,9 @@ export class AudioSyncEngine {
         const normalizedBase = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
         return `${normalizedBase}audio/cosmic_ambient.mp3`;
     }
+    // --- КОНЕЦ ФУНКЦИИ resolveAudioUrl ---
 
+    // --- НАЧАЛО ФУНКЦИИ prepareAudioElement ---
     /**
      * Предварительная загрузка оригинального трека cosmic_ambient.mp3.
      * Трек играет непрерывно и не прерывается при паузе визуальной симуляции.
@@ -98,7 +114,7 @@ export class AudioSyncEngine {
             el.loop = true;
             el.preload = 'auto';
             el.crossOrigin = 'anonymous';
-            el.volume = 1.0; // Уровень громкости регулируется единым GainNode
+            el.volume = 1.0;
 
             el.addEventListener('loadedmetadata', () => {
                 integrationRegistry.updateModuleStatus(
@@ -118,7 +134,6 @@ export class AudioSyncEngine {
                 }
             });
 
-            // Мягкий бесшовный возврат перед самым концом дорожки без попадания в начальную тишину
             el.addEventListener('timeupdate', () => {
                 if (el.duration > 12 && el.currentTime > el.duration - 0.28) {
                     try {
@@ -136,7 +151,9 @@ export class AudioSyncEngine {
             integrationRegistry.updateModuleStatus('web-audio', 'fallback', 0);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ prepareAudioElement ---
 
+    // --- НАЧАЛО ФУНКЦИИ bindAutoStartListeners ---
     /**
      * Автоматический старт звука при загрузке страницы или первом разрешённом жесте пользователя.
      */
@@ -165,11 +182,13 @@ export class AudioSyncEngine {
             }
         }, 25);
     }
+    // --- КОНЕЦ ФУНКЦИИ bindAutoStartListeners ---
 
     // ============================================================================
     // РАЗДЕЛ 2. ИНИЦИАЛИЗАЦИЯ ГРАФА WEB AUDIO API И СПЕКТРАЛЬНОГО АНАЛИЗАТОРА
     // ============================================================================
 
+    // --- НАЧАЛО ФУНКЦИИ ensureAnalyserGraph ---
     private ensureAnalyserGraph(): void {
         if (this.ctx || typeof window === 'undefined' || !this.audioEl) return;
         try {
@@ -191,7 +210,6 @@ export class AudioSyncEngine {
             this.gainNode.connect(this.analyser);
             this.analyser.connect(this.ctx.destination);
 
-            // Длина timeBuffer строго равна fftSize отсчётов Float32 (по 4 байта на отсчёт)
             this.freqBuffer = new Uint8Array(
                 new ArrayBuffer(this.analyser.frequencyBinCount)
             );
@@ -203,7 +221,9 @@ export class AudioSyncEngine {
             // При повторной привязке воспроизводим через HTMLAudioElement
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ ensureAnalyserGraph ---
 
+    // --- НАЧАЛО ФУНКЦИИ startPlayback ---
     public startPlayback(): void {
         if (!this.audioEl) {
             this.prepareAudioElement();
@@ -255,7 +275,9 @@ export class AudioSyncEngine {
             universeStore.setAudioEnabled(true, 'PLAYING_MP3');
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ startPlayback ---
 
+    // --- НАЧАЛО ФУНКЦИИ setEnabled ---
     public setEnabled(enabled: boolean): boolean {
         this.enabled = Boolean(enabled);
         if (this.enabled) {
@@ -270,16 +292,22 @@ export class AudioSyncEngine {
         }
         return this.enabled;
     }
+    // --- КОНЕЦ ФУНКЦИИ setEnabled ---
 
+    // --- НАЧАЛО ФУНКЦИИ isEnabled ---
     public isEnabled(): boolean {
         return this.enabled;
     }
+    // --- КОНЕЦ ФУНКЦИИ isEnabled ---
 
+    // --- НАЧАЛО ФУНКЦИИ toggleMute ---
     public toggleMute(forceMuted?: boolean): boolean {
         const nextEnabled = typeof forceMuted === 'boolean' ? !forceMuted : !this.enabled;
         return this.setEnabled(nextEnabled);
     }
+    // --- КОНЕЦ ФУНКЦИИ toggleMute ---
 
+    // --- НАЧАЛО ФУНКЦИИ triggerShockwavePulse ---
     public triggerShockwavePulse(
         arg1: number | string | boolean = 0.5,
         _arg2?: number | string | boolean,
@@ -291,14 +319,13 @@ export class AudioSyncEngine {
             this.shockwaveBoost + Math.max(0.1, intensity) * 0.45
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ triggerShockwavePulse ---
 
     // ============================================================================
-    // РАЗДЕЛ 3. НЕПРЕРЫВНОЕ ЗВУЧАНИЕ МЕЖДУ ФАЗАМИ И СИНХРОНИЗАЦИЯ ДЫХАНИЯ С ТРЕКОМ
+    // РАЗДЕЛ 3. ЕДИНЫЙ МАСТЕР-РАСЧЁТ НА КАДР И ЧТЕНИЕ КЕШИРОВАННОГО СНИМКА
     // ============================================================================
 
-    /**
-     * Переход между фазами и подактами: музыка играет непрерывно без пауз и без обрывов.
-     */
+    // --- НАЧАЛО ФУНКЦИИ transitionToPhase ---
     public transitionToPhase(
         phase: PhaseId | string | number | boolean,
         _act?: string | number | boolean
@@ -310,17 +337,21 @@ export class AudioSyncEngine {
             this.startPlayback();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ transitionToPhase ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateRealtimeModulation ---
     /**
-     * Извлекает реальные частотные полосы из играющего трека cosmic_ambient.mp3
-     * и формирует плавные кривые heartbeat и pulse в такт низким частотам музыки.
+     * Вызывается один раз за кадр из главного цикла renderer.ts:
+     * извлекает спектр из AnalyserNode, обновляет сглаженные огибающие и кеширует снимок.
      */
     public updateRealtimeModulation(
         arg1: number | PhaseId | boolean = 0,
         arg2?: number | PhaseId | boolean,
         _arg3?: boolean
     ): AudioModulationSnapshot {
-        const t0 = performance.now();
+        const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        this.lastMasterUpdatePerfMs = t0;
+
         const simTimeSec =
             typeof arg1 === 'number' ? arg1 : typeof arg2 === 'number' ? arg2 : 0;
 
@@ -350,7 +381,6 @@ export class AudioSyncEngine {
             const binHz = sampleRate / this.analyser.fftSize;
             const nBins = this.freqBuffer.length;
 
-            // Sub-Bass (20–90 Гц) — основа глубокого дыхания космического эмбиента
             const subEndBin = Math.min(nBins, Math.max(2, Math.round(90 / binHz)));
             const lowEndBin = Math.min(
                 nBins,
@@ -399,7 +429,6 @@ export class AudioSyncEngine {
             this.smoothedHigh = this.smoothedHigh * 0.85 + rawHigh * 0.15;
             this.smoothedRmsDb = this.smoothedRmsDb * 0.86 + measuredRmsDb * 0.14;
 
-            // Музыкальное дыхание (heartbeat) следует за реальной волной суб-баса и середины трека
             const targetBeat = Math.min(
                 1.0,
                 this.smoothedSubBass * 0.75 + this.smoothedMid * 0.35
@@ -430,9 +459,10 @@ export class AudioSyncEngine {
                 ? 'PLAYING_MP3'
                 : 'AWAITING_GESTURE';
 
-        integrationRegistry.recordModuleStep('web-audio', performance.now() - t0);
+        const endMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        integrationRegistry.recordModuleStep('web-audio', endMs - t0);
 
-        return {
+        this.cachedSnapshot = {
             rmsDb: Number(this.smoothedRmsDb.toFixed(1)),
             rmsLinear: Number(rmsLinear.toFixed(4)),
             low: Number(this.smoothedLow.toFixed(3)),
@@ -445,11 +475,24 @@ export class AudioSyncEngine {
             isPlaying: isActuallyPlaying,
             status,
         };
-    }
 
-    public getSnapshot(simTimeSec = 0): AudioModulationSnapshot {
-        return this.updateRealtimeModulation(simTimeSec, this.currentPhase, false);
+        return this.cachedSnapshot;
     }
+    // --- КОНЕЦ ФУНКЦИИ updateRealtimeModulation ---
+
+    // --- НАЧАЛО ФУНКЦИИ getSnapshot ---
+    /**
+     * Возвращает готовый кешированный снимок текущего кадра для слоёв телеметрии
+     * и одометра без повторного чтения AnalyserNode и без искажения сглаживания.
+     */
+    public getSnapshot(simTimeSec = 0): AudioModulationSnapshot {
+        const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (nowMs - this.lastMasterUpdatePerfMs > 24) {
+            return this.updateRealtimeModulation(simTimeSec, this.currentPhase, false);
+        }
+        return this.cachedSnapshot;
+    }
+    // --- КОНЕЦ ФУНКЦИИ getSnapshot ---
 }
 
 export const audioSync = new AudioSyncEngine();

@@ -1,7 +1,7 @@
 # ============================================================================
 # ФАЙЛ: .github/workflows/deploy.yml
-# НАЗНАЧЕНИЕ: Автоматическая проверка паритета (Python/TS), проверка типов
-#             и публикация продакшен-сборки на GitHub Pages (Node.js 22)
+# НАЗНАЧЕНИЕ: Автоматическая верификация полиглот-ядра (Python + Rust + TS),
+#             прогон регрессионных тестов и публикация на GitHub Pages
 # ============================================================================
 
 name: Deploy UNIVERSE to GitHub Pages
@@ -33,8 +33,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify Python Core Golden PRNG & Binary Packet Parity
-        run: python -m backend.main --verify
+      - name: Verify Python Core Golden PRNG, NEXUS Topology & Binary Packet Parity
+        run: python -B -m backend.main --verify
+
+      - name: Setup Rust Toolchain for Physics Crate Verification
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Rust Symplectic Physics Crate Compilation
+        working-directory: ./physics_engine
+        run: cargo check
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -49,8 +56,14 @@ jobs:
         working-directory: ./frontend
         run: npm run typecheck
 
-      - name: Build Astro Production Bundle
+      - name: Run Universe Verification & Regression Suite
         working-directory: ./frontend
+        run: npm test
+
+      - name: Build Astro Production Bundle for GitHub Pages
+        working-directory: ./frontend
+        env:
+          NODE_ENV: production
         run: npm run build
 
       - name: Upload GitHub Pages Artifact
