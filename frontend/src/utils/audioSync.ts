@@ -5,11 +5,12 @@
 //             спектрального анализа ритма/дыхания сцены (UNIVERSE v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Инициализация и предзагрузка трека cosmic_ambient.mp3 через BASE_URL.
+//   РАЗДЕЛ 1. Предзагрузка трека cosmic_ambient.mp3 через BASE_URL и умный
+//             автозапуск без предупреждений консоли Chrome Autoplay Policy:
+//             AudioContext создаётся строго в момент разрешённого воспроизведения.
 //   РАЗДЕЛ 2. Граф Web Audio API (MediaElementAudioSourceNode -> GainNode -> AnalyserNode).
 //   РАЗДЕЛ 3. Единый мастер-расчёт спектра на кадр (updateRealtimeModulation) и
-//             неблокирующее чтение кешированного снимка (getSnapshot) для UI-слоёв
-//             (устраняет замечание Аудита P1 #9 о множественном чтении AnalyserNode).
+//             неблокирующее чтение кешированного снимка (getSnapshot).
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -95,7 +96,7 @@ export class AudioSyncEngine {
     private resolveAudioUrl(): string {
         const rawBase =
             (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-        const normalizedBase = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+        const normalizedBase = rawBase.endsWith('/') ? baseUrlWithSlash(rawBase) : `${rawBase}/`;
         return `${normalizedBase}audio/cosmic_ambient.mp3`;
     }
     // --- КОНЕЦ ФУНКЦИИ resolveAudioUrl ---
@@ -103,7 +104,6 @@ export class AudioSyncEngine {
     // --- НАЧАЛО ФУНКЦИИ prepareAudioElement ---
     /**
      * Предварительная загрузка оригинального трека cosmic_ambient.mp3.
-     * Трек играет непрерывно и не прерывается при паузе визуальной симуляции.
      */
     private prepareAudioElement(): void {
         const t0 = performance.now();
@@ -114,7 +114,7 @@ export class AudioSyncEngine {
             el.loop = true;
             el.preload = 'auto';
             el.crossOrigin = 'anonymous';
-            el.volume = 1.0;
+            el.volume = this.TARGET_VOLUME;
 
             el.addEventListener('loadedmetadata', () => {
                 integrationRegistry.updateModuleStatus(
@@ -153,34 +153,78 @@ export class AudioSyncEngine {
     }
     // --- КОНЕЦ ФУНКЦИИ prepareAudioElement ---
 
+    // --- НАЧАЛО ФУНКЦИИ trySilentAutoplayWithoutWarning ---
+    /**
+     * Пытается запустить HTMLAudioElement сразу при открытии страницы БЕЗ создания AudioContext.
+     * Если браузер разрешает автозапуск (высокий Media Engagement), сразу подключает анализатор.
+     * Если браузер блокирует автозапуск до клика — НЕ создаёт AudioContext раньше времени,
+     * благодаря чему в консоли Chrome не появляется предупреждение Autoplay Policy.
+     */
+    private trySilentAutoplayWithoutWarning(): void {
+        if (!this.audioEl || !this.enabled || this.isPlayingMp3) return;
+
+        const playPromise = this.audioEl.play();
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    this.isPlayingMp3 = true;
+                    this.ensureAnalyserGraph();
+                    integrationRegistry.updateModuleStatus('web-audio', 'ready');
+                    universeStore.setAudioEnabled(true, 'PLAYING_MP3');
+                })
+                .catch(() => {
+                    this.isPlayingMp3 = false;
+                    integrationRegistry.updateModuleStatus('web-audio', 'fallback');
+                    universeStore.setAudioEnabled(true, 'AWAITING_GESTURE');
+                });
+        }
+    }
+    // --- КОНЕЦ ФУНКЦИИ trySilentAutoplayWithoutWarning ---
+
     // --- НАЧАЛО ФУНКЦИИ bindAutoStartListeners ---
     /**
-     * Автоматический старт звука при загрузке страницы или первом разрешённом жесте пользователя.
+     * Перехватывает любое первое действие пользователя (клик, касание, клавишу, прокрутку)
+     * и мгновенно включает музыку с подключением спектрального анализатора.
      */
     private bindAutoStartListeners(): void {
         if (this.unlockBound || typeof window === 'undefined') return;
         this.unlockBound = true;
 
-        const tryStart = (): void => {
-            if (this.enabled && !this.isPlayingMp3) {
-                this.startPlayback();
-            }
-            if (this.isPlayingMp3) {
-                window.removeEventListener('pointerdown', tryStart);
-                window.removeEventListener('keydown', tryStart);
-                window.removeEventListener('touchstart', tryStart);
+        const gestureEvents = [
+            'pointerdown',
+            'pointerup',
+            'click',
+            'keydown',
+            'touchstart',
+            'touchend',
+        ] as const;
+
+        const removeUnlockListeners = (): void => {
+            for (let i = 0; i < gestureEvents.length; i++) {
+                window.removeEventListener(gestureEvents[i], onFirstUserGesture);
             }
         };
 
-        window.addEventListener('pointerdown', tryStart, { passive: true });
-        window.addEventListener('keydown', tryStart, { passive: true });
-        window.addEventListener('touchstart', tryStart, { passive: true });
-
-        setTimeout(() => {
-            if (this.enabled) {
-                this.startPlayback();
+        const onFirstUserGesture = (): void => {
+            if (!this.enabled) return;
+            if (!this.isPlayingMp3) {
+                this.startPlayback(true);
             }
-        }, 25);
+            if (this.isPlayingMp3) {
+                removeUnlockListeners();
+            }
+        };
+
+        for (let i = 0; i < gestureEvents.length; i++) {
+            window.addEventListener(gestureEvents[i], onFirstUserGesture, {
+                passive: true,
+            });
+        }
+
+        // Безопасная попытка автозапуска через HTMLAudioElement без предупреждения AudioContext
+        setTimeout(() => {
+            this.trySilentAutoplayWithoutWarning();
+        }, 40);
     }
     // --- КОНЕЦ ФУНКЦИИ bindAutoStartListeners ---
 
@@ -210,6 +254,8 @@ export class AudioSyncEngine {
             this.gainNode.connect(this.analyser);
             this.analyser.connect(this.ctx.destination);
 
+            this.audioEl.volume = 1.0;
+
             this.freqBuffer = new Uint8Array(
                 new ArrayBuffer(this.analyser.frequencyBinCount)
             );
@@ -224,11 +270,20 @@ export class AudioSyncEngine {
     // --- КОНЕЦ ФУНКЦИИ ensureAnalyserGraph ---
 
     // --- НАЧАЛО ФУНКЦИИ startPlayback ---
-    public startPlayback(): void {
+    /**
+     * Запускает воспроизведение. Параметр fromUserGesture = true разрешает
+     * немедленное создание и резюм AudioContext внутри обработчика клика/клавиши.
+     */
+    public startPlayback(fromUserGesture = true): void {
         if (!this.audioEl) {
             this.prepareAudioElement();
         }
         if (!this.audioEl || !this.enabled) return;
+
+        if (!fromUserGesture && !this.ctx) {
+            this.trySilentAutoplayWithoutWarning();
+            return;
+        }
 
         this.ensureAnalyserGraph();
         if (this.ctx && this.ctx.state === 'suspended') {
@@ -248,7 +303,7 @@ export class AudioSyncEngine {
         }
 
         this.audioEl.muted = false;
-        this.audioEl.volume = 1.0;
+        this.audioEl.volume = this.ctx ? 1.0 : this.TARGET_VOLUME;
 
         if (this.gainNode && this.ctx) {
             const now = this.ctx.currentTime;
@@ -281,7 +336,7 @@ export class AudioSyncEngine {
     public setEnabled(enabled: boolean): boolean {
         this.enabled = Boolean(enabled);
         if (this.enabled) {
-            this.startPlayback();
+            this.startPlayback(true);
         } else {
             if (this.audioEl && !this.audioEl.paused) {
                 this.audioEl.pause();
@@ -333,17 +388,13 @@ export class AudioSyncEngine {
         if (typeof phase === 'string') {
             this.currentPhase = phase as PhaseId;
         }
-        if (this.enabled && !this.isPlayingMp3) {
-            this.startPlayback();
+        if (this.enabled && !this.isPlayingMp3 && this.ctx) {
+            this.startPlayback(true);
         }
     }
     // --- КОНЕЦ ФУНКЦИИ transitionToPhase ---
 
     // --- НАЧАЛО ФУНКЦИИ updateRealtimeModulation ---
-    /**
-     * Вызывается один раз за кадр из главного цикла renderer.ts:
-     * извлекает спектр из AnalyserNode, обновляет сглаженные огибающие и кеширует снимок.
-     */
     public updateRealtimeModulation(
         arg1: number | PhaseId | boolean = 0,
         arg2?: number | PhaseId | boolean,
@@ -481,10 +532,6 @@ export class AudioSyncEngine {
     // --- КОНЕЦ ФУНКЦИИ updateRealtimeModulation ---
 
     // --- НАЧАЛО ФУНКЦИИ getSnapshot ---
-    /**
-     * Возвращает готовый кешированный снимок текущего кадра для слоёв телеметрии
-     * и одометра без повторного чтения AnalyserNode и без искажения сглаживания.
-     */
     public getSnapshot(simTimeSec = 0): AudioModulationSnapshot {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         if (nowMs - this.lastMasterUpdatePerfMs > 24) {
@@ -493,6 +540,10 @@ export class AudioSyncEngine {
         return this.cachedSnapshot;
     }
     // --- КОНЕЦ ФУНКЦИИ getSnapshot ---
+}
+
+function baseUrlWithSlash(raw: string): string {
+    return raw.endsWith('/') ? raw : `${raw}/`;
 }
 
 export const audioSync = new AudioSyncEngine();

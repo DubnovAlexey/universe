@@ -4,18 +4,6 @@
 // ФАЙЛ: frontend/src/pages/index.astro
 // НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.5 (MASTER 00–99)
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Инициализация стилей и метаданных: импорт глобальной системы стилей
-//             universe.css, конфигурации 5 фаз (UNIVERSE_PHASES) и расчёт базового
-//             пути BASE_URL для совместимости с GitHub Pages.
-//   РАЗДЕЛ 2. Полноэкранный графический слой (Layer 1): размещение холста
-//             #universe-canvas и оптической виньетки .optical-vignette.
-//   РАЗДЕЛ 3. Финальный семантический слой (Layer 5): точка монтирования
-//             #layer5-finale-root для интерактивной визитки DUBNOV ALEXEY.
-//   РАЗДЕЛ 4. Парящий интерфейс телеметрии и управления (HUD Overlay):
-//             верхний паспорт фазы (.brand-card), правая колонка Водопада
-//             (#layer2..4) и нижний док фаз, режимов и прямой ссылки в GitHub.
-// ============================================================================
 import '../styles/universe.css';
 import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
 
@@ -39,7 +27,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 
 <body>
 <main class="universe-viewport">
-	<!-- РАЗДЕЛ 2: Полноэкранный холст единой симуляции (ILLUSION + NEXUS + BREACH X-RAY + ODOMETER) -->
+	<!-- РАЗДЕЛ 2: Полноэкранный холст единой симуляции -->
 	<canvas
 		id="universe-canvas"
 		aria-label="Интерактивное космическое и нейронное полотно UNIVERSE"
@@ -47,12 +35,21 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 
 	<div class="optical-vignette"></div>
 
-	<!-- РАЗДЕЛ 3 (АКТ D): Семантический DOM-контейнер финальной визитки GitHub и aria-live -->
+	<!-- Заметная голографическая капсула запуска звука (показывается только если браузер ждёт первого клика) -->
+	<button
+		type="button"
+		id="ui-audio-unlock-banner"
+		class="audio-unlock-banner"
+		aria-label="Включить космическое звуковое сопровождение"
+	>
+		[ 🔊 CLICK ANYWHERE TO ENGAGE COSMIC AUDIO ]
+	</button>
+
+	<!-- РАЗДЕЛ 3 (АКТ D): Семантический DOM-контейнер финальной визитки GitHub -->
 	<div id="layer5-finale-root"></div>
 
 	<!-- РАЗДЕЛ 4: Контейнер паспорта фазы, правой колонки Водопада телеметрии и нижнего дока управления -->
 	<div class="hud-overlay" id="hud-overlay-root">
-		<!-- ВЕРХНИЙ БАР: Паспорт текущей фазы слева + Полноразмерная колонка телеметрии справа (Layers 2, 3, 4) -->
 		<header class="hud-top-bar">
 			<section class="hud-panel brand-card" data-ui-panel="true">
 				<span class="phase-codename" id="ui-phase-codename">{initialPhase.codeName}</span>
@@ -68,7 +65,6 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 			</div>
 		</header>
 
-		<!-- НИЖНИЙ БАР: Навигация по 5 фазам (108 с), переключение режимов инспекции и выход в GitHub -->
 		<footer class="hud-bottom-bar">
 			<nav
 				class="hud-panel phase-timeline-dock"

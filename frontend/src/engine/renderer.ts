@@ -2455,6 +2455,12 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
     }
 
     const btnAudio = document.getElementById('btn-toggle-audio');
+    const unlockBanner = document.getElementById('ui-audio-unlock-banner');
+    if (unlockBanner) {
+        const isWaitingGesture =
+            state.audioEnabled && state.telemetry.audioStatus === 'AWAITING_GESTURE';
+        unlockBanner.classList.toggle('hidden', !isWaitingGesture);
+    }
     if (btnAudio) {
         const aStatus = state.telemetry.audioStatus;
         const audioLabel =
@@ -2572,6 +2578,9 @@ export function bootstrapUniverseV2(): void {
     });
     document.getElementById('btn-toggle-audio')?.addEventListener('click', () => {
         audioSync.toggleMute();
+    });
+    document.getElementById('ui-audio-unlock-banner')?.addEventListener('click', () => {
+        audioSync.startPlayback(true);
     });
     document.getElementById('btn-toggle-metrics')?.addEventListener('click', () => {
         universeStore.toggleLayer('layer2_metricsHud');

@@ -2,21 +2,8 @@
 /* ============================================================================
  * ФАЙЛ: frontend/src/styles/universe.css
  * НАЗНАЧЕНИЕ: Кинематографическая система стилей UNIVERSE v2.5
- * ============================================================================
- * ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
- *   РАЗДЕЛ 1. Каноническая цветовая конституция и переменные типографики.
- *   РАЗДЕЛ 2. Полноэкранный каркас сцены (#universe-canvas, .optical-vignette,
- *             .hud-overlay).
- *   РАЗДЕЛ 3. Верхний паспорт фазы (.brand-card) и полноразмерная правая колонка
- *             телеметрии «Цифрового водопада» (LAYERS 2–4).
- *   РАЗДЕЛ 4. Бесшовная голографическая визитка финала (.finale-stage-container,
- *             .finale-manifesto-card) с парящей без рамок квантовой строкой,
- *             полупрозрачным фоновым режимом (.ambient-loop) и защитой hit-testing.
  * ============================================================================ */
 
-/* ============================================================================
- * РАЗДЕЛ 1. КАНОНИЧЕСКАЯ ЦВЕТОВАЯ КОНСТИТУЦИЯ И ПЕРЕМЕННЫЕ ТИПОГРАФИКИ
- * ============================================================================ */
 :root {
     --void-obsidian: #020308;
     --void-graphite: #03050a;
@@ -61,9 +48,6 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* ============================================================================
- * РАЗДЕЛ 2. ПОЛНОЭКРАННЫЙ ХОЛСТ СИМУЛЯЦИИ И КОНТЕЙНЕР HUD OVERLAY
- * ============================================================================ */
 .universe-viewport {
     position: relative;
     width: 100vw;
@@ -99,6 +83,52 @@ body {
     );
 }
 
+/* Голографическая капсула-приглашение включения звука одним кликом по экрану */
+@keyframes audioBannerPulse {
+    0%, 100% {
+        transform: translate3d(-50%, 0, 0) scale(1);
+        box-shadow: 0 8px 32px rgba(2, 3, 8, 0.85), 0 0 18px rgba(56, 189, 248, 0.25);
+    }
+    50% {
+        transform: translate3d(-50%, -2px, 0) scale(1.025);
+        box-shadow: 0 10px 38px rgba(2, 3, 8, 0.9), 0 0 28px rgba(125, 211, 252, 0.52);
+    }
+}
+
+.audio-unlock-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 4.8rem;
+    transform: translate3d(-50%, 0, 0);
+    z-index: 28;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--accent-pearl);
+    background: radial-gradient(
+            ellipse at 50% 50%,
+            rgba(8, 20, 46, 0.82) 0%,
+            rgba(3, 8, 22, 0.72) 100%
+    );
+    border: 1px solid rgba(125, 211, 252, 0.45);
+    border-radius: 999px;
+    padding: 0.55rem 1.35rem;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    text-shadow: 0 0 12px rgba(125, 211, 252, 0.65);
+    animation: audioBannerPulse 2.4s ease-in-out infinite;
+    transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.audio-unlock-banner.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    animation: none;
+}
+
 .hud-overlay {
     position: absolute;
     inset: 0;
@@ -111,7 +141,6 @@ body {
     transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* В Акте C панели мягко приглушаются, но управление внизу остаётся доступным */
 .hud-overlay.act-silence-hidden .brand-card,
 .hud-overlay.act-silence-hidden .inspection-islands-stack {
     opacity: 0.24;
@@ -149,14 +178,12 @@ body {
 
 .btn-cyber:focus-visible,
 .phase-pill:focus-visible,
-.btn-cipher-action:focus-visible {
+.btn-cipher-action:focus-visible,
+.audio-unlock-banner:focus-visible {
     outline: 1.5px solid var(--accent-ice);
     outline-offset: 2px;
 }
 
-/* ============================================================================
- * РАЗДЕЛ 3. ВЕРХНИЙ ПАСПОРТ ФАЗЫ И ПРАВАЯ КОЛОНКА «ЦИФРОВОГО ВОДОПАДА» (LAYERS 2–4)
- * ============================================================================ */
 .hud-top-bar {
     display: flex;
     justify-content: space-between;
@@ -501,9 +528,6 @@ body {
     text-overflow: ellipsis;
 }
 
-/* ============================================================================
- * РАЗДЕЛ 4. БЕСШОВНАЯ ГОЛОГРАФИЧЕСКАЯ ВИЗИТКА ФИНАЛА, ПАРЯЩАЯ СТРОКА И ДОК
- * ============================================================================ */
 .sr-only-manifesto {
     position: absolute;
     width: 1px;
@@ -516,8 +540,6 @@ body {
     border: 0;
 }
 
-/* ИСПРАВЛЕНО (Аудит P1 #6): когда контейнер не .visible, он полностью отключён
- * через visibility: hidden и не перехватывает клики мыши в центре экрана */
 .finale-stage-container {
     position: fixed;
     inset: 0;
@@ -539,8 +561,6 @@ body {
     opacity: 1;
 }
 
-/* Воздушная голографическая карточка без жёсткой коробочной рамки:
- * растворённый в космосе градиент + глубокая мягкая пространственная тень */
 .finale-manifesto-card {
     pointer-events: none;
     width: min(820px, calc(100vw - 1.5rem));
@@ -580,7 +600,6 @@ body {
     pointer-events: auto;
 }
 
-/* Постоянный полупрозрачный режим визитки при последующих проходах цикла космоса */
 .finale-manifesto-card.ambient-loop {
     opacity: 0.46;
     background: radial-gradient(
@@ -636,9 +655,6 @@ body {
     cursor: pointer;
 }
 
-/* ИСПРАВЛЕНО (по запросу пользователя и Аудиту P1 #5):
- * Полностью убрана рамка, фон и плашка вокруг квантовой строки —
- * символы свободно висят в воздухе в едином стиле с остальными строками */
 .finale-line-quantum-stream {
     font-family: var(--font-mono);
     font-size: clamp(0.84rem, 1.8vw, 1.16rem);
@@ -871,6 +887,14 @@ body {
         right: 0.45rem;
         bottom: 5.2rem;
         width: min(350px, 94vw);
+    }
+
+    .audio-unlock-banner {
+        bottom: 6.2rem;
+        font-size: 0.64rem;
+        padding: 0.45rem 0.95rem;
+        width: max-content;
+        max-width: 92vw;
     }
 
     .finale-manifesto-card {
