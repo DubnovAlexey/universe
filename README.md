@@ -121,7 +121,7 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
 ---
 ---
 
-# 🇷🇺 РУССКАЯ ДОКУМЕНТАЦИЯ
+# 🇷🇺 ДОКУМЕНТАЦИЯ
 
 ## 1. О проекте и философской концепции
 
