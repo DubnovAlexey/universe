@@ -14,8 +14,9 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "typecheck": "npm --prefix frontend run typecheck",
     "test": "npm --prefix frontend run test",
-    "verify:python": "python -m backend.main --verify",
-    "verify:all": "python -m backend.main --verify && npm --prefix frontend run typecheck && npm --prefix frontend run test",
+    "test:python": "python -B -m unittest discover -v",
+    "verify:python": "python -B -m backend.main --verify",
+    "verify:all": "python -B -m backend.main --verify && python -B -m unittest discover -v && npm --prefix frontend run typecheck && npm --prefix frontend run test",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",
     "astro": "npm --prefix frontend run astro"

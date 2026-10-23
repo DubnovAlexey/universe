@@ -13,7 +13,8 @@
 //             обновление контуров, падающих буковок и дыхания цифр ([data-breath-slot])
 //             в такт треку cosmic_ambient.mp3 без пересоздания DOM.
 //   РАЗДЕЛ 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
-//             mountLayer2Metrics).
+//             mountLayer2Metrics) с честной динамической подписью источника физики
+//             ([rust/gravity.rs] при WASM_SIMD_ACTIVE или [ts/wasmBridge.ts] при TS_FALLBACK).
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
@@ -145,10 +146,6 @@ export interface StarfallDroplet {
 const STARFALL_GLYPH_POOL = '0123456789ABCDEF.+-xΔr∑';
 
 // --- НАЧАЛО ФУНКЦИИ buildLivingBreachContourPath ---
-/**
- * Вычисляет замкнутый SVG-путь живого контура панели:
- * плавная длинноволновая форма мягко дышит в такт низким частотам музыки (audioBoost).
- */
 export function buildLivingBreachContourPath(
     width: number,
     height: number,
@@ -165,7 +162,6 @@ export function buildLivingBreachContourPath(
     const pts: Array<[number, number]> = [];
     const musicScale = 1.0 + Math.min(0.35, audioBoost * 0.28);
 
-    // 1. Левая волновая граница (сверху вниз — плавная длинная волна)
     for (let i = 0; i <= vSteps; i++) {
         const u = i / vSteps;
         const y = padY + u * h;
@@ -177,7 +173,6 @@ export function buildLivingBreachContourPath(
         pts.push([padX + wave, y]);
     }
 
-    // 2. Нижняя волновая кромка (слева направо)
     for (let i = 1; i <= hSteps; i++) {
         const u = i / hSteps;
         const x = padX + u * w;
@@ -189,7 +184,6 @@ export function buildLivingBreachContourPath(
         pts.push([x, padY + h + wave]);
     }
 
-    // 3. Правая волновая граница (снизу вверх)
     for (let i = 1; i <= vSteps; i++) {
         const u = 1.0 - i / vSteps;
         const y = padY + u * h;
@@ -201,7 +195,6 @@ export function buildLivingBreachContourPath(
         pts.push([padX + w + wave, y]);
     }
 
-    // 4. Верхняя волновая кромка (справа налево)
     for (let i = 1; i < hSteps; i++) {
         const u = 1.0 - i / hSteps;
         const x = padX + u * w;
@@ -223,9 +216,6 @@ export function buildLivingBreachContourPath(
 // --- КОНЕЦ ФУНКЦИИ buildLivingBreachContourPath ---
 
 // --- НАЧАЛО ФУНКЦИИ buildLivingHorizontalWavePath ---
-/**
- * Вычисляет плавно изгибающуюся линию под заголовком панели (y = 42).
- */
 export function buildLivingHorizontalWavePath(
     width: number,
     yCenter: number,
@@ -267,21 +257,16 @@ class TelemetryWaterfallAnimator {
     private smoothedMusicPulse = 0.22;
     private smoothedMusicLow = 0.2;
 
-    // --- НАЧАЛО ФУНКЦИИ getTimeSec ---
     public getTimeSec(): number {
         return typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
     }
-    // --- КОНЕЦ ФУНКЦИИ getTimeSec ---
 
-    // --- НАЧАЛО ФУНКЦИИ ensureRunning ---
     public ensureRunning(): void {
         if (this.rafId !== 0 || typeof window === 'undefined') return;
         this.lastMs = performance.now();
         this.rafId = window.requestAnimationFrame(this.tick);
     }
-    // --- КОНЕЦ ФУНКЦИИ ensureRunning ---
 
-    // --- НАЧАЛО ФУНКЦИИ tick ---
     private tick = (nowMs: number): void => {
         const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
         this.lastMs = nowMs;
@@ -303,9 +288,7 @@ class TelemetryWaterfallAnimator {
 
         this.rafId = window.requestAnimationFrame(this.tick);
     };
-    // --- КОНЕЦ ФУНКЦИИ tick ---
 
-    // --- НАЧАЛО ФУНКЦИИ stepDroplets ---
     private stepDroplets(dt: number, timeSec: number): void {
         const cascades: ReadonlyArray<2 | 3 | 4> = [2, 3, 4];
         const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
@@ -370,12 +353,7 @@ class TelemetryWaterfallAnimator {
         }
         this.droplets = active.slice(-28);
     }
-    // --- КОНЕЦ ФУНКЦИИ stepDroplets ---
 
-    // --- НАЧАЛО ФУНКЦИИ computeSlotBreathCss ---
-    /**
-     * Вычисляет C∞-гладкий стиль дыхания слота в такт музыке без резких ступенек.
-     */
     public computeSlotBreathCss(
         slotKey: string,
         phaseSeed: number,
@@ -411,17 +389,10 @@ class TelemetryWaterfallAnimator {
                     )})`,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ computeSlotBreathCss ---
 
-    // --- НАЧАЛО ФУНКЦИИ updateLiveDomElements ---
-    /**
-     * На 60 FPS плавно обновляет волновые контуры, падающие буковки и дыхание всех
-     * элементов [data-breath-slot] напрямую в DOM (без пересоздания узлов).
-     */
     private updateLiveDomElements(timeSec: number): void {
         if (typeof document === 'undefined') return;
 
-        // 1. Плавное обновление внешнего волнового контура с музыкальной огибающей
         const contourPaths = document.querySelectorAll<SVGPathElement>(
             'path[data-breach-contour]'
         );
@@ -440,7 +411,6 @@ class TelemetryWaterfallAnimator {
             );
         });
 
-        // 2. Плавное обновление волнистой линии под заголовком
         const dividerPaths = document.querySelectorAll<SVGPathElement>(
             'path[data-breach-wave-line]'
         );
@@ -457,7 +427,6 @@ class TelemetryWaterfallAnimator {
             );
         });
 
-        // 3. Мягкое вертикальное течение фоновой вуали водопада
         const streamOverlays = document.querySelectorAll<HTMLElement>(
             '.waterfall-stream-overlay'
         );
@@ -466,7 +435,6 @@ class TelemetryWaterfallAnimator {
             el.style.backgroundPosition = `0px ${yPos.toFixed(1)}px`;
         });
 
-        // 4. Непрерывное 60-FPS дыхание всех цифр и показателей в такт музыке
         const breathNodes = document.querySelectorAll<HTMLElement>('[data-breath-slot]');
         breathNodes.forEach((el: HTMLElement) => {
             const slotKey = el.getAttribute('data-breath-slot') || 'slot';
@@ -477,7 +445,6 @@ class TelemetryWaterfallAnimator {
             el.style.textShadow = css.textShadow;
         });
 
-        // 5. Плавная 60-FPS отрисовка падающих буковок в контейнерах .starfall-drops-layer
         const dropContainers = document.querySelectorAll<HTMLElement>(
             '.starfall-drops-layer[data-cascade-drops]'
         );
@@ -521,15 +488,11 @@ class TelemetryWaterfallAnimator {
             });
         });
     }
-    // --- КОНЕЦ ФУНКЦИИ updateLiveDomElements ---
 
-    // --- НАЧАЛО ФУНКЦИИ getDropletsForCascade ---
     public getDropletsForCascade(cascadeId: 2 | 3 | 4): ReadonlyArray<StarfallDroplet> {
         return this.droplets.filter((d: StarfallDroplet) => d.cascadeId === cascadeId);
     }
-    // --- КОНЕЦ ФУНКЦИИ getDropletsForCascade ---
 
-    // --- НАЧАЛО ФУНКЦИИ getBreathingSlotStyle ---
     public getBreathingSlotStyle(
         slotKey: string,
         phaseSeed: number
@@ -543,16 +506,11 @@ class TelemetryWaterfallAnimator {
             textShadow: css.textShadow,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ getBreathingSlotStyle ---
 }
 
 export const waterfallAnimator = new TelemetryWaterfallAnimator();
 
 // --- НАЧАЛО ФУНКЦИИ renderWaterfallMembraneDecor ---
-/**
- * Строит SVG-подложку с плавным волновым контуром, одной мягкой волнистой линией
- * под заголовком и 60-FPS слоем падающих буковок для каскадов 2, 3 и 4.
- */
 export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
     const timeSec = waterfallAnimator.getTimeSec();
     const phaseOffset = (cascadeId - 2) * 1.25;
@@ -648,6 +606,14 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
 // РАЗДЕЛ 4. ПРЕДСТАВЛЕНИЕ И MOUNT-ONCE МОНТИРОВЩИК LAYER 2: METRICS
 // ============================================================================
 
+// --- НАЧАЛО ФУНКЦИИ resolvePhysicsModuleTag ---
+function resolvePhysicsModuleTag(wasmStatus: UniverseState['telemetry']['wasmStatus']): string {
+    return wasmStatus === 'WASM_SIMD_ACTIVE'
+        ? '[rust/gravity.rs]'
+        : '[ts/wasmBridge.ts]';
+}
+// --- КОНЕЦ ФУНКЦИИ resolvePhysicsModuleTag ---
+
 // --- НАЧАЛО ФУНКЦИИ renderLayer2MetricsView ---
 export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element {
     const t = snap.telemetry;
@@ -657,6 +623,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
         snap.inspectionLevel === 'METRICS';
     const hiddenClass = isVisible ? '' : ' layer-hidden';
     const decor = renderWaterfallMembraneDecor(2);
+    const physSourceTag = resolvePhysicsModuleTag(t.wasmStatus);
 
     return (
         <aside
@@ -695,7 +662,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                     </div>
 
                     <div className="metric-box">
-                        <span className="label">ΔE/E₀ [rust/gravity.rs]</span>
+                        <span className="label" data-bind="l2-drift-label">
+                            ΔE/E₀ {physSourceTag}
+                        </span>
                         <span
                             className="value"
                             data-bind="l2-drift"
@@ -708,7 +677,9 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
                     </div>
 
                     <div className="metric-box">
-                        <span className="label">KURAMOTO r(t) [rust/gravity.rs]</span>
+                        <span className="label" data-bind="l2-kuramoto-label">
+                            KURAMOTO r(t) {physSourceTag}
+                        </span>
                         <span
                             className="value"
                             data-bind="l2-kuramoto"
@@ -766,10 +737,6 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
 // --- КОНЕЦ ФУНКЦИИ renderLayer2MetricsView ---
 
 // --- НАЧАЛО ФУНКЦИИ mountLayer2Metrics ---
-/**
- * Монтирует DOM-дерево Layer 2 один раз и обновляет только текстовые узлы и класс видимости,
- * полностью исключая пересоздание DOM через replaceChildren.
- */
 export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();
@@ -778,7 +745,9 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     let elDigest: HTMLElement | null = null;
     let elFps: HTMLElement | null = null;
     let elFrameTime: HTMLElement | null = null;
+    let elDriftLabel: HTMLElement | null = null;
     let elDrift: HTMLElement | null = null;
+    let elKuramotoLabel: HTMLElement | null = null;
     let elKuramoto: HTMLElement | null = null;
     let elNodes: HTMLElement | null = null;
     let elCore: HTMLElement | null = null;
@@ -791,7 +760,9 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
             elDigest = rootEl.querySelector<HTMLElement>('[data-bind="l2-digest"]');
             elFps = rootEl.querySelector<HTMLElement>('[data-bind="l2-fps"]');
             elFrameTime = rootEl.querySelector<HTMLElement>('[data-bind="l2-frametime"]');
+            elDriftLabel = rootEl.querySelector<HTMLElement>('[data-bind="l2-drift-label"]');
             elDrift = rootEl.querySelector<HTMLElement>('[data-bind="l2-drift"]');
+            elKuramotoLabel = rootEl.querySelector<HTMLElement>('[data-bind="l2-kuramoto-label"]');
             elKuramoto = rootEl.querySelector<HTMLElement>('[data-bind="l2-kuramoto"]');
             elNodes = rootEl.querySelector<HTMLElement>('[data-bind="l2-nodes"]');
             elCore = rootEl.querySelector<HTMLElement>('[data-bind="l2-core"]');
@@ -806,12 +777,16 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
             state.inspectionLevel === 'METRICS';
         rootEl.classList.toggle('layer-hidden', !isVisible);
 
+        const physSourceTag = resolvePhysicsModuleTag(t.wasmStatus);
+
         if (elDigest) elDigest.textContent = `DIGEST: ${t.stateDigestHex}`;
         if (elFps) elFps.textContent = `${t.fps} FPS `;
         if (elFrameTime) {
             elFrameTime.textContent = `(${t.frameTimeMs}/${t.frameTimeP95Ms}ms)`;
         }
+        if (elDriftLabel) elDriftLabel.textContent = `ΔE/E₀ ${physSourceTag}`;
         if (elDrift) elDrift.textContent = t.energyDriftRatio.toExponential(2);
+        if (elKuramotoLabel) elKuramotoLabel.textContent = `KURAMOTO r(t) ${physSourceTag}`;
         if (elKuramoto) elKuramoto.textContent = t.kuramotoOrderR.toFixed(3);
         if (elNodes) {
             elNodes.textContent = `${t.activeParticles} / ${t.activeConnections}`;
@@ -820,7 +795,10 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
             elCore.textContent = `${t.wasmStatus} · ${t.pythonBackendStatus}`;
         }
         if (elAudio) {
-            elAudio.textContent = `${t.audioStatus} (${t.silenceRmsDb.toFixed(1)} dBFS)`;
+            elAudio.textContent = `${t.audioStatus} ({t.silenceRmsDb.toFixed(1)} dBFS)`.replace(
+                '{t.silenceRmsDb.toFixed(1)}',
+                t.silenceRmsDb.toFixed(1)
+            );
         }
     };
 

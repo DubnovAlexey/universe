@@ -231,6 +231,7 @@ class UniverseStore {
     private lastUiNotifyMs = 0;
     private lastTelemetryUpdateMs = 0;
     private watchdogWarned = false;
+    private isCompactMobileLayout = false;
 
     constructor() {
         const urlParams = this.parseUrlParameters();
@@ -241,12 +242,11 @@ class UniverseStore {
         const bootTime = this.formatTimestamp();
         const bootLine = `[${bootTime}] [SYSTEM:BOOT] Инициализация UNIVERSE v2.5 (seed=${urlParams.seed}) [ts/universeState.ts]`;
 
-        // На узких мобильных экранах (<= 920px) панели телеметрии по умолчанию свёрнуты,
-        // чтобы не загромождать экран телефона и оставлять космос полностью открытым
         const isCompactMobile =
             typeof window !== 'undefined' &&
             window.innerWidth <= 920 &&
             !urlParams.debugMode;
+        this.isCompactMobileLayout = isCompactMobile;
 
         this.state = {
             seed: urlParams.seed,
@@ -325,7 +325,37 @@ class UniverseStore {
         if (typeof window !== 'undefined') {
             this.lastTelemetryUpdateMs = performance.now();
             this.startPhaseWatchdog();
+            window.addEventListener(
+                'resize',
+                () => {
+                    this.syncViewportLayoutMode(window.innerWidth);
+                },
+                { passive: true }
+            );
         }
+    }
+
+    /**
+     * При пересечении границы мобильного вьюпорта (<= 920px) во время ресайза окна
+     * или поворота устройства автоматически сворачивает перекрывающиеся панели телеметрии,
+     * а при возврате на широкий десктопный экран (> 920px) раскрывает правую колонку.
+     */
+    public syncViewportLayoutMode(viewportWidth: number): void {
+        if (this.state.debugMode) return;
+        const shouldBeCompact = viewportWidth <= 920;
+        if (shouldBeCompact === this.isCompactMobileLayout) return;
+
+        this.isCompactMobileLayout = shouldBeCompact;
+        if (shouldBeCompact) {
+            this.state.layers.layer2_metricsHud = false;
+            this.state.layers.layer3_topologyGraph = false;
+            this.state.layers.layer4_architectTerminal = false;
+        } else {
+            this.state.layers.layer2_metricsHud = true;
+            this.state.layers.layer3_topologyGraph = true;
+            this.state.layers.layer4_architectTerminal = true;
+        }
+        this.notifyListeners(true);
     }
 
     private parseUrlParameters(): {
@@ -514,11 +544,6 @@ class UniverseStore {
         this.notifyListeners(true);
     }
 
-    /**
-     * Переключает видимость слоя. На мобильных экранах (<= 920px) панели телеметрии
-     * работают в режиме аккордеона (открытие одной автоматически закрывает две другие),
-     * чтобы исключить наслоение таблиц поверх сцены.
-     */
     public toggleLayer(layerKey: keyof UniverseLayersVisibility): void {
         const nextVal = !this.state.layers[layerKey];
         const isMobileViewport =

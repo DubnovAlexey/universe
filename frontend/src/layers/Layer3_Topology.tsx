@@ -2,16 +2,13 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer3_Topology.tsx
 // НАЗНАЧЕНИЕ: Средний каскад правой колонки телеметрии (LAYER_03 // NEXUS GRAPH TOPOLOGY)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
+// АРХИТЕКТУРНЫЕ РАЗДЕЛОВ МОДУЛЯ:
 // 1. Импорт нативной DOM/SVG фабрики React и декоратора мембраны Водопада
 //    из верхнего каскада Layer2_Metrics.tsx.
-// 2. Независимое управление видимостью: панель LAYER_03 подчиняется кнопке
-//    TOPOLOGY (state.layers.layer3_topologyGraph) без принудительной блокировки
-//    от состояния соседней панели METRICS.
-// 3. Отображение 3 классов рёбер графа NEXUS (Class A MST Trunks, Class B
-//    Gabriel Bridges, Class C Murray Dendrites) и реальных BFS-инвариантов
-//    (средняя степень, кластеризация по треугольникам, диаметр и длина пути).
-// 4. Mount-once монтировщик (mountLayer3Topology): однократное создание DOM
+// 2. Отображение 3 классов рёбер графа NEXUS (Class A MST Trunks, Class B
+//    Gabriel Bridges, Class C Murray Dendrites) и выборочных BFS-метрик
+//    (EST. DIAMETER / PATH (BFS)).
+// 3. Mount-once монтировщик (mountLayer3Topology): однократное создание DOM
 //    и плавное обновление значений без сброса анимации дыхания и Звездопада.
 // ============================================================================
 
@@ -105,7 +102,12 @@ export function renderLayer3TopologyView(
                         </strong>
                     </div>
                     <div className="topology-stat-line">
-                        <span className="label">DIAMETER / PATH:</span>
+                        <span
+                            className="label"
+                            title="Выборочная оценка диаметра и средней длины пути методом BFS (до 28 стартовых вершин)"
+                        >
+                            EST. DIAMETER / PATH (BFS):
+                        </span>
                         <strong
                             data-bind="l3-diam"
                             data-breath-slot="l3_diam"
@@ -132,10 +134,6 @@ export function renderLayer3TopologyView(
     );
 }
 
-/**
- * Монтирует DOM-дерево Layer 3 один раз и обновляет только текстовые показатели,
- * сохраняя непрерывность 60-FPS дыхания и падающих глифов.
- */
 export function mountLayer3Topology(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();

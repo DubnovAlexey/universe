@@ -2,15 +2,11 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer4_Terminal.tsx
 // НАЗНАЧЕНИЕ: Нижний каскад правой колонки телеметрии (LAYER_04 // TERMINAL & LEDGER)
-// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-// 1. Импорт нативной DOM/SVG фабрики React и декоратора мембраны Водопада
-//    из модуля Layer2_Metrics.tsx.
-// 2. Вывод живой матрицы модулей IntegrationRegistry (язык, статус, реальные
-//    перцентили времени шага p50/p95 мс) и подтверждение эквивалентности трёх
-//    оптик (ILLUSION == NEXUS == X-RAY [StateDigest]).
-// 3. Отображение счётчиков ресурсов ResourceLedger и потока архитектурных логов.
-// 4. Mount-once монтировщик (mountLayer4Terminal): инкрементальное обновление
-//    строк реестра и логов без пересоздания DOM-дерева каждые 95 мс.
+// АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ:
+// 1. Вывод полной матрицы всех 8 модулей IntegrationRegistry (включая web-audio и
+//    worker-physics) с реальными перцентилями времени шага p50/p95 мс.
+// 2. Отображение счётчиков ресурсов ResourceLedger и потока архитектурных логов.
+// 3. Mount-once монтировщик (mountLayer4Terminal) без пересоздания DOM-дерева.
 // ============================================================================
 
 import {
@@ -32,7 +28,8 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
         state.inspectionLevel === 'TERMINAL';
     const hiddenClass = isVisible ? '' : ' layer-hidden';
 
-    const modules = integrationRegistry.getAllModules().slice(0, 6);
+    // Выводим все 8 зарегистрированных модулей (включая web-audio и worker-physics)
+    const modules = integrationRegistry.getAllModules();
     const ledger = resourceLedger.getCounters();
     const digest = state.telemetry.stateDigestHex;
     const recentLogs = [
@@ -127,10 +124,6 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
     );
 }
 
-/**
- * Монтирует DOM-дерево Layer 4 один раз и обновляет только текстовые узлы и статусы,
- * сохраняя непрерывность 60-FPS анимаций контура и падающих символов.
- */
 export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     if (!container) return () => {};
     waterfallAnimator.ensureRunning();
@@ -143,6 +136,8 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     const logEls: Array<HTMLElement | null> = [];
 
     const update = (state: Readonly<UniverseState>): void => {
+        const modules = integrationRegistry.getAllModules();
+
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer4TerminalView(state) as HTMLElement;
             container.replaceChildren(rootEl);
@@ -151,7 +146,7 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
             statusEls.length = 0;
             perfEls.length = 0;
             logEls.length = 0;
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < modules.length; i++) {
                 statusEls.push(
                     rootEl.querySelector<HTMLElement>(`[data-bind="l4-status-${i}"]`)
                 );
@@ -177,7 +172,6 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
             elDigest.textContent = `ILLUSION==NEXUS==X-RAY [${state.telemetry.stateDigestHex}]`;
         }
 
-        const modules = integrationRegistry.getAllModules().slice(0, 6);
         for (let i = 0; i < modules.length; i++) {
             const m = modules[i];
             const sEl = statusEls[i];

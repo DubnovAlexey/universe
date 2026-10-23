@@ -1,7 +1,7 @@
 # ============================================================================
 # ФАЙЛ: .github/workflows/deploy.yml
 # НАЗНАЧЕНИЕ: Автоматическая верификация полиглот-ядра (Python + Rust + TS),
-#             прогон 11 регрессионных тестов и деплой на GitHub Pages
+#             прогон всех unit/регрессионных тестов и деплой на GitHub Pages
 # ============================================================================
 
 name: Deploy UNIVERSE to GitHub Pages
@@ -39,27 +39,29 @@ jobs:
       - name: Verify Python Core Golden PRNG, NEXUS Topology & Binary Packet Parity
         run: python -B -m backend.main --verify
 
+      - name: Run Python Backend Unit Tests (6 tests)
+        run: python -B -m unittest discover -v
+
       - name: Setup Rust Toolchain for Physics Crate Verification
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Verify Rust Symplectic Physics Crate Compilation
+      - name: Run Rust Symplectic Physics Unit Tests (5 tests)
         working-directory: ./physics_engine
-        run: cargo check
+        run: cargo test
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Install Frontend Dependencies
-        working-directory: ./frontend
-        run: npm install
+      - name: Install Workspace Dependencies
+        run: npm ci
 
       - name: TypeScript Strict Typecheck
         working-directory: ./frontend
         run: npm run typecheck
 
-      - name: Run Universe Verification & Regression Suite
+      - name: Run Universe Verification & Regression Suite (14 invariants)
         working-directory: ./frontend
         run: npm test
 

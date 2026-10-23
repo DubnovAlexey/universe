@@ -2,22 +2,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/parityAndSeams.test.ts
 // НАЗНАЧЕНИЕ: Автоматический набор регрессионных проверок паритета, бинарного
-//             протокола, таймлайна 5-й фазы, одометра и ресурсов (UNIVERSE v2.5)
-// ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Контракт результата верификации (VerificationSuiteResult) и
-//             утилита фиксации проверок (assertCondition).
-//   РАЗДЕЛ 2. Главная тестовая функция runUniverseVerificationSuite() (11 инвариантов):
-//     - Подраздел 2.1. Паритет детерминированного ГПСЧ (GOLDEN_U32_VECTORS).
-//     - Подраздел 2.2. Валидация SceneBufferSoA ('UNVS', State Digest, NaN-guard).
-//     - Подраздел 2.3. Защита бинарного протокола PythonSocketClient (обрезка,
-//                      неверный magic, NaN в координатах, монотонность tick).
-//     - Подраздел 2.4. Вёрстка одометра (320..1920 px) без клиппинга.
-//     - Подраздел 2.5. Регрессионный тест 5-й фазы (05_SINGULARITY): переход
-//                      ACT_A -> ACT_B -> ACT_C -> ACT_D, сброс logicConvergence=0
-//                      и сохранение флага постоянной визитки finaleReachedOnce.
-//     - Подраздел 2.6. Честный прогон 10 перезапусков цикла через пошаговое
-//                      приращение времени в updateTelemetry() и ResourceLedger.
+//             протокола, честного дрейфа энергии, таймлайна 5-й фазы, одометра
+//             и жизненного цикла ресурсов (UNIVERSE v2.5 — 14 инвариантов)
 // ============================================================================
 
 import {
@@ -33,6 +19,11 @@ import {
 } from '../core/sceneBuffer';
 import { EntityKindCode } from '../core/contracts';
 import { resourceLedger } from '../core/resourceLedger';
+import { wasmPhysicsBridge } from '../bridge/wasmBridge';
+import {
+    nexusGraphEngine,
+    type GraphNodeInput,
+} from '../bridge/simulationWorker';
 import { pythonSocketClient } from '../bridge/pythonSocketClient';
 import {
     CANONICAL_FINALE_LINES,
@@ -41,10 +32,6 @@ import {
 } from '../bridge/cipherOdometerEngine';
 import { universeStore } from '../store/universeState';
 
-// ============================================================================
-// РАЗДЕЛ 1. КОНТРАКТ РЕЗУЛЬТАТА ВЕРИФИКАЦИИ И УТИЛИТА ПРОВЕРКИ
-// ============================================================================
-
 export interface VerificationSuiteResult {
     passed: boolean;
     totalChecks: number;
@@ -52,7 +39,6 @@ export interface VerificationSuiteResult {
     details: string[];
 }
 
-// --- НАЧАЛО ФУНКЦИИ assertCondition ---
 function assertCondition(
     condition: boolean,
     description: string,
@@ -61,13 +47,7 @@ function assertCondition(
     details.push(`${condition ? '[PASS]' : '[FAIL]'} ${description}`);
     return condition;
 }
-// --- КОНЕЦ ФУНКЦИИ assertCondition ---
 
-// ============================================================================
-// РАЗДЕЛ 2. ГЛАВНАЯ ФУНКЦИЯ ПРОГОНА ВСЕХ ИНВАРИАНТОВ (runUniverseVerificationSuite)
-// ============================================================================
-
-// --- НАЧАЛО ФУНКЦИИ runUniverseVerificationSuite ---
 export function runUniverseVerificationSuite(): VerificationSuiteResult {
     const details: string[] = [];
     let totalChecks = 0;
@@ -81,7 +61,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     };
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.1. ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG (TS <-> RUST <-> PYTHON)
+    // 1. ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG (TS <-> RUST <-> PYTHON)
     // ------------------------------------------------------------------------
     check(
         verifyGoldenPrngParity(),
@@ -89,7 +69,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.2. ПРОВЕРКА SCENEBUFFERSOA ('UNVS', STATE DIGEST, NAN-GUARD)
+    // 2–4. ПРОВЕРКА SCENEBUFFERSOA ('UNVS', STATE DIGEST, 8-FIELD NAN-GUARD)
     // ------------------------------------------------------------------------
     const bufA = new SceneBufferSoA(64, GOLDEN_SEED);
     const bufB = new SceneBufferSoA(64, GOLDEN_SEED);
@@ -97,7 +77,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
 
     for (let i = 0; i < 16; i++) {
         const x = rng.nextRange(-200, 200);
-        const y = rng.nextRange(-200, 200);
+        const y = rng.nextRange(-240, 240);
         const vx = rng.nextRange(-15, 15);
         const vy = rng.nextRange(-15, 15);
         bufA.syncEntityFromParticle(
@@ -144,29 +124,118 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         `Deterministic State Digest Parity across buffers (${bufA.getDigestHex()})`
     );
 
+    bufA.resetNanGuardTriggers();
     bufA.syncEntityFromParticle(
         0,
         0,
         EntityKindCode.STAR,
         Number.NaN,
         Number.POSITIVE_INFINITY,
-        1,
-        0,
-        0,
-        0,
-        1,
-        1,
+        Number.NEGATIVE_INFINITY,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        Number.NaN,
+        Number.NaN,
         0
     );
     check(
+        bufA.getNanGuardTriggers() === 8 &&
         Number.isFinite(bufA.pos[0]) &&
         Number.isFinite(bufA.pos[1]) &&
-        bufA.getNanGuardTriggers() > 0,
-        'SceneBufferSoA NaN/Infinity Guard sanitizes corrupted coordinates'
+        Number.isFinite(bufA.pos[2]) &&
+        Number.isFinite(bufA.vel[0]) &&
+        Number.isFinite(bufA.vel[1]) &&
+        Number.isFinite(bufA.vel[2]) &&
+        Number.isFinite(bufA.depthZ[0]) &&
+        Number.isFinite(bufA.energy[0]),
+        'SceneBufferSoA NaN/Infinity Guard sanitizes and counts all 8 numeric fields (x,y,z,vx,vy,vz,depthZ,energy)'
     );
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.3. ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
+    // 5. ПРОВЕРКА ЧЕСТНОГО ОТНОСИТЕЛЬНОГО ДРЕЙФА ЭНЕРГИИ ΔE/E₀ (БЕЗ ЗАЖИМОВ)
+    // ------------------------------------------------------------------------
+    wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
+    const zeroDtStep = wasmPhysicsBridge.stepSymplecticPhysics(
+        bufA,
+        16,
+        0.0,
+        0.0,
+        960,
+        540,
+        1920,
+        1080,
+        1.0
+    );
+    const activeDtStep = wasmPhysicsBridge.stepSymplecticPhysics(
+        bufA,
+        16,
+        0.016,
+        0.016,
+        960,
+        540,
+        1920,
+        1080,
+        1.0
+    );
+    check(
+        zeroDtStep.energyDriftRatio === 0 &&
+        activeDtStep.energyDriftRatio > 0 &&
+        activeDtStep.energyDriftRatio < 0.01 &&
+        activeDtStep.kuramotoOrderR > 0 &&
+        activeDtStep.kuramotoOrderR <= 1.0,
+        `Symplectic Velocity Verlet reports true ΔE/E₀ (0.0 at dt=0, ${activeDtStep.energyDriftRatio.toExponential(2)} at dt=16ms)`
+    );
+
+    // ------------------------------------------------------------------------
+    // 6. ПРОВЕРКА ЭТАЛОННОГО 24-УЗЛОВОГО ГРАФА NEXUS (ПАРИТЕТ С PYTHON)
+    // ------------------------------------------------------------------------
+    const rng24 = new DeterministicPRNG(GOLDEN_SEED);
+    const nodes24: GraphNodeInput[] = [];
+    for (let i = 0; i < 24; i++) {
+        const x = rng24.nextRange(-320.0, 320.0);
+        const y = rng24.nextRange(-240.0, 240.0);
+        const _z = rng24.nextRange(0.1, 1.5);
+        const _vx = rng24.nextRange(-18.0, 18.0);
+        const _vy = rng24.nextRange(-18.0, 18.0);
+        const e = rng24.nextRange(0.3, 0.95);
+        nodes24.push({
+            index: i,
+            id: i,
+            x,
+            y,
+            clusterId: i % 6,
+            energy: e,
+        });
+    }
+    const graph24 = nexusGraphEngine.buildDeterministicGraph(
+        nodes24,
+        220.0,
+        GOLDEN_SEED,
+        1.0
+    );
+    const tel24 = nexusGraphEngine.getLastTelemetry();
+    const lutMonotonic = graph24.edges.every(
+        (e) =>
+            e.lengthLUT[0] === 0 &&
+            e.lengthLUT[1] <= e.lengthLUT[2] &&
+            e.lengthLUT[2] <= e.lengthLUT[3] &&
+            e.lengthLUT[3] <= e.lengthLUT[4] &&
+            e.arcLength >= 1.0
+    );
+    check(
+        graph24.edges.length > 0 &&
+        tel24.trunkCount > 0 &&
+        tel24.trunkCount + tel24.bridgeCount + tel24.dendriteCount ===
+        graph24.edges.length &&
+        tel24.diameterHops > 0 &&
+        tel24.avgPathLength > 0 &&
+        lutMonotonic,
+        `NEXUS 24-Node Reference Graph Parity (edges=${graph24.edges.length}, trunks=${tel24.trunkCount}, diameter=${tel24.diameterHops})`
+    );
+
+    // ------------------------------------------------------------------------
+    // 7–10. ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
     // ------------------------------------------------------------------------
     pythonSocketClient.resetSession();
 
@@ -211,7 +280,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.4. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX)
+    // 11–12. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX И ПАУЗА)
     // ------------------------------------------------------------------------
     const testWidths = [320, 360, 390, 768, 1280, 1920];
     let allWidthsValid = true;
@@ -236,8 +305,28 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         'CipherOdometerEngine locks all static lines and author header without clipping (320px..1920px)'
     );
 
+    if (!universeStore.getState().isPaused) {
+        universeStore.togglePause();
+    }
+    const pausedCellsA = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false);
+    const pausedCellsB = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false);
+    const pauseFrozenOk =
+        pausedCellsA.length > 0 &&
+        pausedCellsA.every(
+            (cell, idx) =>
+                cell.wheelPhaseFrac === pausedCellsB[idx].wheelPhaseFrac &&
+                cell.primaryChar === pausedCellsB[idx].primaryChar
+        );
+    if (universeStore.getState().isPaused) {
+        universeStore.togglePause();
+    }
+    check(
+        pauseFrozenOk,
+        'CipherOdometerEngine freezes quantum wheel phase while simulation is paused'
+    );
+
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.5. РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
+    // 13. РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
     // ------------------------------------------------------------------------
     universeStore.setPhase('05_SINGULARITY');
     universeStore.updateTelemetry({
@@ -278,18 +367,37 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.6. 10 РЕАЛЬНЫХ ЦИКЛОВ RESTART И СИММЕТРИЯ RESOURCELEDGER
+    // 14. RESOURCELEDGER (UNDERFLOW / DISPOSER ERRORS) И 10 ЦИКЛОВ RESTART
     // ------------------------------------------------------------------------
     resourceLedger.setBaseline();
+    resourceLedger.trackRelease('workers', 1);
+    resourceLedger.registerCycleDisposable(() => {
+        throw new Error('Intentional test disposer failure');
+    });
+    const faultRes = resourceLedger.disposeCycleResources();
+    const faultCounters = resourceLedger.getCounters();
+    const faultDetectedOk =
+        !faultRes.leakFree &&
+        faultCounters.underflowCount === 1 &&
+        faultCounters.disposerErrors === 1;
+
+    resourceLedger.setBaseline();
     let allRestartsValid = true;
+    let executedDisposersCount = 0;
 
     for (let r = 0; r < 10; r++) {
         resourceLedger.trackAllocation('listeners', 2);
         resourceLedger.trackAllocation('textures', 1);
+        resourceLedger.trackAllocation('audioNodes', 1);
+        resourceLedger.registerCycleDisposable(() => {
+            executedDisposersCount += 1;
+            resourceLedger.trackRelease('listeners', 2);
+            resourceLedger.trackRelease('textures', 1);
+            resourceLedger.trackRelease('audioNodes', 1);
+        });
+
         universeStore.triggerUniverseRestart();
 
-        // Шагаем с реальным приращением dt = 0.16 с от текущего phaseElapsedSec хранилища,
-        // останавливаясь ровно в момент завершения RESTART_COLLAPSE и входа в 01_VOID
         let safetySteps = 0;
         while (
             universeStore.getState().singularityAct === 'RESTART_COLLAPSE' &&
@@ -304,11 +412,9 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
             });
         }
 
-        resourceLedger.trackRelease('listeners', 2);
-        resourceLedger.trackRelease('textures', 1);
         const ledgerRes = resourceLedger.disposeCycleResources();
-
         const afterRestart = universeStore.getState();
+
         if (
             !ledgerRes.leakFree ||
             afterRestart.currentPhase !== '01_VOID' ||
@@ -321,11 +427,13 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
 
     const finalCounters = resourceLedger.getCounters();
     check(
-        allRestartsValid && finalCounters.restartCount >= 10,
-        '10x Full Restart Universe transitions complete via updateTelemetry with symmetrical ResourceLedger and persistent Finale Card'
+        faultDetectedOk &&
+        allRestartsValid &&
+        executedDisposersCount === 10 &&
+        finalCounters.restartCount >= 10,
+        'ResourceLedger detects underflow/disposer faults and completes 10x Restart cycles with real cycleDisposables cleanup'
     );
 
-    // Восстанавливаем чистое стартовое состояние хранилища
     universeStore.setPhase('01_VOID');
 
     return {
@@ -335,4 +443,3 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         details,
     };
 }
-// --- КОНЕЦ ФУНКЦИИ runUniverseVerificationSuite ---

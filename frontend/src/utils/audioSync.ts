@@ -40,6 +40,7 @@ export class AudioSyncEngine {
     private enabled = true;
     private isPlayingMp3 = false;
     private unlockBound = false;
+    private removeUnlockListenersFn: (() => void) | null = null;
     private isMobileWebKit = false;
     private currentPhase: PhaseId = '01_VOID';
 
@@ -79,10 +80,6 @@ export class AudioSyncEngine {
         }
     }
 
-    /**
-     * В iOS 17+ / iOS 26 переключает сессию в режим 'playback', чтобы музыка
-     * звучала на iPhone даже при включённом боковом рычажке беззвучного режима.
-     */
     private configureIosAudioSession(): void {
         try {
             const nav = navigator as unknown as {
@@ -135,6 +132,7 @@ export class AudioSyncEngine {
 
             el.addEventListener('playing', () => {
                 this.isPlayingMp3 = true;
+                this.removeUnlockListenersFn?.();
                 integrationRegistry.updateModuleStatus('web-audio', 'ready');
                 universeStore.setAudioEnabled(true, 'PLAYING_MP3');
             });
@@ -165,6 +163,7 @@ export class AudioSyncEngine {
             playPromise
                 .then(() => {
                     this.isPlayingMp3 = true;
+                    this.removeUnlockListenersFn?.();
                     if (!this.isMobileWebKit) {
                         this.ensureAnalyserGraph();
                     }
@@ -193,6 +192,8 @@ export class AudioSyncEngine {
         ] as const;
 
         const removeUnlockListeners = (): void => {
+            if (!this.removeUnlockListenersFn) return;
+            this.removeUnlockListenersFn = null;
             for (let i = 0; i < gestureEvents.length; i++) {
                 window.removeEventListener(gestureEvents[i], onFirstUserGesture, true);
             }
@@ -202,11 +203,12 @@ export class AudioSyncEngine {
             if (!this.enabled) return;
             if (!this.isPlayingMp3) {
                 this.startPlayback(true);
-            }
-            if (this.isPlayingMp3 && this.audioEl && !this.audioEl.paused) {
+            } else {
                 removeUnlockListeners();
             }
         };
+
+        this.removeUnlockListenersFn = removeUnlockListeners;
 
         for (let i = 0; i < gestureEvents.length; i++) {
             window.addEventListener(gestureEvents[i], onFirstUserGesture, {
@@ -303,6 +305,7 @@ export class AudioSyncEngine {
                 playPromise
                     .then(() => {
                         this.isPlayingMp3 = true;
+                        this.removeUnlockListenersFn?.();
                         integrationRegistry.updateModuleStatus('web-audio', 'ready');
                         universeStore.setAudioEnabled(true, 'PLAYING_MP3');
                     })
@@ -314,6 +317,7 @@ export class AudioSyncEngine {
             }
         } else {
             this.isPlayingMp3 = true;
+            this.removeUnlockListenersFn?.();
             integrationRegistry.updateModuleStatus('web-audio', 'ready');
             universeStore.setAudioEnabled(true, 'PLAYING_MP3');
         }
