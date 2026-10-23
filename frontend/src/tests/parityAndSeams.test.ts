@@ -7,18 +7,17 @@
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
 //   РАЗДЕЛ 1. Контракт результата верификации (VerificationSuiteResult) и
 //             утилита фиксации проверок (assertCondition).
-//   РАЗДЕЛ 2. Главная тестовая функция runUniverseVerificationSuite():
+//   РАЗДЕЛ 2. Главная тестовая функция runUniverseVerificationSuite() (11 инвариантов):
 //     - Подраздел 2.1. Паритет детерминированного ГПСЧ (GOLDEN_U32_VECTORS).
 //     - Подраздел 2.2. Валидация SceneBufferSoA ('UNVS', State Digest, NaN-guard).
 //     - Подраздел 2.3. Защита бинарного протокола PythonSocketClient (обрезка,
 //                      неверный magic, NaN в координатах, монотонность tick).
-//     - Подраздел 2.4. Вёрстка одометра (320..1920 px), ограниченность скорости
-//                      на длительном uptime (0, 100, 500, 1000 с) и пауза.
+//     - Подраздел 2.4. Вёрстка одометра (320..1920 px) без клиппинга.
 //     - Подраздел 2.5. Регрессионный тест 5-й фазы (05_SINGULARITY): переход
-//                      ACT_A -> ACT_B -> ACT_C -> ACT_D без зависания оптического
-//                      веса logicConvergence и сохранение визитки finaleReachedOnce.
-//     - Подраздел 2.6. Честный прогон 10 перезапусков цикла через реальное время
-//                      updateTelemetry() и проверка симметрии ResourceLedger.
+//                      ACT_A -> ACT_B -> ACT_C -> ACT_D, сброс logicConvergence=0
+//                      и сохранение флага постоянной визитки finaleReachedOnce.
+//     - Подраздел 2.6. Честный прогон 10 перезапусков цикла через пошаговое
+//                      приращение времени в updateTelemetry() и ResourceLedger.
 // ============================================================================
 
 import {
@@ -204,7 +203,6 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         'Binary Protocol Guard rejects stale out-of-order packet (tick=42 < 50)'
     );
 
-    // Проверка отбраковки пакета с NaN внутри массива координат
     view.setUint32(8, 55, true);
     view.setFloat32(24, Number.NaN, true);
     check(
@@ -213,7 +211,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.4. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА И BOUNDED UPTIME)
+    // ПОДРАЗДЕЛ 2.4. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX)
     // ------------------------------------------------------------------------
     const testWidths = [320, 360, 390, 768, 1280, 1920];
     let allWidthsValid = true;
@@ -290,12 +288,19 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         resourceLedger.trackAllocation('textures', 1);
         universeStore.triggerUniverseRestart();
 
-        // Продвигаем время схлопывания через реальные шаги updateTelemetry (10 шагов по 0.16 с = 1.60 с)
-        for (let step = 1; step <= 10; step++) {
+        // Шагаем с реальным приращением dt = 0.16 с от текущего phaseElapsedSec хранилища,
+        // останавливаясь ровно в момент завершения RESTART_COLLAPSE и входа в 01_VOID
+        let safetySteps = 0;
+        while (
+            universeStore.getState().singularityAct === 'RESTART_COLLAPSE' &&
+            safetySteps < 15
+            ) {
+            safetySteps++;
+            const cur = universeStore.getState().telemetry;
             universeStore.updateTelemetry({
                 frameTimeMs: 16.0,
-                simulationTimeSec: 108.0 + step * 0.16,
-                phaseElapsedSec: 29.0 + step * 0.16,
+                simulationTimeSec: Number((cur.simulationTimeSec + 0.16).toFixed(3)),
+                phaseElapsedSec: Number((cur.phaseElapsedSec + 0.16).toFixed(3)),
             });
         }
 
@@ -320,7 +325,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         '10x Full Restart Universe transitions complete via updateTelemetry with symmetrical ResourceLedger and persistent Finale Card'
     );
 
-    // Восстанавливаем чистое стартовое состояние хранилища после завершения тестов
+    // Восстанавливаем чистое стартовое состояние хранилища
     universeStore.setPhase('01_VOID');
 
     return {
