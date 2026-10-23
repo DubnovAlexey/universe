@@ -3,27 +3,11 @@
 // ФАЙЛ: frontend/src/store/universeState.ts
 // НАЗНАЧЕНИЕ: Единое хранилище состояния Вселенной и часов цикла UNIVERSE v2.5
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Типы состояний, статусов модулей и метаданных фаз.
-//   РАЗДЕЛ 2. Каноническая шкала 5 фаз (0..108 секунд) и полином Перлина smootherstep.
-//   РАЗДЕЛ 3. Класс хранилища состояния UniverseStore:
-//     - Подраздел 3.1. Инициализация состояния, чтение URL-параметров (?seed, ?debug, ?kiosk).
-//     - Подраздел 3.2. Сторожевой монитор рендерера (Watchdog) без ложного продвижения
-//                      фаз при остановке requestAnimationFrame.
-//     - Подраздел 3.3. Геттеры, подписки и управление фазами, паузой, автоциклом и слоями.
-//     - Подраздел 3.4. Журнал событий и хореография перезапуска с сохранением
-//                      полупрозрачной визитки на последующих циклах (finaleReachedOnce).
-//     - Подраздел 3.5. Главный метод обновления часов и телеметрии updateTelemetry().
-// ============================================================================
 
 import { type InspectionLevel, type PhaseId } from '../core/contracts';
 import { GOLDEN_SEED } from '../core/prng';
 import { SceneBufferSoA } from '../core/sceneBuffer';
 import { qualityGovernor, QualityGovernor } from '../core/qualityGovernor';
-
-// ============================================================================
-// РАЗДЕЛ 1. ТИПЫ СОСТОЯНИЙ, СТАТУСОВ МОДУЛЕЙ И МЕТАДАННЫХ ФАЗ
-// ============================================================================
 
 export type { PhaseId, InspectionLevel };
 
@@ -151,10 +135,6 @@ export interface UniverseState {
 
 type StateListener = (state: Readonly<UniverseState>) => void;
 
-// ============================================================================
-// РАЗДЕЛ 2. КАНОНИЧЕСКАЯ ШКАЛА 5 ФАЗ (0..108 СЕКУНД) И ПОЛИНОМ ПЕРЛИНА
-// ============================================================================
-
 export const PHASE_ORDER: readonly PhaseId[] = [
     '01_VOID',
     '02_GENESIS',
@@ -236,20 +216,10 @@ export const UNIVERSE_PHASES: Record<PhaseId, PhaseMetadata> = {
     },
 };
 
-// --- НАЧАЛО ФУНКЦИИ smootherstep ---
-/**
- * Полином Перлина 5-го порядка (C2-непрерывный smootherstep):
- * нулевая первая и вторая производные на границах исключают скачки камеры и морфинга.
- */
 export function smootherstep(edge0: number, edge1: number, x: number): number {
     const u = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, edge1 - edge0)));
     return u * u * u * (u * (u * 6 - 15) + 10);
 }
-// --- КОНЕЦ ФУНКЦИИ smootherstep ---
-
-// ============================================================================
-// РАЗДЕЛ 3. КЛАСС ХРАНИЛИЩА СОСТОЯНИЯ И ЧАСОВ ЦИКЛА (UniverseStore)
-// ============================================================================
 
 class UniverseStore {
     private readonly state: UniverseState;
@@ -262,11 +232,6 @@ class UniverseStore {
     private lastTelemetryUpdateMs = 0;
     private watchdogWarned = false;
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.1. ИНИЦИАЛИЗАЦИЯ СОСТОЯНИЯ И ЧТЕНИЕ URL-ПАРАМЕТРОВ
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ constructor (UniverseStore) ---
     constructor() {
         const urlParams = this.parseUrlParameters();
         this.qualityGovernor = qualityGovernor;
@@ -275,6 +240,13 @@ class UniverseStore {
         const initialMeta = UNIVERSE_PHASES['01_VOID'];
         const bootTime = this.formatTimestamp();
         const bootLine = `[${bootTime}] [SYSTEM:BOOT] Инициализация UNIVERSE v2.5 (seed=${urlParams.seed}) [ts/universeState.ts]`;
+
+        // На узких мобильных экранах (<= 920px) панели телеметрии по умолчанию свёрнуты,
+        // чтобы не загромождать экран телефона и оставлять космос полностью открытым
+        const isCompactMobile =
+            typeof window !== 'undefined' &&
+            window.innerWidth <= 920 &&
+            !urlParams.debugMode;
 
         this.state = {
             seed: urlParams.seed,
@@ -312,9 +284,9 @@ class UniverseStore {
             },
             layers: {
                 layer1_cosmosIllusion: true,
-                layer2_metricsHud: true,
-                layer3_topologyGraph: true,
-                layer4_architectTerminal: true,
+                layer2_metricsHud: !isCompactMobile,
+                layer3_topologyGraph: !isCompactMobile,
+                layer4_architectTerminal: !isCompactMobile,
                 layer5_truthXRayMode: false,
             },
             telemetry: {
@@ -355,9 +327,7 @@ class UniverseStore {
             this.startPhaseWatchdog();
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ constructor (UniverseStore) ---
 
-    // --- НАЧАЛО ФУНКЦИИ parseUrlParameters ---
     private parseUrlParameters(): {
         seed: number;
         debugMode: boolean;
@@ -387,9 +357,7 @@ class UniverseStore {
 
         return { seed, debugMode, kioskMode, reducedMotion };
     }
-    // --- КОНЕЦ ФУНКЦИИ parseUrlParameters ---
 
-    // --- НАЧАЛО ФУНКЦИИ formatTimestamp ---
     private formatTimestamp(): string {
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
@@ -397,17 +365,7 @@ class UniverseStore {
         const ss = String(now.getSeconds()).padStart(2, '0');
         return `${hh}:${mm}:${ss}`;
     }
-    // --- КОНЕЦ ФУНКЦИИ formatTimestamp ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.2. СТОРОЖЕВОЙ МОНИТОР РЕНДЕРЕРА (WATCHDOG ДИАГНОСТИКА)
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ startPhaseWatchdog ---
-    /**
-     * Проверяет активность главного цикла requestAnimationFrame.
-     * НЕ двигает фазы вслепую при остановке рендерера, а фиксирует диагностику.
-     */
     private startPhaseWatchdog(): void {
         setInterval(() => {
             if (this.state.isPaused || this.state.isTabHidden) return;
@@ -423,40 +381,26 @@ class UniverseStore {
             }
         }, 750);
     }
-    // --- КОНЕЦ ФУНКЦИИ startPhaseWatchdog ---
 
-    // --- НАЧАЛО ФУНКЦИИ reportRendererError ---
     public reportRendererError(errorMsg: string): void {
         if (this.state.lastRendererError === errorMsg) return;
         this.state.lastRendererError = errorMsg;
         this.appendLogEvent('renderer:error', errorMsg);
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ reportRendererError ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.3. ГЕТТЕРЫ, ПОДПИСКИ И УПРАВЛЕНИЕ ФАЗАМИ / СЛОЯМИ
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ getState ---
     public getState(): Readonly<UniverseState> {
         return this.state;
     }
-    // --- КОНЕЦ ФУНКЦИИ getState ---
 
-    // --- НАЧАЛО ФУНКЦИИ getSceneBuffer ---
     public getSceneBuffer(): SceneBufferSoA {
         return this.sceneBuffer;
     }
-    // --- КОНЕЦ ФУНКЦИИ getSceneBuffer ---
 
-    // --- НАЧАЛО ФУНКЦИИ getQualityGovernor ---
     public getQualityGovernor(): QualityGovernor {
         return this.qualityGovernor;
     }
-    // --- КОНЕЦ ФУНКЦИИ getQualityGovernor ---
 
-    // --- НАЧАЛО ФУНКЦИИ subscribe ---
     public subscribe(listener: StateListener): () => void {
         this.listeners.add(listener);
         listener(this.state);
@@ -464,9 +408,7 @@ class UniverseStore {
             this.listeners.delete(listener);
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ subscribe ---
 
-    // --- НАЧАЛО ФУНКЦИИ notifyListeners ---
     private notifyListeners(forceImmediate = false): void {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         if (!forceImmediate && now - this.lastUiNotifyMs < 90) {
@@ -475,19 +417,12 @@ class UniverseStore {
         this.lastUiNotifyMs = now;
         this.listeners.forEach((fn) => fn(this.state));
     }
-    // --- КОНЕЦ ФУНКЦИИ notifyListeners ---
 
-    // --- НАЧАЛО ФУНКЦИИ setFinaleCardHovered ---
-    /**
-     * Устанавливает флаг наведения курсора на финальную визитку.
-     */
     public setFinaleCardHovered(hovered: boolean): void {
         if (this.state.isFinaleCardHovered === hovered) return;
         this.state.isFinaleCardHovered = hovered;
     }
-    // --- КОНЕЦ ФУНКЦИИ setFinaleCardHovered ---
 
-    // --- НАЧАЛО ФУНКЦИИ setPhase ---
     public setPhase(phase: PhaseId): void {
         if (
             this.state.currentPhase === phase &&
@@ -525,9 +460,7 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ setPhase ---
 
-    // --- НАЧАЛО ФУНКЦИИ togglePause ---
     public togglePause(): void {
         this.state.isPaused = !this.state.isPaused;
         this.lastTelemetryUpdateMs =
@@ -540,9 +473,7 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ togglePause ---
 
-    // --- НАЧАЛО ФУНКЦИИ setTabHidden ---
     public setTabHidden(hidden: boolean): void {
         this.state.isTabHidden = hidden;
         if (!hidden) {
@@ -551,9 +482,7 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ setTabHidden ---
 
-    // --- НАЧАЛО ФУНКЦИИ toggleAutoCycle ---
     public toggleAutoCycle(): void {
         this.state.autoCyclePhases = !this.state.autoCyclePhases;
         this.appendLogEvent(
@@ -564,9 +493,7 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ toggleAutoCycle ---
 
-    // --- НАЧАЛО ФУНКЦИИ setAudioEnabled ---
     public setAudioEnabled(enabled: boolean, status?: AudioPlaybackStatus): void {
         this.state.audioEnabled = enabled;
         if (status) {
@@ -576,25 +503,40 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ setAudioEnabled ---
 
-    // --- НАЧАЛО ФУНКЦИИ setAudioVolume ---
     public setAudioVolume(volume: number): void {
         this.state.audioVolume = Math.max(0, Math.min(1, volume));
         this.notifyListeners(false);
     }
-    // --- КОНЕЦ ФУНКЦИИ setAudioVolume ---
 
-    // --- НАЧАЛО ФУНКЦИИ setInspectionLevel ---
     public setInspectionLevel(level: InspectionLevel): void {
         this.state.inspectionLevel = level;
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ setInspectionLevel ---
 
-    // --- НАЧАЛО ФУНКЦИИ toggleLayer ---
+    /**
+     * Переключает видимость слоя. На мобильных экранах (<= 920px) панели телеметрии
+     * работают в режиме аккордеона (открытие одной автоматически закрывает две другие),
+     * чтобы исключить наслоение таблиц поверх сцены.
+     */
     public toggleLayer(layerKey: keyof UniverseLayersVisibility): void {
-        this.state.layers[layerKey] = !this.state.layers[layerKey];
+        const nextVal = !this.state.layers[layerKey];
+        const isMobileViewport =
+            typeof window !== 'undefined' && window.innerWidth <= 920;
+
+        if (
+            isMobileViewport &&
+            nextVal &&
+            (layerKey === 'layer2_metricsHud' ||
+                layerKey === 'layer3_topologyGraph' ||
+                layerKey === 'layer4_architectTerminal')
+        ) {
+            this.state.layers.layer2_metricsHud = false;
+            this.state.layers.layer3_topologyGraph = false;
+            this.state.layers.layer4_architectTerminal = false;
+        }
+
+        this.state.layers[layerKey] = nextVal;
         const isOn = this.state.layers[layerKey];
         this.state.opticalWeights.xrayTruth = this.state.layers.layer5_truthXRayMode
             ? 1.0
@@ -613,20 +555,12 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ toggleLayer ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.4. ЖУРНАЛ СОБЫТИЙ И ХОРЕОГРАФИЯ ПЕРЕЗАПУСКА (RESTART)
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ addTerminalLog ---
     public addTerminalLog(message: string, sourceTag = 'system:log'): void {
         this.appendLogEvent(sourceTag, message);
         this.notifyListeners(false);
     }
-    // --- КОНЕЦ ФУНКЦИИ addTerminalLog ---
 
-    // --- НАЧАЛО ФУНКЦИИ emitEvent ---
     public emitEvent(
         typeOrMessage: string,
         message?: string,
@@ -637,9 +571,7 @@ class UniverseStore {
         this.appendLogEvent(resolvedType, resolvedMsg);
         this.notifyListeners(false);
     }
-    // --- КОНЕЦ ФУНКЦИИ emitEvent ---
 
-    // --- НАЧАЛО ФУНКЦИИ emitEventOnce ---
     public emitEventOnce(
         uniqueKey: string,
         typeOrMessage: string,
@@ -654,9 +586,7 @@ class UniverseStore {
             optionalMessage !== undefined ? optionalMessage : typeOrMessage;
         this.appendLogEvent(resolvedType, resolvedMessage);
     }
-    // --- КОНЕЦ ФУНКЦИИ emitEventOnce ---
 
-    // --- НАЧАЛО ФУНКЦИИ appendLogEvent ---
     private appendLogEvent(type: string, message: string): void {
         const ts = this.formatTimestamp();
         const nextEvent: ArchitectLogEvent = {
@@ -675,13 +605,7 @@ class UniverseStore {
             ...this.state.terminalLogs.slice(0, 24),
         ];
     }
-    // --- КОНЕЦ ФУНКЦИИ appendLogEvent ---
 
-    // --- НАЧАЛО ФУНКЦИИ triggerUniverseRestart ---
-    /**
-     * Запускает переход к новому циклу. При этом флаг finaleReachedOnce сохраняется,
-     * чтобы визитка не пропадала, а оставалась полупрозрачно парить поверх космоса.
-     */
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.isFinaleCardHovered = false;
@@ -696,14 +620,7 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ triggerUniverseRestart ---
 
-    // --- НАЧАЛО ФУНКЦИИ completeRestartToVoid ---
-    /**
-     * Открывает новый цикл в фазе 01_VOID. Если финал уже был достигнут (finaleReachedOnce),
-     * githubCardAssemblyProgress остаётся равным 1.0, чтобы визитка продолжала
-     * полупрозрачно висеть на фоне движущейся по кругу симуляции.
-     */
     public completeRestartToVoid(): void {
         this.state.cycleCount += 1;
         this.emittedEventKeys.clear();
@@ -727,13 +644,7 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ completeRestartToVoid ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.5. ГЛАВНОЕ ОБНОВЛЕНИЕ ЧАСОВ ЦИКЛА И ТЕЛЕМЕТРИИ (updateTelemetry)
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ updateTelemetry ---
     public updateTelemetry(partial: Partial<UniverseTelemetryState>): void {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         this.lastTelemetryUpdateMs = nowMs;
@@ -779,7 +690,6 @@ class UniverseStore {
         );
         this.state.telemetry.phaseProgress = Number(rawProgress.toFixed(4));
 
-        // Плавная C2-интерполяция зума и дрейфа камеры Перлина
         const simSec = this.state.telemetry.simulationTimeSec;
         const smoothPhaseAlpha = smootherstep(0.0, 0.35, rawProgress);
         const targetZoom =
@@ -789,12 +699,10 @@ class UniverseStore {
         this.state.camera.driftX = Math.sin(simSec * 0.14) * 10.5;
         this.state.camera.driftY = Math.cos(simSec * 0.11) * 7.8;
 
-        // Обработка обратной хореографии Restart Universe (1.45 с до перехода в 01_VOID)
         if (this.state.singularityAct === 'RESTART_COLLAPSE') {
             this.state.restartElapsedSec += dtSec > 0 ? dtSec : 0.016;
             const collapseProg = Math.min(1.0, this.state.restartElapsedSec / 1.45);
             this.state.singularityActProgress = smootherstep(0.0, 1.0, collapseProg);
-            // Если визитка уже открыта, удерживаем её собранной (1.0), пока фон перезапускается
             this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
                 ? 1.0
                 : Math.max(0.0, 1.0 - this.state.singularityActProgress);
@@ -807,13 +715,11 @@ class UniverseStore {
             return;
         }
 
-        // Бесшовная партитура 5-й фазы (79–108 с, длительность 29 с) БЕЗ мёртвых пауз:
         if (this.state.currentPhase === '05_SINGULARITY') {
             const el = this.state.telemetry.phaseElapsedSec;
             const prevAct = this.state.singularityAct;
 
             if (el < 8.5) {
-                // 79.0 – 87.5 с: Акт A (Рождение из Точки Нуля, аккреция и корона NGC 6543)
                 this.state.singularityAct = 'ACT_A_ACCRETION';
                 this.state.singularityActProgress = smootherstep(0, 8.5, el);
                 this.state.zeroSilenceElapsedMs = 0;
@@ -822,7 +728,6 @@ class UniverseStore {
                     : 0;
                 this.state.opticalWeights.logicConvergence = 0;
             } else if (el < 13.6) {
-                // 87.5 – 92.6 с: Акт B (Непрерывное спиральное сжатие Чёрной дыры и короны строго в Точку Нуля)
                 this.state.singularityAct = 'ACT_B_LOGIC';
                 const actBProg = smootherstep(8.5, 13.6, el);
                 this.state.singularityActProgress = actBProg;
@@ -838,7 +743,6 @@ class UniverseStore {
                     `Акт B (LOGIC): Спиральное сжатие в Точку Нуля. StateDigest=${this.state.telemetry.stateDigestHex}`
                 );
             } else if (el < 14.05) {
-                // 92.6 – 93.05 с (0.45 с): Мгновенный импульс максимального сжатия в Точке Нуля
                 this.state.singularityAct = 'ACT_C_ZERO_SILENCE';
                 const actCProg = (el - 13.6) / 0.45;
                 this.state.singularityActProgress = Math.max(0, Math.min(1, actCProg));
@@ -856,7 +760,6 @@ class UniverseStore {
                     'Точка Нуля достигнута: мгновенное перерождение в визитку DUBNOV ALEXEY'
                 );
             } else {
-                // 93.05 – 108.0 с: Акт D (Развёртывание визитки DUBNOV ALEXEY из Точки Нуля)
                 this.state.singularityAct = 'ACT_D_GITHUB_CARD';
                 this.state.finaleReachedOnce = true;
                 this.state.zeroSilenceElapsedMs = 2500;
@@ -875,9 +778,6 @@ class UniverseStore {
                 );
             }
 
-            // По достижении конца 108-секундного цикла (el >= 29.0 с):
-            // Если включён AUTO: ON и курсор не над визиткой, запускаем следующий цикл космоса,
-            // при этом сама визитка остаётся полупрозрачно парить на экране.
             if (
                 this.state.autoCyclePhases &&
                 !this.state.isPaused &&
@@ -892,7 +792,6 @@ class UniverseStore {
             return;
         }
 
-        // Автоматический переход между фазами 01 -> 02 -> 03 -> 04 -> 05
         if (
             this.state.autoCyclePhases &&
             !this.state.isPaused &&
@@ -907,7 +806,6 @@ class UniverseStore {
 
         this.notifyListeners(false);
     }
-    // --- КОНЕЦ ФУНКЦИИ updateTelemetry ---
 }
 
 export const universeStore = new UniverseStore();

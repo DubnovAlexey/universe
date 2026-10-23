@@ -2,7 +2,7 @@
 // noinspection SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
-// НАЗНАЧЕНИЕ: Главная сцена инсталляции UNIVERSE v2.5 (MASTER 00–99)
+// НАЗНАЧЕНИЕ: Главная сцена v2.5 — заголовок ссылки "Alexey Dubnov"
 // ============================================================================
 import '../styles/universe.css';
 import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
@@ -16,18 +16,13 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 <html lang="ru">
 <head>
 	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>UNIVERSE // NEUROVERSE — Interactive Polyglot Installation by Alexey Dubnov</title>
-	<meta
-		name="description"
-		content="Полноэкранная кинематографическая аудиовизуальная инсталляция «Из Нуля в Ноль» (108 секунд) — Alexey Dubnov: Astro, TypeScript, Custom JSX DOM, Canvas2D/WGSL, Rust/WASM, Python."
-	/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+	<title>Alexey Dubnov</title>
 	<link rel="icon" type="image/svg+xml" href={`${baseUrl}favicon.svg`} />
 </head>
 
 <body>
 <main class="universe-viewport">
-	<!-- РАЗДЕЛ 2: Полноэкранный холст единой симуляции -->
 	<canvas
 		id="universe-canvas"
 		aria-label="Интерактивное космическое и нейронное полотно UNIVERSE"
@@ -35,20 +30,17 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 
 	<div class="optical-vignette"></div>
 
-	<!-- Заметная голографическая капсула запуска звука (показывается только если браузер ждёт первого клика) -->
 	<button
 		type="button"
 		id="ui-audio-unlock-banner"
 		class="audio-unlock-banner"
 		aria-label="Включить космическое звуковое сопровождение"
 	>
-		[ 🔊 CLICK ANYWHERE TO ENGAGE COSMIC AUDIO ]
+		[ 🔊 TAP / CLICK TO ENGAGE AUDIO ]
 	</button>
 
-	<!-- РАЗДЕЛ 3 (АКТ D): Семантический DOM-контейнер финальной визитки GitHub -->
 	<div id="layer5-finale-root"></div>
 
-	<!-- РАЗДЕЛ 4: Контейнер паспорта фазы, правой колонки Водопада телеметрии и нижнего дока управления -->
 	<div class="hud-overlay" id="hud-overlay-root">
 		<header class="hud-top-bar">
 			<section class="hud-panel brand-card" data-ui-panel="true">

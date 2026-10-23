@@ -1,7 +1,7 @@
 # ============================================================================
 # ФАЙЛ: .github/workflows/deploy.yml
 # НАЗНАЧЕНИЕ: Автоматическая верификация полиглот-ядра (Python + Rust + TS),
-#             прогон регрессионных тестов и публикация на GitHub Pages
+#             прогон 11 регрессионных тестов и деплой на GitHub Pages
 # ============================================================================
 
 name: Deploy UNIVERSE to GitHub Pages
@@ -21,9 +21,12 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-and-verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -75,7 +78,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-and-verify
     steps:
       - name: Deploy to GitHub Pages

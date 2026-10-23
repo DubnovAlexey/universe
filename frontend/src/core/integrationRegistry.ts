@@ -3,20 +3,8 @@
 // ФАЙЛ: frontend/src/core/integrationRegistry.ts
 // НАЗНАЧЕНИЕ: Реестр полиглот-интеграций IntegrationRegistry (MASTER 00B v2.5)
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Типы идентификаторов модулей, статусов и записей реестра.
-//   РАЗДЕЛ 2. Класс IntegrationRegistryManager:
-//     - Подраздел 2.1. Инициализация 8 модулей с честными нулевыми показателями
-//                      до первого фактического измерения в runtime.
-//     - Подраздел 2.2. Запись реальных замеров времени шага (p50 / p95) и статусов.
-//     - Подраздел 2.3. Стандартизированные правдивые метки статусов для UI.
-// ============================================================================
 
 import type { ComputeSourceTag, HonestStatusLabel } from './contracts';
-
-// ============================================================================
-// РАЗДЕЛ 1. ТИПЫ ИДЕНТИФИКАТОРОВ МОДУЛЕЙ И ЗАПИСЕЙ РЕЕСТРА
-// ============================================================================
 
 export type PolyglotModuleId =
     | 'ts-core'
@@ -58,26 +46,15 @@ export interface PolyglotModuleRecord {
     lastError?: string;
 }
 
-// ============================================================================
-// РАЗДЕЛ 2. МЕНЕДЖЕР РЕЕСТРА ИНТЕГРАЦИЙ С РАСЧЁТОМ ПЕРЦЕНТИЛЕЙ P50 / P95
-// ============================================================================
-
 class IntegrationRegistryManager {
     private modules: Map<PolyglotModuleId, PolyglotModuleRecord> = new Map();
     private stepHistory: Map<PolyglotModuleId, number[]> = new Map();
     private readonly maxHistorySamples = 30;
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.1. ИНИЦИАЛИЗАЦИЯ МОДУЛЕЙ БЕЗ ФЕЙКОВЫХ PREDETERMINED МЕТРИК
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ constructor (IntegrationRegistryManager) ---
     constructor() {
         this.initDefaultModules();
     }
-    // --- КОНЕЦ ФУНКЦИИ constructor (IntegrationRegistryManager) ---
 
-    // --- НАЧАЛО ФУНКЦИИ initDefaultModules ---
     private initDefaultModules(): void {
         const defaults: PolyglotModuleRecord[] = [
             {
@@ -183,7 +160,7 @@ class IntegrationRegistryManager {
                 language: 'TypeScript',
                 sourceTag: 'WORKER',
                 ownerFile: 'frontend/src/bridge/simulationWorker.ts',
-                status: 'ready',
+                status: 'fallback',
                 version: '2.5.0',
                 loadMs: 0,
                 lastStepMs: 0,
@@ -200,13 +177,7 @@ class IntegrationRegistryManager {
             this.stepHistory.set(rec.id, []);
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ initDefaultModules ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.2. ЗАПИСЬ РЕАЛЬНЫХ ЗАМЕРОВ ВРЕМЕНИ ШАГА И ОБНОВЛЕНИЕ СТАТУСА
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ updateModuleStatus ---
     public updateModuleStatus(
         id: PolyglotModuleId,
         status: ModuleRuntimeState,
@@ -219,9 +190,7 @@ class IntegrationRegistryManager {
         if (loadMs !== undefined) rec.loadMs = Number(loadMs.toFixed(2));
         if (lastError !== undefined) rec.lastError = lastError;
     }
-    // --- КОНЕЦ ФУНКЦИИ updateModuleStatus ---
 
-    // --- НАЧАЛО ФУНКЦИИ recordModuleStep ---
     public recordModuleStep(
         id: PolyglotModuleId,
         stepDurationMs: number,
@@ -248,41 +217,27 @@ class IntegrationRegistryManager {
         rec.stepP50Ms = Number(sorted[p50Idx].toFixed(2));
         rec.stepP95Ms = Number(sorted[p95Idx].toFixed(2));
     }
-    // --- КОНЕЦ ФУНКЦИИ recordModuleStep ---
 
-    // --- НАЧАЛО ФУНКЦИИ getModule ---
     public getModule(id: PolyglotModuleId): Readonly<PolyglotModuleRecord> | undefined {
         return this.modules.get(id);
     }
-    // --- КОНЕЦ ФУНКЦИИ getModule ---
 
-    // --- НАЧАЛО ФУНКЦИИ getAllModules ---
     public getAllModules(): ReadonlyArray<PolyglotModuleRecord> {
         return Array.from(this.modules.values());
     }
-    // --- КОНЕЦ ФУНКЦИИ getAllModules ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.3. СТАНДАРТИЗИРОВАННЫЕ ПРАВДИВЫЕ МЕТКИ ДЛЯ UI
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ getHonestRenderLabel ---
     public getHonestRenderLabel(): HonestStatusLabel {
         const gpu = this.modules.get('webgpu-render');
         return gpu && gpu.status === 'ready' && gpu.lastStepMs > 0
             ? 'WEBGPU ACTIVE'
             : 'CANVAS2D FALLBACK';
     }
-    // --- КОНЕЦ ФУНКЦИИ getHonestRenderLabel ---
 
-    // --- НАЧАЛО ФУНКЦИИ getHonestPhysicsLabel ---
     public getHonestPhysicsLabel(): HonestStatusLabel {
         const wasm = this.modules.get('wasm-physics');
         return wasm && wasm.status === 'ready' ? 'WASM READY' : 'TS FALLBACK';
     }
-    // --- КОНЕЦ ФУНКЦИИ getHonestPhysicsLabel ---
 
-    // --- НАЧАЛО ФУНКЦИИ getHonestPythonLabel ---
     public getHonestPythonLabel(): HonestStatusLabel {
         const server = this.modules.get('server-ws');
         if (server && server.status === 'ready') return 'SERVER CONNECTED';
@@ -291,7 +246,6 @@ class IntegrationRegistryManager {
         if (pyodide && pyodide.status === 'ready') return 'PYODIDE READY';
         return 'CLIENT-ONLY';
     }
-    // --- КОНЕЦ ФУНКЦИИ getHonestPythonLabel ---
 }
 
 export const integrationRegistry = new IntegrationRegistryManager();
