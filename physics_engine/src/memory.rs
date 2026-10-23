@@ -16,9 +16,6 @@ pub const SCENE_BUFFER_MAGIC: u32 = 0x5356_4e55; // 'UNVS' в little-endian
 pub const SCENE_SCHEMA_VERSION: u16 = 2;
 pub const MAX_CAPACITY: usize = 1024;
 
-// ----------------------------------------------------------------------------
-// 1. БИНАРНЫЙ ЗАГОЛОВОК БУФЕРА СЦЕНЫ (24 БАЙТА, ВЫРАВНИВАНИЕ 4 БАЙТА)
-// ----------------------------------------------------------------------------
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct SceneBufferHeader {
@@ -31,9 +28,6 @@ pub struct SceneBufferHeader {
     pub digest: u32,
 }
 
-// ----------------------------------------------------------------------------
-// 2. КОНТЕЙНЕР STRUCTURE OF ARRAYS (SOA) ДЛЯ ФИЗИЧЕСКОГО ЯДРА
-// ----------------------------------------------------------------------------
 pub struct SceneStateSoA {
     pub header: SceneBufferHeader,
     pub id: Vec<u32>,
@@ -109,7 +103,7 @@ impl SceneStateSoA {
             kuramoto_phase,
             natural_omega,
             baseline_energy: 0.0,
-            energy_drift_ratio: 0.000_002_1,
+            energy_drift_ratio: 0.0,
             kuramoto_order_r: 0.15,
         }
     }

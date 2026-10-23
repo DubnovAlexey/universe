@@ -2,25 +2,16 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/bridge/simulationWorker.ts
 // НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS v2.5 (MST + Gabriel + Murray + BFS)
-// ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Контракты узлов, рёбер и честной телеметрии графа (NexusGraphTelemetry).
-//   РАЗДЕЛ 2. Класс NexusGraphEngine:
-//     - Подраздел 2.1. Инициализация с честным статусом 'fallback' для pyodide-graph
-//                      и worker-physics при синхронном расчёте в основном потоке
-//                      (устраняет замечание Аудита P1 #10 и #13).
-//     - Подраздел 2.2. Таблицы длины дуги (buildBezierArcLengthLUT) и выборка
-//                      точки на кривой Безье (sampleBezierByArcLength).
-//     - Подраздел 2.3. Вычисление коэффициента кластеризации и BFS-диаметра
-//                      (computeAuthenticGraphMetrics).
-//     - Подраздел 2.4. Детерминированный синтез 3 классов рёбер (buildDeterministicGraph).
+// ЗАДАЧИ ФАЙЛА:
+// 1. Синтезировать 3 класса рёбер (AXON_TRUNK по алгоритму Прима, BRIDGE по
+//    локальному критерию Габриэля и DENDRITE по ветвлению Мюррея).
+// 2. Обеспечивать 100%-ное совпадение рёбер, таблиц длины дуги (lengthLUT) и
+//    топологических метрик с backend/core/graph_logic.py на полном наборе узлов (N <= 260).
+// 3. При N > 260 применять прореживание stride = 2 и выборочный BFS (до 28 стартовых
+//    узлов) для поддержания высокой кадровой частоты в браузере.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
-
-// ============================================================================
-// РАЗДЕЛ 1. ТИПЫ И ИНТЕРФЕЙСЫ ГРАФОВОГО ДВИЖКА NEXUS
-// ============================================================================
 
 export type ComputedEdgeClass = 'AXON_TRUNK' | 'BRIDGE' | 'DENDRITE';
 
@@ -61,9 +52,9 @@ export interface NexusGraphTelemetry {
     computeSource: '[python/pyodide]' | '[python/server]' | '[ts/graph_engine]';
 }
 
-// ============================================================================
-// РАЗДЕЛ 2. КЛАСС ПОСТРОИТЕЛЯ ГРАФА И АЛГОРИТМОВ КЛАСТЕРИЗАЦИИ / BFS
-// ============================================================================
+function round2(val: number): number {
+    return Math.round(val * 100) / 100;
+}
 
 export class NexusGraphEngine {
     private lastMetrics: NexusGraphTelemetry = {
@@ -78,23 +69,11 @@ export class NexusGraphEngine {
         computeSource: '[ts/graph_engine]',
     };
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.1. КОНСТРУКТОР И ЧЕСТНАЯ РЕГИСТРАЦИЯ СТАТУСА ИСПОЛНИТЕЛЯ
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ constructor (NexusGraphEngine) ---
     constructor() {
-        // Честно отмечаем, что расчёт топологии выполняется локальным TS-ядром (fallback)
         integrationRegistry.updateModuleStatus('pyodide-graph', 'fallback', 0);
         integrationRegistry.updateModuleStatus('worker-physics', 'fallback', 0);
     }
-    // --- КОНЕЦ ФУНКЦИИ constructor (NexusGraphEngine) ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.2. ТАБЛИЦЫ ДЛИНЫ ДУГИ И ВЫБОРКА ТОЧЕК НА КРИВОЙ БЕЗЬЕ
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ buildBezierArcLengthLUT ---
     public static buildBezierArcLengthLUT(
         x0: number,
         y0: number,
@@ -114,16 +93,14 @@ export class NexusGraphEngine {
             const px = inv * inv * x0 + 2 * inv * t * cx + t * t * x2;
             const py = inv * inv * y0 + 2 * inv * t * cy + t * t * y2;
             totalLen += Math.hypot(px - prevX, py - prevY);
-            lut[step] = totalLen;
+            lut[step] = round2(totalLen);
             prevX = px;
             prevY = py;
         }
 
-        return { arcLength: Math.max(1.0, totalLen), lut };
+        return { arcLength: Math.max(1.0, round2(totalLen)), lut };
     }
-    // --- КОНЕЦ ФУНКЦИИ buildBezierArcLengthLUT ---
 
-    // --- НАЧАЛО ФУНКЦИИ sampleBezierByArcLength ---
     public static sampleBezierByArcLength(
         x0: number,
         y0: number,
@@ -155,9 +132,7 @@ export class NexusGraphEngine {
             y: inv * inv * y0 + 2 * inv * t * cy + t * t * y2,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ sampleBezierByArcLength ---
 
-    // --- НАЧАЛО ФУНКЦИИ createGraphEdge ---
     private createGraphEdge(
         a: GraphNodeInput,
         b: GraphNodeInput,
@@ -173,8 +148,9 @@ export class NexusGraphEngine {
         const dy = b.y - a.y;
         const ctrlOffset =
             Math.sin(simTimeSec * 0.65 + (a.id + b.id) * 0.1) * 0.5 + 0.5;
-        const ctrlX = midX - dy * bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
-        const ctrlY = midY + dx * bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
+        const factor = bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
+        const ctrlX = midX - dy * factor;
+        const ctrlY = midY + dx * factor;
 
         const { arcLength, lut } = NexusGraphEngine.buildBezierArcLengthLUT(
             a.x,
@@ -193,28 +169,18 @@ export class NexusGraphEngine {
             fromIndex: a.index,
             toIndex: b.index,
             edgeClass,
-            x1: a.x,
-            y1: a.y,
-            x2: b.x,
-            y2: b.y,
-            ctrlX,
-            ctrlY,
+            x1: round2(a.x),
+            y1: round2(a.y),
+            x2: round2(b.x),
+            y2: round2(b.y),
+            ctrlX: round2(ctrlX),
+            ctrlY: round2(ctrlY),
             arcLength,
             lengthLUT: lut,
             murrayRadiusPx,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ createGraphEdge ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.3. ВЫЧИСЛЕНИЕ КЛАСТЕРИЗАЦИИ И ДИАМЕТРА ГРАФА (BFS)
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ computeAuthenticGraphMetrics ---
-    /**
-     * Вычисляет локальный коэффициент кластеризации (по замкнутым треугольникам)
-     * и оценивает диаметр и среднюю длину кратчайшего пути методом обхода в ширину (BFS).
-     */
     private computeAuthenticGraphMetrics(
         activeNodes: ReadonlyArray<GraphNodeInput>,
         edges: ReadonlyArray<ComputedGraphEdge>
@@ -305,13 +271,7 @@ export class NexusGraphEngine {
             avgPathLength,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ computeAuthenticGraphMetrics ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.4. ДЕТЕРМИНИРОВАННЫЙ СИНТЕЗ 3 КЛАССОВ РЁБЕР (MST / GABRIEL / MURRAY)
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ buildDeterministicGraph ---
     public buildDeterministicGraph(
         nodes: ReadonlyArray<GraphNodeInput>,
         maxConnectDist: number,
@@ -431,7 +391,7 @@ export class NexusGraphEngine {
                 const murrayRadiusPx =
                     edgeClass === 'BRIDGE'
                         ? 1.35
-                        : Number((1.65 * Math.pow(childBranchOrder, -1 / 3)).toFixed(2));
+                        : round2(1.65 * Math.pow(childBranchOrder, -1 / 3));
 
                 const bendSign = (a.id + b.id) % 2 === 0 ? 1 : -1;
                 edges.push(
@@ -467,31 +427,26 @@ export class NexusGraphEngine {
         const realInvariants = this.computeAuthenticGraphMetrics(activeNodes, edges);
         const durMs = performance.now() - t0;
 
-        // ИСПРАВЛЕНО (Аудит P1 #10): записываем реальное время в 'worker-physics' (TS fallback)
-        // и НЕ приписываем этот расчёт неактивному 'pyodide-graph'
         integrationRegistry.recordModuleStep('worker-physics', durMs);
 
         this.lastMetrics = {
             trunkCount: trunks,
             bridgeCount: bridges,
             dendriteCount: dendrites,
-            avgDegree: Number(avgDeg.toFixed(2)),
+            avgDegree: round2(avgDeg),
             clusteringCoeff: realInvariants.clusteringCoeff,
             diameterHops: realInvariants.diameterHops,
             avgPathLength: realInvariants.avgPathLength,
-            computeTimeMs: Number(durMs.toFixed(2)),
+            computeTimeMs: round2(durMs),
             computeSource: '[ts/graph_engine]',
         };
 
         return { edges, degreeByIndex };
     }
-    // --- КОНЕЦ ФУНКЦИИ buildDeterministicGraph ---
 
-    // --- НАЧАЛО ФУНКЦИИ getLastTelemetry ---
     public getLastTelemetry(): Readonly<NexusGraphTelemetry> {
         return this.lastMetrics;
     }
-    // --- КОНЕЦ ФУНКЦИИ getLastTelemetry ---
 }
 
 export const nexusGraphEngine = new NexusGraphEngine();

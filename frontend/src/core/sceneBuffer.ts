@@ -6,7 +6,8 @@
 // 1. Хранить 24-байтный бинарный заголовок 'UNVS' (little-endian) и массивы сущностей SoA.
 // 2. Поддерживать двойную буферизацию координат (prevPos / pos) для гладкой интерполяции
 //    рендера при фиксированном шаге физики (accumulator).
-// 3. Проверять границы массивов и защищать буфер от NaN / Infinity (NaN/Inf-guard).
+// 3. Проверять границы массивов и защищать буфер от NaN / Infinity (NaN/Inf-guard)
+//    по всем 8 числовым полям сущности с точным подсчётом срабатываний.
 // 4. Вычислять и обновлять единый State Digest для оптик ILLUSION, NEXUS и X-RAY.
 // ============================================================================
 
@@ -41,10 +42,10 @@ export class SceneBufferSoA {
     // Выровненные типизированные массивы сущностей (Structure of Arrays)
     public readonly id: Uint32Array;
     public readonly kind: Uint8Array;
-    public readonly pos: Float32Array;     // [x, y, z] * capacity
-    public readonly prevPos: Float32Array; // [prevX, prevY, prevZ] * capacity (для интерполяции)
-    public readonly interpPos: Float32Array; // Выходной буфер интерполированных координат для рендера
-    public readonly vel: Float32Array;     // [vx, vy, vz] * capacity
+    public readonly pos: Float32Array;       // [x, y, z] * capacity
+    public readonly prevPos: Float32Array;   // [prevX, prevY, prevZ] * capacity
+    public readonly interpPos: Float32Array; // Выходной буфер интерполированных координат
+    public readonly vel: Float32Array;       // [vx, vy, vz] * capacity
     public readonly depthZ: Float32Array;
     public readonly energy: Float32Array;
     public readonly flags: Uint32Array;
@@ -101,7 +102,7 @@ export class SceneBufferSoA {
         this.headerView.setUint32(20, header.digest >>> 0, true);
     }
 
-    // Сохранение текущих позиций в prevPos перед выполнением очередного фиксированного шага физики
+    // Сохранение текущих позиций в prevPos перед выполнением очередного шага физики
     public snapshotPreviousPositions(activeCount: number): void {
         const limit = Math.min(this.capacity, activeCount) * 3;
         for (let i = 0; i < limit; i++) {
@@ -119,7 +120,7 @@ export class SceneBufferSoA {
         }
     }
 
-    // Запись сущности с автоматической защитой от NaN / Infinity (NaN/Inf-guard по MASTER 00B)
+    // Запись сущности с автоматической защитой от NaN / Infinity по всем 8 числовым полям
     public syncEntityFromParticle(
         index: number,
         id: number,
@@ -136,17 +137,28 @@ export class SceneBufferSoA {
     ): void {
         if (index < 0 || index >= this.capacity) return;
 
+        let nonFiniteCount = 0;
+        if (!Number.isFinite(x)) nonFiniteCount++;
+        if (!Number.isFinite(y)) nonFiniteCount++;
+        if (!Number.isFinite(z)) nonFiniteCount++;
+        if (!Number.isFinite(vx)) nonFiniteCount++;
+        if (!Number.isFinite(vy)) nonFiniteCount++;
+        if (!Number.isFinite(vz)) nonFiniteCount++;
+        if (!Number.isFinite(depthZ)) nonFiniteCount++;
+        if (!Number.isFinite(energy)) nonFiniteCount++;
+
+        if (nonFiniteCount > 0) {
+            this.nanGuardTriggeredCount += nonFiniteCount;
+        }
+
         const safeX = Number.isFinite(x) ? x : 0;
         const safeY = Number.isFinite(y) ? y : 0;
         const safeZ = Number.isFinite(z) ? z : 0;
         const safeVx = Number.isFinite(vx) ? vx : 0;
         const safeVy = Number.isFinite(vy) ? vy : 0;
         const safeVz = Number.isFinite(vz) ? vz : 0;
+        const safeDepthZ = Number.isFinite(depthZ) ? depthZ : 1.0;
         const safeEnergy = Number.isFinite(energy) ? Math.max(0, Math.min(10, energy)) : 0;
-
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(vx) || !Number.isFinite(vy)) {
-            this.nanGuardTriggeredCount++;
-        }
 
         const i3 = index * 3;
         this.id[index] = id >>> 0;
@@ -157,7 +169,7 @@ export class SceneBufferSoA {
         this.vel[i3] = safeVx;
         this.vel[i3 + 1] = safeVy;
         this.vel[i3 + 2] = safeVz;
-        this.depthZ[index] = Number.isFinite(depthZ) ? depthZ : 1.0;
+        this.depthZ[index] = safeDepthZ;
         this.energy[index] = safeEnergy;
         this.flags[index] = flagBits >>> 0;
     }
@@ -193,6 +205,10 @@ export class SceneBufferSoA {
 
     public getNanGuardTriggers(): number {
         return this.nanGuardTriggeredCount;
+    }
+
+    public resetNanGuardTriggers(): void {
+        this.nanGuardTriggeredCount = 0;
     }
 
     public reset(newSeed: number): void {
