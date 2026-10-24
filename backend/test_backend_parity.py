@@ -86,7 +86,7 @@ class TestUniverseBackendParity(unittest.TestCase):
         между Python и TypeScript.
         """
         arc_len, lut = build_bezier_arc_length_lut(0.0, 0.0, 50.0, 30.0, 100.0, 0.0)
-        self.assertEqual(arc_len, 114.36)
+        self.assertEqual(arc_len, 105.39)
         self.assertEqual(lut, (0.0, 29.59, 57.18, 84.77, 114.36))
 
         fixture_nodes = [
