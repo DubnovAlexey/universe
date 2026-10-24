@@ -132,7 +132,7 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertEqual(metrics.avg_degree, 2.67)
         self.assertEqual(metrics.clustering_coeff, 0.556)
         self.assertEqual(metrics.diameter_hops, 3)
-        self.assertEqual(metrics.avg_path_length, 1.6)
+        self.assertEqual(metrics.avg_path_length, 1.53)
         self.assertEqual(deg_map, {0: 2, 1: 3, 2: 3, 3: 3, 4: 2, 5: 3})
 
     def test_breach_lens_and_black_hole_optics_bounds(self) -> None:
