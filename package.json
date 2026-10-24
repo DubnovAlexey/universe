@@ -18,6 +18,7 @@
     "verify:python": "python -B -m backend.main --verify",
     "verify:all": "python -B -m backend.main --verify && python -B -m unittest discover -v && npm --prefix frontend run typecheck && npm --prefix frontend run test",
     "build": "npm --prefix frontend run build",
+    "verify:pages-artifact": "npm --prefix frontend run verify:pages-artifact",
     "preview": "npm --prefix frontend run preview",
     "astro": "npm --prefix frontend run astro"
   },

@@ -61,7 +61,7 @@ jobs:
         working-directory: ./frontend
         run: npm run typecheck
 
-      - name: Run Universe Verification & Regression Suite (15 invariants)
+      - name: Run Universe Verification & Regression Suite (16 invariants)
         working-directory: ./frontend
         run: npm test
 
@@ -70,6 +70,10 @@ jobs:
         env:
           NODE_ENV: production
         run: npm run build
+
+      - name: Verify GitHub Pages Artifact Paths and Entry Points
+        working-directory: ./frontend
+        run: npm run verify:pages-artifact
 
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v3

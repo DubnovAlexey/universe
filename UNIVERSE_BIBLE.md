@@ -24,7 +24,7 @@
 
 ### 1.1. Для зрителя
 1. **Мгновенный запуск без ожидания:** открытие ссылки `https://dubnovalexey.github.io/universe/` сразу запускает фазу `01. VOID` (рождение светового эха из Точки Нуля).
-2. **Непрерывная музыка с первого касания:** при первом клике или касании экрана (на компьютерах и телефонах iOS/Android) вступает космический трек `/audio/cosmic_ambient.mp3` с отметки `2.6 с` (пропуская начальную тишину файла) и играет непрерывно без сбоев при смене фаз, паузе и перезапуске цикла.
+2. **Непрерывная музыка без отложенной загрузки:** аудиоэлемент и трек подготавливаются при старте, а воспроизведение сразу запрашивается у браузера. Если политика автозапуска блокирует звук, существующая кнопка и первый пользовательский жест запускают его с отметки `2.6 с`. После запуска трек не прерывается сменой фаз и циклов; доступность автозапуска зависит от браузера и устройства.
 3. **Кульминация и выход визитки (79–108 с):** в 5-й фазе корона туманности «Кошачий глаз» (`NGC 6543`) и Чёрная дыра по спирали сжимаются строго в центральную Точку Нуля (`radius -> 0 px`), дают короткий `0.45 с` импульс и без паузы раскрываются в голографическую визитку **`DUBNOV ALEXEY`** с парящей в воздухе без рамок квантовой строкой (`18–26 Гц`).
 4. **Прямой переход в GitHub и постоянный режим `.ambient-loop`:** на визитке (и в правом нижнем углу экрана) расположены прямые кнопки перехода в профиль `https://github.com/DubnovAlexey` и репозиторий `https://github.com/DubnovAlexey/universe`. После завершения первого 108-секундного круга космос уходит на новый виток (`01_VOID`), а визитка не исчезает — она остаётся полупрозрачно парить в центре экрана (`opacity: 0.46`) и плавно проявляется до `0.98` при наведении мыши.
 5. **Чистое превью ссылки в мессенджерах:** в `frontend/src/pages/index.astro` установлен лаконичный `<title>Alexey Dubnov</title>` без мета-описаний, чтобы при пересылке ссылки в WhatsApp/Telegram отображались только имя автора и URL.
@@ -122,7 +122,7 @@
     │       │   ├── Layer4_Terminal.tsx        # mountLayer4Terminal() — полная таблица всех 8 модулей и логи (LAYER_04)
     │       │   └── Layer5_CipherFinale.tsx    # FinaleCardDomAnimator, mountLayer5CipherFinale() — визитка DUBNOV ALEXEY
     │       ├── utils/audioSync.ts             # AudioSyncEngine (Web Audio API, iOS audioSession, снятие слушателей с 1-го тапа)
-    │       └── tests/parityAndSeams.test.ts   # runUniverseVerificationSuite() — 14 автоматических проверок
+    │       └── tests/parityAndSeams.test.ts   # runUniverseVerificationSuite() — 16 инвариантов
     ├── docs/
     │   ├── ARCHITECTURE.md                    # Краткий архитектурный обзор
     │   ├── DEMO_SCRIPT.md                     # Сценарий демонстрации и команды запуска 25 автотестов
@@ -140,11 +140,11 @@
 | **Оболочка Astro** | `frontend/src/pages/index.astro` | `[РЕАЛИЗОВАНО В RUNTIME]` | Отдаёт статический HTML/CSS каркас с `base: '/universe'` в production и `'/'` в dev. |
 | **Хранилище и часы** | `frontend/src/store/universeState.ts` (`UniverseStore`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Управляет монотонным временем `0..108 с`, 5 фазами, 4 подактами финала и `SceneBufferSoA`. |
 | **Рендерер Canvas 2D** | `frontend/src/engine/renderer.ts` (`UniverseRenderer`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Активный графический движок (`Canvas2D-HighDPI`), рисующий все 5 фаз, дизеринг `Blue-Noise`, линзу `BREACH` и эшелон `Z4`. |
-| **Проверка WebGPU** | `frontend/src/engine/pipeline.ts` (`probeWebGpuSupport`) | `[ПРОВЕРКА ПОДДЕРЖКИ / PROBE]` | Вызывает `navigator.gpu.requestAdapter()` и выставляет честный статус `fallback` / `unsupported`. Файлы `*.wgsl` служат каноническими спецификациями шейдеров. |
-| **Симплектическая физика** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[РЕЗЕРВ / FALLBACK]` | При обычном запуске исполняет детерминированный интегратор `Velocity Verlet` (64 контрольные орбиты, истинный дрейф $\Delta E / E_0$) и фазовую модель Курамото в TypeScript (`TS_FALLBACK`, подпись `[ts/wasmBridge.ts]`). Загрузка `/wasm/physics_engine.wasm` активируется по флагу `?wasm=1` с проверкой сигнатуры `\0asm` (`[rust/gravity.rs]`). |
+| **Проверка WebGPU** | `frontend/src/engine/pipeline.ts` (`probeWebGpuSupport`) | `[ПРОВЕРКА ПОДДЕРЖКИ / PROBE]` | Вызывает `navigator.gpu.requestAdapter()` и выставляет статус `fallback` / `unsupported`. Файлы `*.wgsl` — спецификации; активный рендер остаётся Canvas 2D. |
+| **Симплектическая физика** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[TS FALLBACK / WASM НЕ ОПУБЛИКОВАН]` | В браузере исполняются интегратор `Velocity Verlet` и модель Курамото в TypeScript. Путь `/wasm/physics_engine.wasm` сейчас содержит пустой placeholder; `?wasm=1` поэтому возвращает `TS_FALLBACK`. Rust-крейт проверяется отдельно через `cargo test`; CI пока не создаёт браузерный WASM-модуль. |
 | **Графовый движок NEXUS** | `frontend/src/bridge/simulationWorker.ts` (`NexusGraphEngine`) | `[РЕЗЕРВ / FALLBACK]` | Вызывается синхронно из `01_void.ts` каждые `0.12 с` симуляционного времени. Статус в реестре — `FALLBACK`, метка в UI — `[ts/graph_engine]`. |
 | **Нативные DOM/SVG слои** | `frontend/src/layers/Layer2..Layer5.tsx` | `[РЕАЛИЗОВАНО В RUNTIME]` | Собственная легковесная фабрика `React.createElement` (без пакета React). Монтирует DOM один раз и обновляет числа через `data-bind`, а контуры и одометр — на `60 FPS`. |
-| **Звуковой движок** | `frontend/src/utils/audioSync.ts` (`AudioSyncEngine`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Воспроизводит `cosmic_ambient.mp3` (с `2.6 с`), опрашивает `AnalyserNode` один раз за кадр на десктопе и напрямую воспроизводит `<audio>` с `audioSession.type = 'playback'` на iOS/Android. |
+| **Звуковой движок** | `frontend/src/utils/audioSync.ts` (`AudioSyncEngine`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Запрашивает воспроизведение при загрузке; при запрете автозапуска использует пользовательский жест. Спектральные огибающие имеют временно-независимое сглаживание. `audioSession.type = 'playback'` задаётся при наличии API, но поведение зависит от платформы. |
 | **Ядро Python 3** | `backend/main.py`, `backend/core/*.py` | `[ОФЛАЙН-ИНСТРУМЕНТ / CI VERIFIER]` | Реализует локальный HTTP/Binary сервер (`/api/health`, `/api/topology`, `/api/frame.bin`), CLI-верификатор (`--verify`) и 6 модульных тестов `unittest`. На статическом GitHub Pages Python-сервер не запущен (`CLIENT_ONLY`), а `PythonSocketClient` служит подготовленным и протестированным валидатором бинарных пакетов `'UNVS'`. |
 | **Крейт Rust** | `physics_engine/src/*.rs` | `[ОФЛАЙН-ИНСТРУМЕНТ / WASM CRATE]` | Содержит реализацию `SceneStateSoA`, `Velocity Verlet`, `Kuramoto` и `breach_math`, проверяемую 5 модульными тестами `cargo test` в GitHub Actions. |
 
@@ -255,12 +255,12 @@
 ### 8.2. Аудио-конвейер и мгновенное снятие слушателей (`frontend/src/utils/audioSync.ts`)
 * Файл: `frontend/public/audio/cosmic_ambient.mp3` (`~16.46 МБ`).
 * При старте вызывается `configureIosAudioSession()` (`navigator.audioSession.type = 'playback'`).
-* До первого жеста пользователя `trySilentAutoplayWithoutWarning()` пытается запустить `<audio>` без создания `AudioContext`, исключая предупреждение Autoplay Policy в консоли.
+* При старте `trySilentAutoplayWithoutWarning()` сразу запрашивает воспроизведение `<audio>` без создания `AudioContext`. Браузер может отклонить запрос по своей autoplay policy; тогда доступен запуск первым жестом пользователя. Наличие или отсутствие сообщения в консоли зависит от браузера.
 * Как только промис `audioEl.play()` разрешается или срабатывает событие `'playing'`, немедленно вызывается `this.removeUnlockListenersFn?.()`, отключающая все глобальные слушатели разблокировки.
 
 ### 8.3. Книга учёта ресурсов `ResourceLedger` (`frontend/src/core/resourceLedger.ts`)
 * Отслеживает 5 категорий ресурсов (`buffers`, `textures`, `audioNodes`, `listeners`, `workers`) и 2 диагностических счётчика (`underflowCount` при попытке освободить больше ресурсов, чем было выделено, и `disposerErrors` при исключениях внутри колбэков очистки).
-* Метод `disposeCycleResources()` проверяет все 5 категорий и отсутствие `underflowCount` / `disposerErrors` (`[ПРОВЕРЕНО АВТОТЕСТОМ #14]`).
+* Метод `disposeCycleResources()` проверяет все 5 категорий и отсутствие `underflowCount` / `disposerErrors` (`[ПРОВЕРЕНО АВТОТЕСТОМ #16]`).
 
 ---
 
@@ -271,8 +271,8 @@
 | ID модуля | Язык | Файл-владелец | Стартовый статус | Когда обновляется |
 | :--- | :--- | :--- | :---: | :--- |
 | `ts-core` | `TypeScript` | `frontend/src/store/universeState.ts` | `READY` | На каждом шаге физики в режиме `TS_FALLBACK` (`wasmBridge.ts`). |
-| `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `FALLBACK` | Переходит в `READY` при загрузке валидного `.wasm` с `?wasm=1`. |
-| `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/illusion.wgsl` | `FALLBACK` | При проверке `probeWebGpuSupport()` (`FALLBACK` или `UNSUPPORTED`). |
+| `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `FALLBACK` | В текущей публикации бинарный файл пустой; `?wasm=1` не активирует Rust. `READY` возможен только после сборки и публикации валидного WASM-модуля с нужным ABI. |
+| `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/illusion.wgsl` | `FALLBACK` | Вызывает только `probeWebGpuSupport()`; WGSL-спецификации не запускаются, текущий рендер выполняется через Canvas 2D. |
 | `canvas2d-render` | `Canvas2D` | `frontend/src/engine/renderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`. |
 | `pyodide-graph` | `Python` | `backend/core/graph_logic.py` | `FALLBACK` | Остаётся в `FALLBACK` при работе локального TS-движка графа. |
 | `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Подготовленный клиент `PythonSocketClient`; переходит в `READY` при подключении внешнего сервера с `PUBLIC_WS_URL`. |
@@ -281,7 +281,7 @@
 
 ---
 
-## 10. СИСТЕМА ПРОВЕРОК И АВТОТЕСТОВ (26 АВТОМАТИЧЕСКИХ ПРОВЕРОК В 3 ЯЗЫКАХ)
+## 10. СИСТЕМА ПРОВЕРОК И АВТОТЕСТОВ (27 ИНВАРИАНТОВ В 3 ЯЗЫКАХ + ПРОВЕРКА АРТЕФАКТА PAGES)
 
 | Команда | Что реально проверяет | Результат |
 | :--- | :--- | :---: |
@@ -289,7 +289,8 @@
 | `python -B -m unittest discover -v` | Запускает **6 модульных тестов** из `backend/test_backend_parity.py`: PRNG, FNV-1a дайджест, санитизация `NaN` и отбраковка обрезанных пакетов в `binary_packer.py`, граф `NEXUS` на 24 узлах, граничные условия `BREACH LENS` и генератор кадров `generate_live_binary_step`. | `Ran 6 tests — OK` (Exit Code `0`) |
 | `cargo test` (в `physics_engine/`) | Запускает **5 модульных тестов** Rust-ядра из `physics_engine/src/lib.rs`: паритет `GOLDEN_U32_VECTORS`, детерминизм `SceneStateSoA`, истинный нулевой/ненулевой дрейф энергии `Velocity Verlet`, границы рефракции `BREACH LENS` и C-ABI указатели памяти. | `5 passed; 0 failed` (Exit Code `0`) |
 | `npm --prefix frontend run typecheck` | Запускает строгий компилятор `tsc --noEmit` по всем `.ts` и `.tsx` модулям фронтенда. | `0 errors` (Exit Code `0`) |
-| `npm --prefix frontend test` | Запускает через Vite SSR функцию `runUniverseVerificationSuite()` из `frontend/src/tests/parityAndSeams.test.ts` (**14 инвариантов**: PRNG, заголовок `'UNVS'`, State Digest, 8-польный `NaN-guard`, истинный дрейф $\Delta E / E_0$, 24-узловой граф `NEXUS`, 4 проверки `PythonSocketClient`, вёрстка одометра `320..1920 px`, заморозка на паузе, переход `ACT_B -> ACT_C -> ACT_D`, и тест `ResourceLedger` с детекцией `underflow`/`disposerErrors` и 10 циклами `Restart`). | `Summary: 14/14 PASSED` (Exit Code `0`) |
+| `npm --prefix frontend test` | Запускает через Vite SSR функцию `runUniverseVerificationSuite()` из `frontend/src/tests/parityAndSeams.test.ts` (**16 инвариантов**, включая временно-независимую атаку/релиз аудиоогибающей). | `Summary: 16/16 PASSED` (Exit Code `0`) |
+| `npm --prefix frontend run build` + `npm --prefix frontend run verify:pages-artifact` | Проверяет production HTML, обязательные UI-точки входа, адреса Astro-бандлов под `/universe/`, наличие фавикона и аудиотрека в Pages-артефакте. Это статическая проверка собранного артефакта, не полноценный браузерный E2E-тест. | `Pages artifact smoke check passed` |
 
 ---
 
@@ -318,4 +319,4 @@
     * Счётчик `nanGuardTriggeredCount` в `SceneBufferSoA` расширен на все 8 числовых полей.
     * В `ResourceLedger` добавлены `underflowCount`, `disposerErrors` и проверка всех 5 категорий ресурсов.
     * В `Layer4_Terminal.tsx` выведены все 8 модулей `IntegrationRegistry`.
-    * Добавлены 6 модульных тестов Python (`backend/test_backend_parity.py`), 5 модульных тестов Rust (`physics_engine/src/lib.rs`) и 15 инвариантов TypeScript (`parityAndSeams.test.ts`) — всего **26 автоматических проверок** в CI.
+    * Добавлены 6 модульных тестов Python (`backend/test_backend_parity.py`), 5 модульных тестов Rust (`physics_engine/src/lib.rs`) и 16 инвариантов TypeScript (`parityAndSeams.test.ts`) — всего **27 проверок**; production-сборка дополнительно проходит smoke-проверку Pages-артефакта.

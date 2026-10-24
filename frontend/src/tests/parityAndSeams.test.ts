@@ -32,6 +32,7 @@ import {
     type OdometerGlyphCellState,
 } from '../bridge/cipherOdometerEngine';
 import { universeStore } from '../store/universeState';
+import { smoothAudioEnvelope } from '../utils/audioSync';
 
 export interface VerificationSuiteResult {
     passed: boolean;
@@ -67,6 +68,22 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     check(
         verifyGoldenPrngParity(),
         `Golden PRNG Parity (seed=${GOLDEN_SEED}, vectors=[${GOLDEN_U32_VECTORS.join(', ')}])`
+    );
+
+    let attackInSteps = 0;
+    let releaseInSteps = 1;
+    for (let step = 0; step < 10; step++) {
+        attackInSteps = smoothAudioEnvelope(attackInSteps, 1, 0.01, 0.08, 0.24);
+        releaseInSteps = smoothAudioEnvelope(releaseInSteps, 0, 0.01, 0.08, 0.24);
+    }
+    const attackInOneStep = smoothAudioEnvelope(0, 1, 0.1, 0.08, 0.24);
+    const releaseInOneStep = smoothAudioEnvelope(1, 0, 0.1, 0.08, 0.24);
+    check(
+        Math.abs(attackInSteps - attackInOneStep) < 1e-9 &&
+            Math.abs(releaseInSteps - releaseInOneStep) < 1e-9 &&
+            attackInSteps > 0 && attackInSteps < 1 &&
+            releaseInSteps > 0 && releaseInSteps < 1,
+        'Audio envelopes use time-based attack/release smoothing independent of frame partitioning'
     );
 
     // ------------------------------------------------------------------------

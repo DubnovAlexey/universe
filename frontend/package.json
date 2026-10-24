@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node -e \"import('vite').then(async ({createServer}) => { const s = await createServer({logLevel:'error'}); try { const m = await s.ssrLoadModule('/src/tests/parityAndSeams.test.ts'); const r = m.runUniverseVerificationSuite(); console.log(r.details.join('\\n')); console.log('Summary:', r.passedChecks + '/' + r.totalChecks, r.passed ? 'PASSED' : 'FAILED'); process.exitCode = r.passed ? 0 : 1; } finally { await s.close(); } })\"",
     "build": "astro build",
+    "verify:pages-artifact": "node scripts/verify-pages-artifact.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },

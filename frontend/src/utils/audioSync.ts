@@ -27,6 +27,28 @@ export interface AudioModulationSnapshot {
     status: AudioPlaybackStatus;
 }
 
+/**
+ * Frame-rate-independent envelope smoothing for audio-reactive visuals.
+ * A shorter attack keeps transients legible; a longer release avoids flicker.
+ */
+export function smoothAudioEnvelope(
+    current: number,
+    target: number,
+    deltaSeconds: number,
+    attackSeconds = 0.075,
+    releaseSeconds = 0.24
+): number {
+    const safeCurrent = Number.isFinite(current) ? current : 0;
+    const safeTarget = Number.isFinite(target) ? target : safeCurrent;
+    const safeDelta = Number.isFinite(deltaSeconds)
+        ? Math.max(0, Math.min(0.1, deltaSeconds))
+        : 0;
+    const tau = safeTarget >= safeCurrent ? attackSeconds : releaseSeconds;
+    if (!Number.isFinite(tau) || tau <= 0) return safeTarget;
+    const alpha = 1 - Math.exp(-safeDelta / tau);
+    return safeCurrent + (safeTarget - safeCurrent) * alpha;
+}
+
 export class AudioSyncEngine {
     private audioEl: HTMLAudioElement | null = null;
     private ctx: AudioContext | null = null;
@@ -43,6 +65,8 @@ export class AudioSyncEngine {
     private removeUnlockListenersFn: (() => void) | null = null;
     private isMobileWebKit = false;
     private currentPhase: PhaseId = '01_VOID';
+    private currentAct = '';
+    private sceneTransitionAccent = 0;
 
     private readonly INTRO_SKIP_OFFSET_SEC = 2.6;
     private readonly TARGET_VOLUME = 0.85;
@@ -56,6 +80,7 @@ export class AudioSyncEngine {
     private shockwaveBoost = 0.0;
 
     private lastMasterUpdatePerfMs = -100;
+    private lastEnvelopeUpdatePerfMs = -1;
     private cachedSnapshot: AudioModulationSnapshot = {
         rmsDb: -60.0,
         rmsLinear: 0.0,
@@ -362,11 +387,15 @@ export class AudioSyncEngine {
 
     public transitionToPhase(
         phase: PhaseId | string | number | boolean,
-        _act?: string | number | boolean
+        act?: string | number | boolean
     ): void {
-        if (typeof phase === 'string') {
-            this.currentPhase = phase as PhaseId;
+        const nextPhase = typeof phase === 'string' ? (phase as PhaseId) : this.currentPhase;
+        const nextAct = typeof act === 'string' ? act : this.currentAct;
+        if (nextPhase !== this.currentPhase || nextAct !== this.currentAct) {
+            this.sceneTransitionAccent = 1;
         }
+        this.currentPhase = nextPhase;
+        this.currentAct = nextAct;
         if (this.enabled && !this.isPlayingMp3 && this.ctx) {
             this.startPlayback(true);
         }
@@ -379,11 +408,32 @@ export class AudioSyncEngine {
     ): AudioModulationSnapshot {
         const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
         this.lastMasterUpdatePerfMs = t0;
+        const smoothingDeltaSec =
+            this.lastEnvelopeUpdatePerfMs < 0
+                ? 1 / 60
+                : Math.max(
+                      0,
+                      Math.min(0.1, (t0 - this.lastEnvelopeUpdatePerfMs) / 1000)
+                  );
+        this.lastEnvelopeUpdatePerfMs = t0;
 
         const simTimeSec =
             typeof arg1 === 'number' ? arg1 : typeof arg2 === 'number' ? arg2 : 0;
 
-        this.shockwaveBoost *= 0.9;
+        this.shockwaveBoost = smoothAudioEnvelope(
+            this.shockwaveBoost,
+            0,
+            smoothingDeltaSec,
+            0.02,
+            0.16
+        );
+        this.sceneTransitionAccent = smoothAudioEnvelope(
+            this.sceneTransitionAccent,
+            0,
+            smoothingDeltaSec,
+            0.02,
+            0.42
+        );
 
         const isActuallyPlaying = Boolean(
             this.enabled && this.audioEl && !this.audioEl.paused && this.isPlayingMp3
@@ -451,34 +501,46 @@ export class AudioSyncEngine {
                     ? Math.max(-84.2, 20.0 * Math.log10(rmsLinear))
                     : -84.2;
 
-            this.smoothedSubBass = this.smoothedSubBass * 0.86 + rawSubBass * 0.14;
-            this.smoothedLow = this.smoothedLow * 0.85 + rawLow * 0.15;
-            this.smoothedMid = this.smoothedMid * 0.85 + rawMid * 0.15;
-            this.smoothedHigh = this.smoothedHigh * 0.85 + rawHigh * 0.15;
-            this.smoothedRmsDb = this.smoothedRmsDb * 0.86 + measuredRmsDb * 0.14;
-
-            const targetBeat = Math.min(
-                1.0,
-                this.smoothedSubBass * 0.75 + this.smoothedMid * 0.35
-            );
-            this.smoothedHeartbeat =
-                this.smoothedHeartbeat * 0.9 + targetBeat * 0.1;
         } else {
             const lfo1 = 0.5 + 0.5 * Math.sin(simTimeSec * 1.15);
             const lfo2 = 0.5 + 0.5 * Math.cos(simTimeSec * 0.72);
-            this.smoothedSubBass = isActuallyPlaying ? 0.28 + lfo1 * 0.16 : 0.16 + lfo1 * 0.12;
-            this.smoothedLow = isActuallyPlaying ? 0.26 + lfo1 * 0.16 : 0.15 + lfo1 * 0.12;
-            this.smoothedMid = isActuallyPlaying ? 0.22 + lfo2 * 0.14 : 0.12 + lfo2 * 0.1;
-            this.smoothedHigh = 0.08 + lfo1 * 0.06;
-            this.smoothedHeartbeat = isActuallyPlaying ? 0.38 + lfo1 * 0.28 : 0.3 + lfo1 * 0.25;
-            this.smoothedRmsDb = isActuallyPlaying ? -16.4 + lfo1 * 2.2 : -78.0;
+            rawSubBass = isActuallyPlaying ? 0.28 + lfo1 * 0.16 : 0.16 + lfo1 * 0.12;
+            rawLow = isActuallyPlaying ? 0.26 + lfo1 * 0.16 : 0.15 + lfo1 * 0.12;
+            rawMid = isActuallyPlaying ? 0.22 + lfo2 * 0.14 : 0.12 + lfo2 * 0.1;
+            rawHigh = 0.08 + lfo1 * 0.06;
+            measuredRmsDb = isActuallyPlaying ? -16.4 + lfo1 * 2.2 : -78.0;
         }
+
+        this.smoothedSubBass = smoothAudioEnvelope(
+            this.smoothedSubBass, rawSubBass, smoothingDeltaSec, 0.07, 0.26
+        );
+        this.smoothedLow = smoothAudioEnvelope(
+            this.smoothedLow, rawLow, smoothingDeltaSec, 0.065, 0.24
+        );
+        this.smoothedMid = smoothAudioEnvelope(
+            this.smoothedMid, rawMid, smoothingDeltaSec, 0.055, 0.2
+        );
+        this.smoothedHigh = smoothAudioEnvelope(
+            this.smoothedHigh, rawHigh, smoothingDeltaSec, 0.035, 0.15
+        );
+        this.smoothedRmsDb = smoothAudioEnvelope(
+            this.smoothedRmsDb, measuredRmsDb, smoothingDeltaSec, 0.08, 0.3
+        );
+
+        const targetBeat = Math.min(
+            1.0,
+            this.smoothedSubBass * 0.75 + this.smoothedMid * 0.35
+        );
+        this.smoothedHeartbeat = smoothAudioEnvelope(
+            this.smoothedHeartbeat, targetBeat, smoothingDeltaSec, 0.1, 0.32
+        );
 
         const pulse = Math.min(
             1.0,
             this.smoothedLow * 0.62 +
             this.smoothedHeartbeat * 0.28 +
-            this.shockwaveBoost * 0.45
+            this.shockwaveBoost * 0.45 +
+            this.sceneTransitionAccent * 0.12
         );
 
         const status: AudioPlaybackStatus = !this.enabled
