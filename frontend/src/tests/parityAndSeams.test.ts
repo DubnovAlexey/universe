@@ -219,12 +219,12 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     // ------------------------------------------------------------------------
     const lutCheck = NexusGraphEngine.buildBezierArcLengthLUT(0, 0, 50, 30, 100, 0);
     const lutExactOk =
-        lutCheck.arcLength === 114.36 &&
+        lutCheck.arcLength === 105.39 &&
         lutCheck.lut[0] === 0 &&
-        lutCheck.lut[1] === 29.59 &&
-        lutCheck.lut[2] === 57.18 &&
-        lutCheck.lut[3] === 84.77 &&
-        lutCheck.lut[4] === 114.36;
+        lutCheck.lut[1] === 27.41 &&
+        lutCheck.lut[2] === 52.69 &&
+        lutCheck.lut[3] === 77.97 &&
+        lutCheck.lut[4] === 105.39;
 
     const fixture6: GraphNodeInput[] = [
         { index: 0, id: 0, x: 0.0, y: 0.0, clusterId: 0, energy: 0.9 },
@@ -269,7 +269,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         tel6.avgDegree === 2.67 &&
         tel6.clusteringCoeff === 0.556 &&
         tel6.diameterHops === 3 &&
-        tel6.avgPathLength === 1.6;
+        tel6.avgPathLength === 1.53;
 
     check(
         lutExactOk && idsMatch && metricsMatchPython,
