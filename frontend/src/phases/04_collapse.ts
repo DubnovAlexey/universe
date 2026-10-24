@@ -10,9 +10,15 @@
 //    - Аномалия 3 преломляет ближние звёзды (Z0/Z1).
 // 3. Выстраивать часть дуг в будущую геометрию аккреционного диска SINGULARITY.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: computeCollapseStormTarget.
+// ============================================================================
+
 
 import type { MorphTargetPoint, QuantumParticle } from './01_void';
 
+// --- НАЧАЛО ФУНКЦИИ computeCollapseStormTarget ---
 export function computeCollapseStormTarget(
     p: QuantumParticle,
     centerX: number,
@@ -65,3 +71,4 @@ export function computeCollapseStormTarget(
 
     return { x, y, energy };
 }
+// --- КОНЕЦ ФУНКЦИИ computeCollapseStormTarget ---

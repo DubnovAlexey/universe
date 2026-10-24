@@ -9,6 +9,7 @@
 * **Публичная презентация (GitHub Pages):** `https://dubnovalexey.github.io/universe/`
 * **Профиль автора на GitHub:** `https://github.com/DubnovAlexey`
 * **Назначение документа:** Внутренняя техническая энциклопедия проекта, позволяющая автору в любой момент быстро восстановить в памяти устройство каждого файла, математический аппарат, байтовую раскладку буфера памяти, логику конечного автомата 108-секундного цикла, причины архитектурных решений и процедуры тестирования.
+* **Граница реализации:** документ описывает текущие исходники и статическую сборку. Rust/WASM ABI v1 реализован и проверен в JS runtime; выборочный просмотр production-сборки подтвердил `WASM_ACTIVE`/`READY`. Исходный baseline `c2e2c0c` предшествует подключению реального WASM. Полное браузерное покрытие проверяется отдельно.
 * **Статусы компонентов в этом документе:**
     * `[РЕАЛИЗОВАНО В RUNTIME]` — код активно исполняется в браузере посетителя на GitHub Pages;
     * `[ПРОВЕРЕНО АВТОТЕСТОМ]` — инвариант автоматически проверяется при каждом запуске тестов (`npm test`, `unittest`, `cargo test`) и в GitHub Actions;
@@ -30,10 +31,9 @@
 5. **Чистое превью ссылки в мессенджерах:** в `frontend/src/pages/index.astro` установлен лаконичный `<title>Alexey Dubnov</title>` без мета-описаний, чтобы при пересылке ссылки в WhatsApp/Telegram отображались только имя автора и URL.
 
 ### 1.2. Для системного архитектора, преподавателя и CTO
-Доказать на работающем коде принцип **Оптического Единства (Optical Equivalence)**:
-* Художественный космос (`ILLUSION`), нейронный граф (`NEXUS`) и инженерный рентген (`X-RAY / TRUTH`) — это не три отдельные анимации, а три синхронных представления одного типизированного буфера состояния `SceneBufferSoA`.
-* На каждом шаге физики координаты, скорости и энергии частиц сворачиваются в 32-битный хеш `FNV-1a State Digest`, выводимый в реальном времени в панелях `LAYER_02` и `LAYER_04`:
-  `StateDigest(ILLUSION) == StateDigest(NEXUS) == StateDigest(X-RAY)`.
+Принцип **Оптического Единства (Optical Equivalence)** задаёт общую геометрию художественного космоса (`ILLUSION`), графа (`NEXUS`) и инженерной оптики (`X-RAY / TRUTH`). Физический provider выполняется перед художественными целями; итоговые particle-координаты читаются Canvas, квантованием графа и публикацией `SceneBufferSoA`. Rust не выполняет скрытую запись в SoA после публикации.
+* Квантованный выборочный `FNV-1a State Digest` выводится в `LAYER_02` и `LAYER_04`. Общая подпись является диагностикой и сама по себе не доказывает тождество полного состояния или экранных преобразований.
+* Влияние Rust-фазы на видимые координаты позднего GENESIS и данные графа/SoA проверяется реальной WASM-интеграцией. Общий экранный transform всех оптик развивается в отдельном визуальном этапе.
 
 ---
 
@@ -61,7 +61,7 @@
 ## 3. ПОЛНАЯ КАРТА ДЕРЕВА ФАЙЛОВ И СИМВОЛОВ РЕПОЗИТОРИЯ
 
     universe/
-    ├── .github/workflows/deploy.yml           # CI/CD: Python --verify & unittest -> Rust cargo test -> npm ci -> TS typecheck & 14 tests -> Astro Build -> Pages Deploy
+    ├── .github/workflows/deploy.yml           # Python verifier/6 tests -> Rust 13 tests -> raw WASM build/5 integrations -> TS typecheck/16 invariants -> Astro/Pages checks -> Deploy
     ├── backend/                               # [ОФЛАЙН-ИНСТРУМЕНТ / CI VERIFIER] Научное и верификационное ядро Python 3
     │   ├── api/transport.py                   # build_health_and_parity_report(), generate_live_binary_step()
     │   ├── core/
@@ -72,10 +72,10 @@
     │   ├── utils/binary_packer.py             # pack_scene_binary_frame(), unpack_and_validate_header() ('<IHHIIII', 24 байта)
     │   ├── test_backend_parity.py             # 6 модульных тестов для стандартного раннера `python -B -m unittest discover -v`
     │   └── main.py                            # UniverseTelemetryHTTPHandler, run_cli_verification() (--verify)
-    ├── physics_engine/                        # [ОФЛАЙН-ИНСТРУМЕНТ / WASM CRATE] Симплектическое ядро на Rust
+    ├── physics_engine/                        # [RUST/WASM PROVIDER + NATIVE TESTS] Kuramoto и контрольные REF64 орбиты
     │   ├── Cargo.toml                         # crate-type = ["cdylib"]
     │   └── src/
-    │       ├── lib.rs                         # C-ABI экспорты + 5 модульных тестов #[cfg(test)] mod tests (`cargo test`)
+    │       ├── lib.rs                         # Raw C ABI v1, импорт состояния, метрики + 13 native-тестов
     │       ├── memory.rs                      # SceneBufferHeader (#[repr(C)], 24 байта), SceneStateSoA (MAX_CAPACITY=1024)
     │       ├── gravity.rs                     # step_symplectic_verlet_and_kuramoto(), compute_scene_total_energy()
     │       ├── breach_math.rs                 # compute_refraction_offset_with_stress(), compute_refraction_offset()
@@ -86,7 +86,7 @@
     │   ├── public/
     │   │   ├── audio/cosmic_ambient.mp3       # Мастер-трек космического эмбиента (старт с 2.6 с)
     │   │   ├── audio/AUDIO_LICENSE.md         # Документация использования аудиопотока
-    │   │   ├── wasm/physics_engine.wasm       # Слот бинарного модуля WASM (при 0 байт активируется TS_FALLBACK)
+    │   │   ├── wasm/physics_engine.wasm       # Raw WASM ABI v1, ≈54 КиБ, без imports; default async, ?wasm=0 принуждает TS
     │   │   └── favicon.svg                    # Векторная иконка вкладки
     │   └── src/
     │       ├── pages/index.astro              # Точка входа HTML (<title>Alexey Dubnov</title>), холст, баннер звука, док
@@ -108,7 +108,7 @@
     │       │   ├── 04_collapse.ts             # computeCollapseStormTarget() (3 гравитационные аномалии env1..env3)
     │       │   └── 05_singularity.ts          # computeSingularityTarget() (аккреция -> сжатие в Ноль -> ореол визитки)
     │       ├── bridge/
-    │       │   ├── wasmBridge.ts              # WasmPhysicsBridge (истинный дрейф ΔE/E₀, валидация \0asm, TS_FALLBACK)
+    │       │   ├── wasmBridge.ts              # WasmPhysicsBridge (ABI v1, state adoption/mirrors, REF64 ΔE/E₀, непрерывный TS fallback)
     │       │   ├── simulationWorker.ts        # NexusGraphEngine (Прим MST, Габриэль, Мюррей, кластеризация, BFS-28)
     │       │   ├── pythonSocketClient.ts      # PythonSocketClient (подготовленный клиент и валидатор пакетов 'UNVS')
     │       │   └── cipherOdometerEngine.ts    # CipherOdometerEngine (CANONICAL_FINALE_LINES, 3D-барабаны одометра)
@@ -125,7 +125,9 @@
     │       └── tests/parityAndSeams.test.ts   # runUniverseVerificationSuite() — 16 инвариантов
     ├── docs/
     │   ├── ARCHITECTURE.md                    # Краткий архитектурный обзор
-    │   ├── DEMO_SCRIPT.md                     # Сценарий демонстрации и команды запуска 25 автотестов
+    │   ├── DEMO_SCRIPT.md                     # Сценарий демонстрации, 35 модульных и 5 WASM-интеграционных проверок
+    │   ├── ADR-001-POLYGLOT-RUNTIME.md         # Контракты runtime, реализация и порядок следующих этапов
+    │   ├── VISUAL_AUDIO_DIRECTION.md          # Принятые визуальные решения и будущие символы/глубина/переходы
     │   └── study_materials/MATHEMATICAL_AND_ASTROPHYSICAL_MODELS.md
     ├── package.json                           # Корневой манифест монорепозитория (workspaces: ["frontend"])
     ├── README.md                              # Двуязычная публичная витрина проекта (EN + RU)
@@ -141,12 +143,12 @@
 | **Хранилище и часы** | `frontend/src/store/universeState.ts` (`UniverseStore`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Управляет монотонным временем `0..108 с`, 5 фазами, 4 подактами финала и `SceneBufferSoA`. |
 | **Рендерер Canvas 2D** | `frontend/src/engine/renderer.ts` (`UniverseRenderer`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Активный графический движок (`Canvas2D-HighDPI`), рисующий все 5 фаз, дизеринг `Blue-Noise`, линзу `BREACH` и эшелон `Z4`. |
 | **Проверка WebGPU** | `frontend/src/engine/pipeline.ts` (`probeWebGpuSupport`) | `[ПРОВЕРКА ПОДДЕРЖКИ / PROBE]` | Вызывает `navigator.gpu.requestAdapter()` и выставляет статус `fallback` / `unsupported`. Файлы `*.wgsl` — спецификации; активный рендер остаётся Canvas 2D. |
-| **Симплектическая физика** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[TS FALLBACK / WASM НЕ ОПУБЛИКОВАН]` | В браузере исполняются интегратор `Velocity Verlet` и модель Курамото в TypeScript. Путь `/wasm/physics_engine.wasm` сейчас содержит пустой placeholder; `?wasm=1` поэтому возвращает `TS_FALLBACK`. Rust-крейт проверяется отдельно через `cargo test`; CI пока не создаёт браузерный WASM-модуль. |
+| **Физический provider** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[RUST/WASM / TS FALLBACK]` | Default async raw ABI v1; после валидного шага — `WASM_ACTIVE`, при `?wasm=0` или отказе — TS. Kuramoto влияет на видимые цели; отдельные `REF64` орбиты дают энергию. CI собирает и проверяет реальный WASM до Astro. |
 | **Графовый движок NEXUS** | `frontend/src/bridge/simulationWorker.ts` (`NexusGraphEngine`) | `[РЕЗЕРВ / FALLBACK]` | Вызывается синхронно из `01_void.ts` каждые `0.12 с` симуляционного времени. Статус в реестре — `FALLBACK`, метка в UI — `[ts/graph_engine]`. |
 | **Нативные DOM/SVG слои** | `frontend/src/layers/Layer2..Layer5.tsx` | `[РЕАЛИЗОВАНО В RUNTIME]` | Собственная легковесная фабрика `React.createElement` (без пакета React). Монтирует DOM один раз и обновляет числа через `data-bind`, а контуры и одометр — на `60 FPS`. |
 | **Звуковой движок** | `frontend/src/utils/audioSync.ts` (`AudioSyncEngine`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Запрашивает воспроизведение при загрузке; при запрете автозапуска использует пользовательский жест. Спектральные огибающие имеют временно-независимое сглаживание. `audioSession.type = 'playback'` задаётся при наличии API, но поведение зависит от платформы. |
 | **Ядро Python 3** | `backend/main.py`, `backend/core/*.py` | `[ОФЛАЙН-ИНСТРУМЕНТ / CI VERIFIER]` | Реализует локальный HTTP/Binary сервер (`/api/health`, `/api/topology`, `/api/frame.bin`), CLI-верификатор (`--verify`) и 6 модульных тестов `unittest`. На статическом GitHub Pages Python-сервер не запущен (`CLIENT_ONLY`), а `PythonSocketClient` служит подготовленным и протестированным валидатором бинарных пакетов `'UNVS'`. |
-| **Крейт Rust** | `physics_engine/src/*.rs` | `[ОФЛАЙН-ИНСТРУМЕНТ / WASM CRATE]` | Содержит реализацию `SceneStateSoA`, `Velocity Verlet`, `Kuramoto` и `breach_math`, проверяемую 5 модульными тестами `cargo test` в GitHub Actions. |
+| **Крейт Rust** | `physics_engine/src/*.rs` | `[WASM PROVIDER / NATIVE TESTS]` | Raw ABI v1, Kuramoto, контрольный Velocity Verlet и `breach_math`; 13 native-тестов и 5 интеграций реального WASM. |
 
 ---
 
@@ -233,11 +235,13 @@
 ### 7.2. Симплектический интегратор `Velocity Verlet`, истинный дрейф энергии и модель Курамото
 * **Файлы:** `physics_engine/src/gravity.rs`, `frontend/src/bridge/wasmBridge.ts`.
 * **Модель Курамото:** для всех активных частиц вычисляется средний фазовый угол $\psi = \text{atan2}(\sum \sin\theta_i, \sum \cos\theta_i)$ и параметр порядка $r(t) = \frac{1}{N}\sqrt{(\sum \cos\theta_i)^2 + (\sum \sin\theta_i)^2} \in [0, 1]$.
-* **Схема Velocity Verlet и истинный дрейф $\Delta E / E_0$:** интегрирует ансамбль орбит в гравитационном потенциале Пламмера ($\varepsilon^2 = 64.0$, $GM = 4900.0$) с адаптивным подшагом `subDt = min(0.008, safeDt * 0.5)`. Начальная энергия $E_0$ фиксируется при инициализации ансамбля, а на каждом шаге вычисляется истинный относительный дрейф полной механической энергии $\Delta E / E_0 = |E(t) - E_0| / |E_0|$ без искусственных констант и зажимов (`[ПРОВЕРЕНО АВТОТЕСТОМ #5]`).
+* **Видимый потребитель фаз:** provider выполняется до расчёта целей; фазы Курамото управляют дыханием частиц и тройной геометрией позднего GENESIS. Итоговые архетипы пяти фаз сохраняются. Это ограниченный физический вклад в художественную сцену, а не полная N-body модель.
+* **Схема Velocity Verlet и дрейф $\Delta E / E_0$:** отдельные 64 контрольные орбиты `REF64` интегрируются в статическом потенциале Пламмера ($\varepsilon^2 = 64.0$, $GM = 4900.0$). Положительный `safeDt <= 0.05` разбивается на `ceil(safeDt / 0.004)` равных подшагов; `dt <= 0` и count `0` не продвигают время. Начальная энергия $E_0$ фиксируется при инициализации, а дрейф $|E(t)-E_0|/|E_0|$ относится только к контрольному ансамблю.
+* **Общий ABI-контракт:** raw v1 без imports, `f64` для шага/накопленного времени/метрик, `f32[1024]` для фаз/частот, `f32[3072]` для позиций/скоростей (первые 64 орбиты). `step_verlet_nbody` возвращает статус `1`/`0`, не digest. При поздней загрузке WASM получает актуальные TS-массивы, baseline и время; reset/seed/count переинициализируют provider. После валидного native-шага TS-зеркала обновляются целиком; trap/ошибка результата возвращают TS к последнему принятому состоянию. Отказ `commit_uploaded_state` требует discard provider со стороны host.
 
 ### 7.3. Эвристическая модель графа `NEXUS` и паритет TS <-> Python (`simulationWorker.ts`, `backend/core/graph_logic.py`)
-* На малых и средних ансамблях ($N \le 260$, включая эталонный 24-узловой граф) реализации в TypeScript и Python используют идентичное округление `round2` и дают 100%-ное совпадение всех рёбер и метрик (`[ПРОВЕРЕНО АВТОТЕСТОМ #6]`).
-* На полной рабочей сцене ($N > 260$) в браузере включается прореживание `stride = 2` для сохранения кадрового бюджета `60+ FPS`.
+* Реализации в TypeScript и Python используют округление `round2`; совпадение рёбер и метрик автоматически проверено на фиксированном 24-узловом графе (`[ПРОВЕРЕНО АВТОТЕСТОМ #6]`). Это не доказывает паритет всех входов $N \le 260$.
+* На полной рабочей сцене ($N > 260$) браузерный TS-движок включает прореживание `stride = 2`; реальный Worker ещё не подключён. Выигрыш производительности требует измерения.
 * Диаметр `diameterHops` и средняя длина пути `avgPathLength` вычисляются обходом в ширину (`BFS`) с шагом выборки стартовых вершин `sampleStride = max(1, floor(N / 28))` (при $N \le 28$ обход является полным, а при $N > 28$ даёт быструю выборочную оценку снизу, подписанную в `LAYER_03` как `EST. DIAMETER / PATH (BFS)`).
 
 ### 7.4. Оптическое преломление `BREACH LENS` (`stressState.ts`, `breach_math.rs`, `stress_solver.py`)
@@ -268,26 +272,28 @@
 
 Все **8 модулей** в `frontend/src/core/integrationRegistry.ts` инициализируются с нулевыми замерами (`0 ms`) и в полном составе отображаются в панели `LAYER_04 // TERMINAL & REGISTRY`:
 
-| ID модуля | Язык | Файл-владелец | Стартовый статус | Когда обновляется |
+| ID модуля | Язык | Основной файл | Стартовый статус | Когда обновляется |
 | :--- | :--- | :--- | :---: | :--- |
 | `ts-core` | `TypeScript` | `frontend/src/store/universeState.ts` | `READY` | На каждом шаге физики в режиме `TS_FALLBACK` (`wasmBridge.ts`). |
-| `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `FALLBACK` | В текущей публикации бинарный файл пустой; `?wasm=1` не активирует Rust. `READY` возможен только после сборки и публикации валидного WASM-модуля с нужным ABI. |
+| `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `LOADING` → `READY` / `FALLBACK` | Default async raw ABI v1; первый валидный native-шаг даёт `WASM_ACTIVE` без утверждения SIMD. `?wasm=0` или ошибка выбирают TS fallback. |
 | `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/illusion.wgsl` | `FALLBACK` | Вызывает только `probeWebGpuSupport()`; WGSL-спецификации не запускаются, текущий рендер выполняется через Canvas 2D. |
 | `canvas2d-render` | `Canvas2D` | `frontend/src/engine/renderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`. |
 | `pyodide-graph` | `Python` | `backend/core/graph_logic.py` | `FALLBACK` | Остаётся в `FALLBACK` при работе локального TS-движка графа. |
-| `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Подготовленный клиент `PythonSocketClient`; переходит в `READY` при подключении внешнего сервера с `PUBLIC_WS_URL`. |
+| `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Офлайн HTTP/Binary инструмент и подготовленный `PythonSocketClient`; текущие HTTP и WebSocket протоколы не образуют рабочее браузерное подключение. |
 | `web-audio` | `WebAudio` | `frontend/src/utils/audioSync.ts` | `LOADING` | Переходит в `READY` при старте `cosmic_ambient.mp3` (`updateRealtimeModulation`). |
 | `worker-physics` | `TypeScript` | `frontend/src/bridge/simulationWorker.ts` | `FALLBACK` | Записывает время построения графа `NEXUS` (`buildDeterministicGraph`). |
 
 ---
 
-## 10. СИСТЕМА ПРОВЕРОК И АВТОТЕСТОВ (27 ИНВАРИАНТОВ В 3 ЯЗЫКАХ + ПРОВЕРКА АРТЕФАКТА PAGES)
+## 10. ПРОВЕРКИ (35 МОДУЛЬНЫХ: 16 TS + 6 PYTHON + 13 RUST; 5 ИНТЕГРАЦИОННЫХ WASM)
 
 | Команда | Что реально проверяет | Результат |
 | :--- | :--- | :---: |
 | `python -B -m backend.main --verify` | CLI-проверка 5 математических инвариантов Python-ядра: `GOLDEN_U32_VECTORS`, 24-байтный заголовок `'UNVS'`, граф `NEXUS`, кольцо рефракции `BREACH LENS` (`px=232`) и оптика Чёрной дыры. | `status: "ok"` (Exit Code `0`) |
 | `python -B -m unittest discover -v` | Запускает **6 модульных тестов** из `backend/test_backend_parity.py`: PRNG, FNV-1a дайджест, санитизация `NaN` и отбраковка обрезанных пакетов в `binary_packer.py`, граф `NEXUS` на 24 узлах, граничные условия `BREACH LENS` и генератор кадров `generate_live_binary_step`. | `Ran 6 tests — OK` (Exit Code `0`) |
-| `cargo test` (в `physics_engine/`) | Запускает **5 модульных тестов** Rust-ядра из `physics_engine/src/lib.rs`: паритет `GOLDEN_U32_VECTORS`, детерминизм `SceneStateSoA`, истинный нулевой/ненулевой дрейф энергии `Velocity Verlet`, границы рефракции `BREACH LENS` и C-ABI указатели памяти. | `5 passed; 0 failed` (Exit Code `0`) |
+| `npm run test:rust` | **13 native-тестов** Rust: PRNG/инициализация, энергия и рефракция, C ABI, перенос состояния, накопленное время, границы шага/count и атомарность расчётного шага. | `13 passed; 0 failed` |
+| `npm run build:wasm` | Собирает raw `wasm32-unknown-unknown` и проверяет ABI v1/отсутствие imports. | Реальный модуль `≈54 КиБ` |
+| `npm run verify:wasm` | **5 интеграционных проверок** реального WASM: 600 смешанных шагов против TS (96 осцилляторов/64 орбиты/энергия), memory growth/count, seed/reset/late adoption, trap и неверные ABI/указатели, влияние Rust-фазы на видимые координаты и граф/SoA. | `5/5 PASS` |
 | `npm --prefix frontend run typecheck` | Запускает строгий компилятор `tsc --noEmit` по всем `.ts` и `.tsx` модулям фронтенда. | `0 errors` (Exit Code `0`) |
 | `npm --prefix frontend test` | Запускает через Vite SSR функцию `runUniverseVerificationSuite()` из `frontend/src/tests/parityAndSeams.test.ts` (**16 инвариантов**, включая временно-независимую атаку/релиз аудиоогибающей). | `Summary: 16/16 PASSED` (Exit Code `0`) |
 | `npm --prefix frontend run build` + `npm --prefix frontend run verify:pages-artifact` | Проверяет production HTML, обязательные UI-точки входа, адреса Astro-бандлов под `/universe/`, наличие фавикона и аудиотрека в Pages-артефакте. Это статическая проверка собранного артефакта, не полноценный браузерный E2E-тест. | `Pages artifact smoke check passed` |
@@ -298,9 +304,16 @@
 
 ### Команды для работы из корня репозитория (`C:\Projects\Full_Stack\universe`):
 1. Чистая установка зависимостей по lock-файлу: `npm ci`
-2. Локальный сервер разработки (`http://localhost:4321/`): `npm run dev`
-3. Полная локальная проверка перед коммитом: `npm run verify:all`
-4. Продакшен-сборка в папку `frontend/dist` (`base: '/universe'`): `npm run build`
+2. Сборка WASM (нужен Rust target `wasm32-unknown-unknown`): `npm run build:wasm`
+3. Локальный сервер разработки (`http://localhost:4321/`): `npm run dev`
+4. Полная локальная проверка: `npm run verify:all` — Python verifier/тесты, native Rust, TS typecheck/инварианты, WASM build/integration, Astro и Pages artifact.
+5. Продакшен-сборка в папку `frontend/dist` (`base: '/universe'`): `npm run build`
+
+Полный браузерный цикл, второй цикл, звук, мобильная компоновка и p50/p95 остаются отдельной проверкой. Следующий плановый этап — символы/hover/глубина/переходы, затем Worker по измерениям и WebGPU. Большое разделение `renderer.ts` и CSS выполняется отдельным последним этапом после завершения ранее запланированных работ.
+
+Выборочный production smoke: default `WASM_ACTIVE`/`READY`, ручной переход в фазу 05, появление имени в ACT_D и автоматический вход во второй цикл с сохранённой визиткой. Rust остался `READY` после reset и изменения active count `820 → 590`. При `?wasm=0` подтверждены видимая TS-сцена и `FALLBACK`; warning/error в просмотренных запусках не зарегистрированы. Это не непрерывное наблюдение всех 108 секунд и не полный E2E.
+
+Узкий viewport `507×684`: default native, открытые метрики с `REF64`/Rust и видимые кнопки управления; warning/error не зарегистрированы. Полное покрытие устройств, слышимость аудио, Safari/iOS и performance baseline остаются открытыми.
 
 ---
 
@@ -320,3 +333,8 @@
     * В `ResourceLedger` добавлены `underflowCount`, `disposerErrors` и проверка всех 5 категорий ресурсов.
     * В `Layer4_Terminal.tsx` выведены все 8 модулей `IntegrationRegistry`.
     * Добавлены 6 модульных тестов Python (`backend/test_backend_parity.py`), 5 модульных тестов Rust (`physics_engine/src/lib.rs`) и 16 инвариантов TypeScript (`parityAndSeams.test.ts`) — всего **27 проверок**; production-сборка дополнительно проходит smoke-проверку Pages-артефакта.
+
+* **24.10.2026 — фундамент Rust/WASM после baseline `c2e2c0c`:**
+    * Собран реальный raw ABI v1 WASM без imports; общий с TS расчёт Kuramoto связан с видимой геометрией до публикации сцены.
+    * Отдельный ансамбль `REF64` сохранён для энергетической диагностики; добавлены перенос состояния при поздней загрузке и TS-зеркала для fallback после trap.
+    * Проверки расширены до 13 native Rust-тестов и 5 интеграций реального WASM; 16 TS-инвариантов сохранены. Выборочный production-просмотр подтвердил default `WASM_ACTIVE`/`READY` без warning/error в просмотренном запуске; полное браузерное покрытие остаётся открытым.

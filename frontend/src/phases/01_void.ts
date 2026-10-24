@@ -3,6 +3,14 @@
 // ФАЙЛ: frontend/src/phases/01_void.ts
 // НАЗНАЧЕНИЕ: Ядро симуляции 5 фаз с C2-бесшовным морфингом по снимку состояния (v2.5)
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. VoidPhaseSimulation: constructor, resize, respawnParticles, createSingleParticle,
+//      computePhaseArchetypePoint, computeVoidChirpTarget, update, updateTopologyAndEdgeCurves,
+//      updateSynapticPulsesByArcLut, spawnPulseOnEdge, triggerCascadeFromNode, samplePulsePoint, getParticles,
+//      getEdges, getPulses.
+// ============================================================================
+
 
 import { EntityKindCode, type PhaseId } from '../core/contracts';
 import { DeterministicPRNG } from '../core/prng';
@@ -129,6 +137,10 @@ export const BRAIN_HEMISPHERE_LOBES: ReadonlyArray<[number, number]> = [
     [0.34, 0.16],
 ];
 
+// ============================================================================
+// РАЗДЕЛ. КЛАСС VoidPhaseSimulation
+// ============================================================================
+
 export class VoidPhaseSimulation {
     private particles: QuantumParticle[] = [];
     private edges: TopologyEdge[] = [];
@@ -141,9 +153,11 @@ export class VoidPhaseSimulation {
     private activeSingularityAct: SingularityAct = 'INACTIVE';
     private phaseMorphFactor = 1.0;
     private tickCounter = 0;
+    private simulationSeed = 104729;
     private lastTopologyBuildSimSec = -10;
     private prng: DeterministicPRNG;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (VoidPhaseSimulation) ---
     constructor(initialWidth = 1920, initialHeight = 1080) {
         this.width = initialWidth;
         this.height = initialHeight;
@@ -152,9 +166,11 @@ export class VoidPhaseSimulation {
 
         const targetCount = UNIVERSE_PHASES['03_EVOLUTION'].targetParticleCount;
         this.respawnParticles(targetCount);
-        void wasmPhysicsBridge.tryLoadWasmModule(initialSeed, targetCount);
+        void wasmPhysicsBridge.tryLoadWasmModule();
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ resize (VoidPhaseSimulation) ---
     public resize(width: number, height: number): void {
         const scaleX = width / Math.max(1, this.width);
         const scaleY = height / Math.max(1, this.height);
@@ -171,7 +187,9 @@ export class VoidPhaseSimulation {
             p.morphOriginY *= scaleY;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ resize (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ respawnParticles (VoidPhaseSimulation) ---
     public respawnParticles(count: number): void {
         const uState = universeStore.getState();
         const profileMult = universeStore.getQualityGovernor().getProfile().particleMultiplier;
@@ -179,7 +197,8 @@ export class VoidPhaseSimulation {
         const cappedCount = Math.max(240, Math.min(count, maxCap));
 
         this.prng = new DeterministicPRNG(uState.seed);
-        wasmPhysicsBridge.initKuramotoOscillators(uState.seed);
+        this.simulationSeed = uState.seed;
+        wasmPhysicsBridge.initKuramotoOscillators(uState.seed, cappedCount);
 
         this.particles = [];
         this.edges = [];
@@ -195,7 +214,9 @@ export class VoidPhaseSimulation {
             this.particles.push(this.createSingleParticle(i, uState.seed));
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ respawnParticles (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ createSingleParticle (VoidPhaseSimulation) ---
     private createSingleParticle(id: number, seed: number): QuantumParticle {
         const r1 = DeterministicPRNG.hashFloat(seed, id * 37 + 1);
         const r2 = DeterministicPRNG.hashFloat(seed, id * 37 + 2);
@@ -265,7 +286,9 @@ export class VoidPhaseSimulation {
             quantumSpin: id % 2 === 0 ? 1 : -1,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ createSingleParticle (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ computePhaseArchetypePoint (VoidPhaseSimulation) ---
     private computePhaseArchetypePoint(
         phase: PhaseId,
         p: QuantumParticle,
@@ -324,7 +347,9 @@ export class VoidPhaseSimulation {
                 );
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ computePhaseArchetypePoint (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ computeVoidChirpTarget (VoidPhaseSimulation) ---
     private computeVoidChirpTarget(
         p: QuantumParticle,
         centerX: number,
@@ -378,7 +403,9 @@ export class VoidPhaseSimulation {
         );
         return { x, y, energy };
     }
+    // --- КОНЕЦ ФУНКЦИИ computeVoidChirpTarget (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ update (VoidPhaseSimulation) ---
     public update(
         dtSeconds: number,
         phase: PhaseId,
@@ -389,7 +416,7 @@ export class VoidPhaseSimulation {
         const uState = universeStore.getState();
         const sceneBuffer = universeStore.getSceneBuffer();
 
-        if (uState.cycleCount !== this.lastCycleCount) {
+        if (uState.cycleCount !== this.lastCycleCount || uState.seed !== this.simulationSeed) {
             this.lastCycleCount = uState.cycleCount;
             this.respawnParticles(UNIVERSE_PHASES['03_EVOLUTION'].targetParticleCount);
         }
@@ -426,7 +453,7 @@ export class VoidPhaseSimulation {
         const phaseProgress = uState.telemetry.phaseProgress;
         const nowMs = performance.now();
 
-        // Единый аудиоснимок на кадр для мягкой модуляции (Предложение 4)
+        // Единый аудиоснимок на кадр для мягкой модуляции.
         const audioSnap = audioSync.getSnapshot(simTimeSec);
         const highSparkBoost =
             uState.reducedMotion || audioSnap.high < 0.06
@@ -444,6 +471,14 @@ export class VoidPhaseSimulation {
             ? Math.min(0.32, dt * 6.5)
             : Math.min(0.16, dt * (2.05 + gravityMultiplier * 0.5));
         const velDamping = Math.exp(-dt * 11.5);
+
+        // Provider outputs are consumed before phase targets and the single SoA publication.
+        // Rust phases drive GENESIS geometry and visible particle breathing, just like TS fallback.
+        const kuramotoK = phase === '02_GENESIS' ? 0.4 + phaseProgress * 1.8 : 1.2;
+        const physTelemetry = wasmPhysicsBridge.stepSymplecticPhysics(
+            sceneBuffer, this.particles.length, dt, simTimeSec, centerX, centerY,
+            this.width, this.height, kuramotoK
+        );
 
         for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
@@ -533,19 +568,6 @@ export class VoidPhaseSimulation {
             );
         }
 
-        const kuramotoK = phase === '02_GENESIS' ? 0.4 + phaseProgress * 1.8 : 1.2;
-        const physTelemetry = wasmPhysicsBridge.stepSymplecticPhysics(
-            sceneBuffer,
-            this.particles.length,
-            dt,
-            simTimeSec,
-            centerX,
-            centerY,
-            this.width,
-            this.height,
-            kuramotoK
-        );
-
         sceneBuffer.commitTickAndComputeDigest(
             this.tickCounter,
             this.particles.length,
@@ -557,6 +579,7 @@ export class VoidPhaseSimulation {
             physicsStepMs: Number(physTelemetry.stepDurationMs.toFixed(2)),
             energyDriftRatio: physTelemetry.energyDriftRatio,
             kuramotoOrderR: physTelemetry.kuramotoOrderR,
+            wasmStatus: physTelemetry.isWasmNative ? 'WASM_ACTIVE' : 'TS_FALLBACK',
         });
 
         this.updateTopologyAndEdgeCurves(dt, phase, simTimeSec, uState.seed);
@@ -567,7 +590,9 @@ export class VoidPhaseSimulation {
             uState.reducedMotion ? 0 : audioSnap.mid
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ update (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateTopologyAndEdgeCurves (VoidPhaseSimulation) ---
     private updateTopologyAndEdgeCurves(
         dt: number,
         phase: PhaseId,
@@ -677,7 +702,9 @@ export class VoidPhaseSimulation {
             };
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ updateTopologyAndEdgeCurves (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateSynapticPulsesByArcLut (VoidPhaseSimulation) ---
     private updateSynapticPulsesByArcLut(
         dt: number,
         phase: PhaseId,
@@ -753,7 +780,7 @@ export class VoidPhaseSimulation {
                             'signal:arrived',
                             `Интерференция сигналов в соме #${pTo.id} (Δt=${Math.round(
                                 deltaArrivalMs
-                            )} мс) [python/graph_logic.py]`
+                            )} мс) [ts/graph_engine]`
                         );
                     }
                 }
@@ -770,7 +797,9 @@ export class VoidPhaseSimulation {
             }
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ updateSynapticPulsesByArcLut (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ spawnPulseOnEdge (VoidPhaseSimulation) ---
     private spawnPulseOnEdge(
         edge: TopologyEdge,
         forward: boolean,
@@ -813,7 +842,9 @@ export class VoidPhaseSimulation {
             cascadeDepth,
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ spawnPulseOnEdge (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ triggerCascadeFromNode (VoidPhaseSimulation) ---
     private triggerCascadeFromNode(
         nodeIndex: number,
         prevIndex: number,
@@ -832,7 +863,9 @@ export class VoidPhaseSimulation {
             }
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ triggerCascadeFromNode (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ samplePulsePoint (VoidPhaseSimulation) ---
     public samplePulsePoint(
         pulse: SynapticPulse,
         arcFraction: number
@@ -848,17 +881,24 @@ export class VoidPhaseSimulation {
             arcFraction
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ samplePulsePoint (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getParticles (VoidPhaseSimulation) ---
     public getParticles(): ReadonlyArray<QuantumParticle> {
         return this.particles;
     }
+    // --- КОНЕЦ ФУНКЦИИ getParticles (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getEdges (VoidPhaseSimulation) ---
     public getEdges(): ReadonlyArray<TopologyEdge> {
         return this.edges;
     }
+    // --- КОНЕЦ ФУНКЦИИ getEdges (VoidPhaseSimulation) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getPulses (VoidPhaseSimulation) ---
     public getPulses(): ReadonlyArray<SynapticPulse> {
         return this.pulses;
     }
+    // --- КОНЕЦ ФУНКЦИИ getPulses (VoidPhaseSimulation) ---
 }
 

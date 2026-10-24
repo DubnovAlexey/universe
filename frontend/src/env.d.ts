@@ -8,6 +8,12 @@
 // 3. Согласовать тип JSX.Element со стандартным DOM Element для слоёв Layer2-Layer5.tsx.
 // ВАЖНО: Файл не должен содержать top-level export {}, чтобы оставаться глобальным!
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Декларации ресурсов CSS/WGSL/WASM и переменных окружения ImportMeta.
+//   3. Типы JSX.Element, HTMLAttributes и IntrinsicElements.
+// ============================================================================
+
 
 declare module '*.css';
 
@@ -21,6 +27,7 @@ declare module '*.wasm' {
     export default url;
 }
 
+// РАЗДЕЛ 2. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ IMPORTMETA
 interface ImportMetaEnv {
     readonly BASE_URL: string;
     readonly PUBLIC_WS_URL?: string;
@@ -31,6 +38,7 @@ interface ImportMeta {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
+// РАЗДЕЛ 3. ДЕКЛАРАЦИИ JSX
 declare namespace JSX {
     type Element = globalThis.Element;
 

@@ -1,9 +1,17 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/core/graph_logic.py
-# НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS (MST + Gabriel + Murray + BFS, v2.5)
+# НАЗНАЧЕНИЕ: Эталонная топология NEXUS: MST, Gabriel, Murray и метрики BFS.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. build_bezier_arc_length_lut.
+# 3. _compute_authentic_invariants.
+# 4. compute_nexus_topology.
+# Функции: build_bezier_arc_length_lut, _make_curve_edge, _compute_authentic_invariants,
+# compute_nexus_topology.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
@@ -12,6 +20,7 @@ import time
 from typing import Sequence
 
 
+# --- НАЧАЛО КЛАССА GraphNodeDTO ---
 @dataclass(frozen=True)
 class GraphNodeDTO:
     index: int
@@ -20,8 +29,10 @@ class GraphNodeDTO:
     y: float
     cluster_id: int
     energy: float
+# --- КОНЕЦ КЛАССА GraphNodeDTO ---
 
 
+# --- НАЧАЛО КЛАССА ComputedEdgeDTO ---
 @dataclass(frozen=True)
 class ComputedEdgeDTO:
     edge_id: str
@@ -37,8 +48,10 @@ class ComputedEdgeDTO:
     arc_length: float
     length_lut: tuple[float, float, float, float, float]
     murray_radius_px: float
+# --- КОНЕЦ КЛАССА ComputedEdgeDTO ---
 
 
+# --- НАЧАЛО КЛАССА GraphTopologyMetricsDTO ---
 @dataclass(frozen=True)
 class GraphTopologyMetricsDTO:
     trunk_count: int
@@ -50,8 +63,13 @@ class GraphTopologyMetricsDTO:
     avg_path_length: float
     compute_time_ms: float
     compute_source: str
+# --- КОНЕЦ КЛАССА GraphTopologyMetricsDTO ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: build_bezier_arc_length_lut ---
+# --- НАЧАЛО ФУНКЦИИ build_bezier_arc_length_lut ---
 def build_bezier_arc_length_lut(
         x0: float,
         y0: float,
@@ -78,8 +96,10 @@ def build_bezier_arc_length_lut(
 
     safe_total = max(1.0, round(total_len, 2))
     return safe_total, (lut[0], lut[1], lut[2], lut[3], lut[4])
+# --- КОНЕЦ ФУНКЦИИ build_bezier_arc_length_lut ---
 
 
+# --- НАЧАЛО ФУНКЦИИ _make_curve_edge ---
 def _make_curve_edge(
         a: GraphNodeDTO,
         b: GraphNodeDTO,
@@ -117,8 +137,13 @@ def _make_curve_edge(
         length_lut=lut,
         murray_radius_px=murray_radius_px,
     )
+# --- КОНЕЦ ФУНКЦИИ _make_curve_edge ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 2: build_bezier_arc_length_lut ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: _compute_authentic_invariants ---
+# --- НАЧАЛО ФУНКЦИИ _compute_authentic_invariants ---
 def _compute_authentic_invariants(
         nodes: Sequence[GraphNodeDTO],
         edges: Sequence[ComputedEdgeDTO],
@@ -175,8 +200,13 @@ def _compute_authentic_invariants(
 
     avg_path_length = round(total_path_dist / reachable_pairs, 2) if reachable_pairs > 0 else 0.0
     return clustering_coeff, max_hops, avg_path_length
+# --- КОНЕЦ ФУНКЦИИ _compute_authentic_invariants ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 3: _compute_authentic_invariants ---
+
+# --- НАЧАЛО РАЗДЕЛА 4: compute_nexus_topology ---
+# --- НАЧАЛО ФУНКЦИИ compute_nexus_topology ---
 def compute_nexus_topology(
         nodes: Sequence[GraphNodeDTO],
         max_connect_dist: float = 210.0,
@@ -326,3 +356,5 @@ def compute_nexus_topology(
     )
 
     return edges, degree_by_index, metrics
+# --- КОНЕЦ ФУНКЦИИ compute_nexus_topology ---
+# --- КОНЕЦ РАЗДЕЛА 4: compute_nexus_topology ---

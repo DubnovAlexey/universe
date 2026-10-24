@@ -8,8 +8,15 @@
 //    без использования запрещённых грязно-коричневых или кислотных оттенков.
 // 3. Рассчитывать локальное затухание света I / (1 + k1*d + k2*d^2) и rim light (#7DD3FC).
 // 4. Применять высокочастотный Blue-Noise дизеринг против ступенчатости (banding).
+// ФУНКЦИИ: vs_main, hash21, value_noise, fbm_anisotropic, ridged_dust_canyon, blue_noise_dither, fs_main.
+// ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+//   0. Контракты данных и uniform-ресурсы: IllusionUniforms, VertexOutput.
+//   1. vs_main: полноэкранный треугольник.
+//   2. hash21, value_noise, fbm_anisotropic, ridged_dust_canyon, blue_noise_dither.
+//   3. fs_main: цвет космической оптики.
 // ============================================================================
 
+// РАЗДЕЛ 0. КОНТРАКТЫ ДАННЫХ И UNIFORM-РЕСУРСЫ
 struct IllusionUniforms {
     resolution: vec2<f32>,
     camera_drift: vec2<f32>,
@@ -33,6 +40,7 @@ struct VertexOutput {
 // ----------------------------------------------------------------------------
 // 1. ВЕРШИННЫЙ ШЕЙДЕР ПОЛНОЭКРАННОГО ТРЕУГОЛЬНИКА (БЕЗ ВЕРШИННЫХ БУФЕРОВ)
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ vs_main ---
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
@@ -42,16 +50,20 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     out.uv = vec2<f32>(x, y);
     return out;
 }
+// --- КОНЕЦ ФУНКЦИИ vs_main ---
 
 // ----------------------------------------------------------------------------
 // 2. ПРОЦЕДУРНЫЙ ХЕШ, СИМПЛЕКСНЫЙ ГРАДИЕНТНЫЙ ШУМ, FBM И RIDGED CANYON NOISE
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ hash21 ---
 fn hash21(p_in: vec2<f32>) -> f32 {
     var p = fract(p_in * vec2<f32>(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
+// --- КОНЕЦ ФУНКЦИИ hash21 ---
 
+// --- НАЧАЛО ФУНКЦИИ value_noise ---
 fn value_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -64,8 +76,10 @@ fn value_noise(p: vec2<f32>) -> f32 {
 
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+// --- КОНЕЦ ФУНКЦИИ value_noise ---
 
 // 5-октавный фрактальный броуновский шум (lacunarity = 2.0, gain = 0.5 по MASTER 01/02)
+// --- НАЧАЛО ФУНКЦИИ fbm_anisotropic ---
 fn fbm_anisotropic(p_in: vec2<f32>) -> f32 {
     var value = 0.0;
     var amplitude = 0.5;
@@ -79,24 +93,30 @@ fn fbm_anisotropic(p_in: vec2<f32>) -> f32 {
     }
     return value;
 }
+// --- КОНЕЦ ФУНКЦИИ fbm_anisotropic ---
 
 // Ridged-поле поглощения света для создания тёмных пылевых каньонов
+// --- НАЧАЛО ФУНКЦИИ ridged_dust_canyon ---
 fn ridged_dust_canyon(p_in: vec2<f32>) -> f32 {
     var p = p_in * 1.35;
     let n = abs(value_noise(p) * 2.0 - 1.0);
     let ridge = 1.0 - n;
     return ridge * ridge * ridge;
 }
+// --- КОНЕЦ ФУНКЦИИ ridged_dust_canyon ---
 
 // Дизеринг синим шумом (Interleaved Gradient Noise) против ступенчатости в тенях #020308..#060B19
+// --- НАЧАЛО ФУНКЦИИ blue_noise_dither ---
 fn blue_noise_dither(frag_coord: vec2<f32>) -> f32 {
     let magic = vec3<f32>(0.06711056, 0.00583715, 52.9829189);
     return fract(magic.z * fract(dot(frag_coord, magic.xy))) - 0.5;
 }
+// --- КОНЕЦ ФУНКЦИИ blue_noise_dither ---
 
 // ----------------------------------------------------------------------------
 // 3. ФРАГМЕНТНЫЙ ШЕЙДЕР ОБЪЁМНОЙ ТУМАННОСТИ, ПЫЛЕВЫХ КАНЬОНОВ И RIM LIGHT
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ fs_main ---
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aspect = u_illusion.resolution.x / max(1.0, u_illusion.resolution.y);
@@ -153,3 +173,4 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(final_rgb, 1.0);
 }
+// --- КОНЕЦ ФУНКЦИИ fs_main ---

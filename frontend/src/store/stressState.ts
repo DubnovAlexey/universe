@@ -9,6 +9,14 @@
 // 4. Генерировать 3–8 детерминированных микротрещин через DeterministicPRNG (без Math.random).
 // 5. Выполнять режиссёрский авто-разрыв около 66 с цикла при отсутствии пользовательского ввода.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. StressStateController: constructor, getState, bindKeyboardNavigation, moveLensByKeyboard,
+//      updatePointer, clearPointer, setBreaching, setTargetStress, injectEntropySpike, spawnShockwave,
+//      spawnSpontaneousRift, generateDeterministicMicroCracks, stepPhysics, getDeformedLensRadiusAtAngle,
+//      getBoundaryRefractionOffset, getTruthRevealFactorAt.
+// ============================================================================
+
 
 import { universeStore } from './universeState';
 import { DeterministicPRNG } from '../core/prng';
@@ -81,6 +89,10 @@ export interface StressStateData {
     spontaneousRifts: SpontaneousRift[];
 }
 
+// ============================================================================
+// РАЗДЕЛ 2. КЛАСС StressStateController
+// ============================================================================
+
 class StressStateController {
     private state: StressStateData = {
         globalStress: 0.05,
@@ -112,17 +124,22 @@ class StressStateController {
     private viewportHeight = 1080;
     private viewportMinSide = 1080;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (StressStateController) ---
     constructor() {
         if (typeof window !== 'undefined') {
             this.bindKeyboardNavigation();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getState (StressStateController) ---
     public getState(): Readonly<StressStateData> {
         return this.state;
     }
+    // --- КОНЕЦ ФУНКЦИИ getState (StressStateController) ---
 
     // Клавиатурная альтернатива по MASTER 04: стрелки двигают линзу, Space удерживает, Esc закрывает
+    // --- НАЧАЛО ФУНКЦИИ bindKeyboardNavigation (StressStateController) ---
     private bindKeyboardNavigation(): void {
         window.addEventListener('keydown', (e: KeyboardEvent) => {
             const step = 28;
@@ -151,7 +168,9 @@ class StressStateController {
             }
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ bindKeyboardNavigation (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ moveLensByKeyboard (StressStateController) ---
     private moveLensByKeyboard(dx: number, dy: number): void {
         const baseX = this.state.isPointerInside ? this.state.pointerX : this.viewportWidth * 0.5;
         const baseY = this.state.isPointerInside ? this.state.pointerY : this.viewportHeight * 0.5;
@@ -159,7 +178,9 @@ class StressStateController {
         const ny = Math.max(40, Math.min(this.viewportHeight - 40, baseY + dy));
         this.updatePointer(nx, ny, this.viewportWidth, this.viewportHeight);
     }
+    // --- КОНЕЦ ФУНКЦИИ moveLensByKeyboard (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updatePointer (StressStateController) ---
     public updatePointer(x: number, y: number, viewportWidth: number, viewportHeight: number): void {
         this.viewportWidth = Math.max(320, viewportWidth);
         this.viewportHeight = Math.max(320, viewportHeight);
@@ -180,14 +201,18 @@ class StressStateController {
         this.state.normY = this.viewportHeight > 0 ? y / this.viewportHeight : 0.5;
         this.state.isPointerInside = true;
     }
+    // --- КОНЕЦ ФУНКЦИИ updatePointer (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ clearPointer (StressStateController) ---
     public clearPointer(): void {
         this.state.isPointerInside = false;
         if (this.state.isBreaching) {
             this.setBreaching(false, false);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ clearPointer (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setBreaching (StressStateController) ---
     public setBreaching(active: boolean, triggerShockwave = true): void {
         const wasBreaching = this.state.isBreaching;
         this.state.isBreaching = active;
@@ -209,11 +234,15 @@ class StressStateController {
             universeStore.emitEvent('breach:closed', 'Оптическая мембрана BREACH закрыта.');
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ setBreaching (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setTargetStress (StressStateController) ---
     public setTargetStress(stress: number): void {
         this.state.targetStress = Math.max(0, Math.min(1, stress));
     }
+    // --- КОНЕЦ ФУНКЦИИ setTargetStress (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ injectEntropySpike (StressStateController) ---
     public injectEntropySpike(amount = 0.35, centerX?: number, centerY?: number): void {
         this.state.globalStress = Math.min(1.0, this.state.globalStress + amount);
         if (centerX !== undefined && centerY !== undefined) {
@@ -225,7 +254,9 @@ class StressStateController {
             `Скачок напряжения ткани: ${Math.round(this.state.globalStress * 100)}% [rust/breach_math.rs]`
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ injectEntropySpike (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ spawnShockwave (StressStateController) ---
     public spawnShockwave(x: number, y: number, maxRadius = 360, strength = 0.7): void {
         this.state.shockwaves.push({
             id: this.nextId++,
@@ -240,7 +271,9 @@ class StressStateController {
             this.state.shockwaves.shift();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ spawnShockwave (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ spawnSpontaneousRift (StressStateController) ---
     private spawnSpontaneousRift(x: number, y: number): void {
         const rng = new DeterministicPRNG(universeStore.getState().seed + this.nextId * 71);
         this.state.spontaneousRifts.push({
@@ -255,8 +288,10 @@ class StressStateController {
             this.state.spontaneousRifts.shift();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ spawnSpontaneousRift (StressStateController) ---
 
     // Генерация 3–8 детерминированных микротрещин (0.5–1.0 px) строго от eventSeed
+    // --- НАЧАЛО ФУНКЦИИ generateDeterministicMicroCracks (StressStateController) ---
     private generateDeterministicMicroCracks(): void {
         this.state.microCracks = [];
         const uState = universeStore.getState();
@@ -313,7 +348,9 @@ class StressStateController {
             });
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ generateDeterministicMicroCracks (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ stepPhysics (StressStateController) ---
     public stepPhysics(dtSeconds: number): void {
         const dt = Math.min(dtSeconds, 0.05);
         const uState = universeStore.getState();
@@ -414,7 +451,9 @@ class StressStateController {
             if (rift.life <= 0.01) this.state.spontaneousRifts.splice(i, 1);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ stepPhysics (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getDeformedLensRadiusAtAngle (StressStateController) ---
     public getDeformedLensRadiusAtAngle(angleRad: number, simTimeSec = 0): number {
         const baseR = this.state.currentBreachRadius;
         if (baseR <= 1) return 0;
@@ -422,9 +461,11 @@ class StressStateController {
         const warp2 = Math.cos(angleRad * 5.0 - simTimeSec * 1.1) * 0.024;
         return baseR * (1.0 + (warp1 + warp2) * (0.5 + this.state.globalStress * 0.5));
     }
+    // --- КОНЕЦ ФУНКЦИИ getDeformedLensRadiusAtAngle (StressStateController) ---
 
     // Математическая модель C¹-непрерывного преломления δ(p) = r̂·A·g(d) + t̂·B·g(d) по MASTER 04:
     // строго g(d) = 0 за пределами кольца ширины w вокруг d = 1
+    // --- НАЧАЛО ФУНКЦИИ getBoundaryRefractionOffset (StressStateController) ---
     public getBoundaryRefractionOffset(x: number, y: number, simTimeSec = 0): RefractionOffset {
         const r = this.state.currentBreachRadius;
         if (r < 8) {
@@ -465,7 +506,9 @@ class StressStateController {
             dispersionFactor: g * (this.state.isBreaching ? 0.85 : 0.35),
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ getBoundaryRefractionOffset (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getTruthRevealFactorAt (StressStateController) ---
     public getTruthRevealFactorAt(x: number, y: number, fullXRayMode = false): number {
         if (fullXRayMode) return 1.0;
 
@@ -513,6 +556,7 @@ class StressStateController {
 
         return Math.max(0.0, Math.min(1.0, reveal));
     }
+    // --- КОНЕЦ ФУНКЦИИ getTruthRevealFactorAt (StressStateController) ---
 }
 
 export const stressStore = new StressStateController();

@@ -1694,7 +1694,7 @@ export class UniverseRenderer {
 
     // --- НАЧАЛО ФУНКЦИИ renderBorderlessNodeCallout ---
     /**
-     * Отрисовывает парящую инженерную выноску узла (ID + модуль-владелец) без прямоугольной рамки.
+     * Отрисовывает парящую инженерную выноску узла (ID + ссылка на модуль) без прямоугольной рамки.
      */
     private renderBorderlessNodeCallout(
         ctx: CanvasRenderingContext2D,
@@ -1724,7 +1724,7 @@ export class UniverseRenderer {
         ctx.shadowColor = 'rgba(2, 3, 8, 0.96)';
         ctx.shadowBlur = 8;
         ctx.fillText(
-            `ID#${String(pt.id).padStart(3, '0')} [${pt.moduleTag}]`,
+            `ID#${String(pt.id).padStart(3, '0')} [ref:${pt.moduleTag}]`,
             labelX,
             labelY
         );
@@ -2177,10 +2177,7 @@ export class UniverseRenderer {
                     simulationTimeSec: Number(nextSimSec.toFixed(3)),
                     phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
                     engineBackend: caps.activeBackend,
-                    wasmStatus:
-                        integrationRegistry.getModule('wasm-physics')?.status === 'ready'
-                            ? 'WASM_SIMD_ACTIVE'
-                            : 'TS_FALLBACK',
+                    wasmStatus: latestState.telemetry.wasmStatus,
                     pythonBackendStatus:
                         integrationRegistry.getModule('server-ws')?.status === 'ready'
                             ? 'WS_CONNECTED'

@@ -16,6 +16,7 @@
 import type { MorphTargetPoint, QuantumParticle } from './01_void';
 import { DeterministicPRNG } from '../core/prng';
 
+// --- НАЧАЛО ФУНКЦИИ computeGenesisTarget ---
 export function computeGenesisTarget(
     p: QuantumParticle,
     centerX: number,
@@ -87,3 +88,4 @@ export function computeGenesisTarget(
 
     return { x, y, energy };
 }
+// --- КОНЕЦ ФУНКЦИИ computeGenesisTarget ---

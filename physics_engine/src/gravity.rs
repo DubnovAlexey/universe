@@ -1,177 +1,147 @@
 // ============================================================================
 // ФАЙЛ: physics_engine/src/gravity.rs
-// НАЗНАЧЕНИЕ: Симплектический интегратор Velocity Verlet и синхронизация Курамото (v2.5)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Интегрировать движение тел в гравитационном потенциале двух барицентров (Tier A)
-//    с регуляризацией Пламмера (Plummer softening ε) и защитой от NaN.
-// 2. Вычислять истинный относительный дрейф механической энергии ΔE/E₀ без
-//    искусственных масштабирующих коэффициентов и сдвигов.
-// 3. Рассчитывать фазовую синхронизацию осцилляторов Курамото и параметр порядка r(t) ∈ [0,1].
+// НАЗНАЧЕНИЕ: TS-совместимые Kuramoto и Velocity Verlet с арифметикой f64.
+// ОГЛАВЛЕНИЕ:
+// 1. Константы консервативного потенциала Пламмера и границы подшагов.
+// 2. compute_reference_total_energy: энергия отдельного ансамбля из 64 орбит.
+// 3. step_symplectic_verlet_and_kuramoto: атомарный шаг фаз и контрольных орбит.
 // ============================================================================
 
-#![allow(dead_code)]
+// --- НАЧАЛО РАЗДЕЛА 1: КОНСТАНТЫ ---
+use crate::memory::{SceneStateSoA, MAX_CAPACITY, REFERENCE_ENSEMBLE_COUNT};
 
-use crate::memory::{SceneStateSoA, MAX_CAPACITY};
+pub const GM_CONSERVATIVE: f64 = 4900.0;
+pub const PLUMMER_SOFTENING_SQ: f64 = 64.0;
+pub const MAX_STABLE_SUBSTEP_SEC: f64 = 0.004;
+pub const MAX_STEP_SEC: f64 = 0.05;
 
-const PLUMMER_SOFTENING_SQ: f32 = 64.0;
-const GM_BARYCENTER: f32 = 4900.0;
-const MAX_ACCEL_CLAMP: f32 = 420.0;
+// --- КОНЕЦ РАЗДЕЛА 1: КОНСТАНТЫ ---
 
-#[inline]
-pub fn compute_barycenter_acceleration(
-    px: f32,
-    py: f32,
-    b1x: f32,
-    b1y: f32,
-    b2x: f32,
-    b2y: f32,
-    gravity_scale: f32,
-) -> (f32, f32, f32) {
-    let dx1 = b1x - px;
-    let dy1 = b1y - py;
-    let r1_sq = dx1 * dx1 + dy1 * dy1 + PLUMMER_SOFTENING_SQ;
-    let r1 = r1_sq.sqrt();
-    let inv_r1_cubed = 1.0 / (r1_sq * r1);
-
-    let dx2 = b2x - px;
-    let dy2 = b2y - py;
-    let r2_sq = dx2 * dx2 + dy2 * dy2 + PLUMMER_SOFTENING_SQ;
-    let r2 = r2_sq.sqrt();
-    let inv_r2_cubed = 1.0 / (r2_sq * r2);
-
-    let gm = GM_BARYCENTER * gravity_scale;
-    let ax = (dx1 * inv_r1_cubed + dx2 * inv_r2_cubed) * gm;
-    let ay = (dy1 * inv_r1_cubed + dy2 * inv_r2_cubed) * gm;
-    let potential = -gm / r1 - gm / r2;
-
-    (
-        ax.clamp(-MAX_ACCEL_CLAMP, MAX_ACCEL_CLAMP),
-        ay.clamp(-MAX_ACCEL_CLAMP, MAX_ACCEL_CLAMP),
-        potential,
-    )
-}
-
-pub fn compute_scene_total_energy(scene: &SceneStateSoA, gravity_scale: f32, sim_t: f32) -> f32 {
-    let count = (scene.header.count as usize).min(MAX_CAPACITY);
-    if count == 0 {
-        return 0.0;
-    }
-
-    let orbit_angle = sim_t * 0.42;
-    let b1x = orbit_angle.cos() * 140.0;
-    let b1y = orbit_angle.sin() * 90.0;
-    let b2x = -b1x * 1.05;
-    let b2y = -b1y * 1.05;
-
-    let mut total_energy = 0.0_f32;
-    for i in 0..count {
+// --- НАЧАЛО РАЗДЕЛА 2: КОНТРОЛЬНАЯ ЭНЕРГИЯ ---
+// --- НАЧАЛО ФУНКЦИИ compute_reference_total_energy ---
+pub fn compute_reference_total_energy(pos: &[f32], vel: &[f32], gravity_scale: f64) -> f64 {
+    let mut total = 0.0_f64;
+    for i in 0..REFERENCE_ENSEMBLE_COUNT {
         let i3 = i * 3;
-        let px = SceneStateSoA::sanitize_finite(scene.pos[i3], 0.0);
-        let py = SceneStateSoA::sanitize_finite(scene.pos[i3 + 1], 0.0);
-        let vx = SceneStateSoA::sanitize_finite(scene.vel[i3], 0.0);
-        let vy = SceneStateSoA::sanitize_finite(scene.vel[i3 + 1], 0.0);
-
-        let (_ax, _ay, pot) =
-            compute_barycenter_acceleration(px, py, b1x, b1y, b2x, b2y, gravity_scale);
-        let kinetic = 0.5 * (vx * vx + vy * vy);
-        total_energy += kinetic + pot;
+        let px = pos[i3] as f64;
+        let py = pos[i3 + 1] as f64;
+        let vx = vel[i3] as f64;
+        let vy = vel[i3 + 1] as f64;
+        let radius = (px * px + py * py + PLUMMER_SOFTENING_SQ).sqrt();
+        total += 0.5 * (vx * vx + vy * vy) - GM_CONSERVATIVE * gravity_scale / radius;
     }
-    total_energy
+    total
 }
+// --- КОНЕЦ ФУНКЦИИ compute_reference_total_energy ---
+// --- КОНЕЦ РАЗДЕЛА 2: КОНТРОЛЬНАЯ ЭНЕРГИЯ ---
 
+// --- НАЧАЛО РАЗДЕЛА 3: ШАГ ИНТЕГРАТОРА ---
+
+/// Publish one complete step, never a partially updated substep. Scratch arrays
+/// stay on the stack, so stepping does not allocate or relocate exported arrays.
+/// Invalid inputs/results return false. Zero/negative dt and count=0 are no-ops.
+// --- НАЧАЛО ФУНКЦИИ step_symplectic_verlet_and_kuramoto ---
 pub fn step_symplectic_verlet_and_kuramoto(
     scene: &mut SceneStateSoA,
-    raw_dt: f32,
-    gravity_scale: f32,
-    kuramoto_coupling: f32,
-) {
+    raw_dt: f64,
+    gravity_scale: f64,
+    kuramoto_coupling: f64,
+) -> bool {
+    if !raw_dt.is_finite()
+        || !gravity_scale.is_finite()
+        || !kuramoto_coupling.is_finite()
+        || !scene.has_finite_uploaded_state()
+    {
+        return false;
+    }
     let count = (scene.header.count as usize).min(MAX_CAPACITY);
-    if count == 0 {
-        return;
+    if raw_dt <= 0.0 || count == 0 {
+        return true;
     }
 
-    if scene.baseline_energy == 0.0 {
-        let init_e = compute_scene_total_energy(scene, gravity_scale, 0.0);
-        if init_e.abs() > 0.001 {
-            scene.baseline_energy = init_e;
+    let dt = raw_dt.min(MAX_STEP_SEC);
+    let substeps = (dt / MAX_STABLE_SUBSTEP_SEC).ceil().max(1.0) as usize;
+    let sub_dt = dt / substeps as f64;
+    let half_dt = 0.5 * sub_dt;
+    let half_dt_sq = 0.5 * sub_dt * sub_dt;
+    let gm = GM_CONSERVATIVE * gravity_scale;
+    if !gm.is_finite() {
+        return false;
+    }
+
+    let mut phase = [0.0_f32; MAX_CAPACITY];
+    phase.copy_from_slice(&scene.kuramoto_phase);
+    let mut pos = [0.0_f32; REFERENCE_ENSEMBLE_COUNT * 3];
+    let mut vel = [0.0_f32; REFERENCE_ENSEMBLE_COUNT * 3];
+    pos.copy_from_slice(&scene.pos[..REFERENCE_ENSEMBLE_COUNT * 3]);
+    vel.copy_from_slice(&scene.vel[..REFERENCE_ENSEMBLE_COUNT * 3]);
+    let mut integrated_sec = scene.integrated_sim_sec;
+
+    for _ in 0..substeps {
+        let mut sum_cos = 0.0_f64;
+        let mut sum_sin = 0.0_f64;
+        for theta in &phase[..count] {
+            sum_cos += (*theta as f64).cos();
+            sum_sin += (*theta as f64).sin();
         }
+        let mean_angle = (sum_sin / count as f64).atan2(sum_cos / count as f64);
+        for (i, theta_f32) in phase[..count].iter_mut().enumerate() {
+            let theta = *theta_f32 as f64;
+            let derivative =
+                scene.natural_omega[i] as f64 + kuramoto_coupling * (mean_angle - theta).sin();
+            // JS uses remainder followed by one addition for negative phases.
+            let next = (theta + derivative * sub_dt) % std::f64::consts::TAU;
+            *theta_f32 = if next < 0.0 {
+                next + std::f64::consts::TAU
+            } else {
+                next
+            } as f32;
+        }
+
+        for i in 0..REFERENCE_ENSEMBLE_COUNT {
+            let i3 = i * 3;
+            let px = pos[i3] as f64;
+            let py = pos[i3 + 1] as f64;
+            let vx = vel[i3] as f64;
+            let vy = vel[i3 + 1] as f64;
+            let r0_sq = px * px + py * py + PLUMMER_SOFTENING_SQ;
+            let inv_r0_cubed = 1.0 / (r0_sq * r0_sq.sqrt());
+            let ax0 = -gm * px * inv_r0_cubed;
+            let ay0 = -gm * py * inv_r0_cubed;
+            let next_px = px + vx * sub_dt + ax0 * half_dt_sq;
+            let next_py = py + vy * sub_dt + ay0 * half_dt_sq;
+            let r1_sq = next_px * next_px + next_py * next_py + PLUMMER_SOFTENING_SQ;
+            let inv_r1_cubed = 1.0 / (r1_sq * r1_sq.sqrt());
+            let ax1 = -gm * next_px * inv_r1_cubed;
+            let ay1 = -gm * next_py * inv_r1_cubed;
+
+            // Match Float32Array assignment after each TS substep, retaining
+            // double-precision positions for the new acceleration calculation.
+            pos[i3] = next_px as f32;
+            pos[i3 + 1] = next_py as f32;
+            vel[i3] = (vx + (ax0 + ax1) * half_dt) as f32;
+            vel[i3 + 1] = (vy + (ay0 + ay1) * half_dt) as f32;
+        }
+        integrated_sec += sub_dt;
     }
 
-    if !raw_dt.is_finite() || raw_dt <= 0.0 {
-        scene.energy_drift_ratio = 0.0;
-        return;
+    if !integrated_sec.is_finite()
+        || !phase
+            .iter()
+            .chain(&pos)
+            .chain(&vel)
+            .all(|value| value.is_finite())
+        || !compute_reference_total_energy(&pos, &vel, gravity_scale).is_finite()
+    {
+        return false;
     }
-
-    let dt = raw_dt.clamp(0.0005, 0.05);
+    scene.kuramoto_phase.copy_from_slice(&phase);
+    scene.pos[..REFERENCE_ENSEMBLE_COUNT * 3].copy_from_slice(&pos);
+    scene.vel[..REFERENCE_ENSEMBLE_COUNT * 3].copy_from_slice(&vel);
+    scene.integrated_sim_sec = integrated_sec;
     scene.header.tick = scene.header.tick.wrapping_add(1);
-    let sim_t = (scene.header.tick as f32) * dt;
-
-    let orbit_angle = sim_t * 0.42;
-    let b1x = orbit_angle.cos() * 140.0;
-    let b1y = orbit_angle.sin() * 90.0;
-    let b2x = -b1x * 1.05;
-    let b2y = -b1y * 1.05;
-
-    let mut sum_cos = 0.0_f32;
-    let mut sum_sin = 0.0_f32;
-    for i in 0..count {
-        let theta = scene.kuramoto_phase[i];
-        sum_cos += theta.cos();
-        sum_sin += theta.sin();
-    }
-    let inv_n = 1.0 / (count as f32);
-    let mean_cos = sum_cos * inv_n;
-    let mean_sin = sum_sin * inv_n;
-    let mean_angle = mean_sin.atan2(mean_cos);
-    scene.kuramoto_order_r = (mean_cos * mean_cos + mean_sin * mean_sin).sqrt().min(1.0);
-
-    let mut total_energy = 0.0_f32;
-    let half_dt_sq = 0.5 * dt * dt;
-    let half_dt = 0.5 * dt;
-
-    for i in 0..count {
-        let theta = scene.kuramoto_phase[i];
-        let d_theta = scene.natural_omega[i] + kuramoto_coupling * (mean_angle - theta).sin();
-        scene.kuramoto_phase[i] = (theta + d_theta * dt).rem_euclid(std::f32::consts::TAU);
-
-        let i3 = i * 3;
-        let px = SceneStateSoA::sanitize_finite(scene.pos[i3], 0.0);
-        let py = SceneStateSoA::sanitize_finite(scene.pos[i3 + 1], 0.0);
-        let vx = SceneStateSoA::sanitize_finite(scene.vel[i3], 0.0);
-        let vy = SceneStateSoA::sanitize_finite(scene.vel[i3 + 1], 0.0);
-
-        let (ax0, ay0, _pot0) =
-            compute_barycenter_acceleration(px, py, b1x, b1y, b2x, b2y, gravity_scale);
-
-        let next_px = px + vx * dt + ax0 * half_dt_sq;
-        let next_py = py + vy * dt + ay0 * half_dt_sq;
-
-        let (ax1, ay1, pot1) = compute_barycenter_acceleration(
-            next_px,
-            next_py,
-            b1x,
-            b1y,
-            b2x,
-            b2y,
-            gravity_scale,
-        );
-
-        let next_vx = vx + (ax0 + ax1) * half_dt;
-        let next_vy = vy + (ay0 + ay1) * half_dt;
-
-        scene.pos[i3] = SceneStateSoA::sanitize_finite(next_px, 0.0);
-        scene.pos[i3 + 1] = SceneStateSoA::sanitize_finite(next_py, 0.0);
-        scene.vel[i3] = SceneStateSoA::sanitize_finite(next_vx, 0.0);
-        scene.vel[i3 + 1] = SceneStateSoA::sanitize_finite(next_vy, 0.0);
-
-        let kinetic = 0.5 * (next_vx * next_vx + next_vy * next_vy);
-        total_energy += kinetic + pot1;
-    }
-
-    if scene.baseline_energy.abs() > 0.001 {
-        scene.energy_drift_ratio =
-            ((total_energy - scene.baseline_energy) / scene.baseline_energy).abs();
-    } else {
-        scene.energy_drift_ratio = 0.0;
-    }
+    scene.refresh_metrics(gravity_scale);
+    true
 }
+// --- КОНЕЦ ФУНКЦИИ step_symplectic_verlet_and_kuramoto ---
+// --- КОНЕЦ РАЗДЕЛА 3: ШАГ ИНТЕГРАТОРА ---

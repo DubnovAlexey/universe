@@ -1,18 +1,15 @@
 # noinspection SpellCheckingInspection,PyUnresolvedReferences
 # ============================================================================
 # ФАЙЛ: backend/api/transport.py
-# НАЗНАЧЕНИЕ: Транспортный слой API и верификации инвариантов Python-ядра (v2.5)
-# ============================================================================
-# ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-#   РАЗДЕЛ 1. Импорты математических ядер (PRNG, граф NEXUS, рефракция BREACH,
-#             оптика Чёрной дыры, бинарный упаковщик 'UNVS').
-#   РАЗДЕЛ 2. Функция полной верификации паритета build_health_and_parity_report():
-#             проверяет PRNG, бинарный заголовок, непустую топологию NEXUS,
-#             ненулевую рефракцию на кольце BREACH LENS (d ≈ 0.94) и оптику
-#             Чёрной дыры (устраняет замечание Аудита P0 #3).
-#   РАЗДЕЛ 3. Генератор монотонных бинарных кадров generate_live_binary_step().
+# НАЗНАЧЕНИЕ: Эталонный отчёт математического паритета и генерация бинарных кадров UNVS.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. build_health_and_parity_report.
+# 3. generate_live_binary_step.
+# Функции: build_health_and_parity_report, generate_live_binary_step.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 import math
 from typing import Any
@@ -34,10 +31,10 @@ from backend.utils.binary_packer import (
 )
 
 
-# ============================================================================
-# РАЗДЕЛ 2. ПОЛНЫЙ ОТЧЁТ О ЗДОРОВЬЕ И МАТЕМАТИЧЕСКОМ ПАРИТЕТЕ ЯДРА
-# ============================================================================
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: build_health_and_parity_report ---
 # --- НАЧАЛО ФУНКЦИИ build_health_and_parity_report ---
 def build_health_and_parity_report() -> dict[str, Any]:
     """
@@ -81,7 +78,7 @@ def build_health_and_parity_report() -> dict[str, Any]:
 
     edges, _deg, metrics = compute_nexus_topology(nodes, 220.0, GOLDEN_SEED, 1.0)
 
-    # ИСПРАВЛЕНО (Аудит P0 #3): Точка (232.0, 80.0) относительно центра линзы (100.0, 80.0)
+    # Точка (232.0, 80.0) относительно центра линзы (100.0, 80.0)
     # при радиусе 140.0 лежит непосредственно в кольце преломления (dist=132, d≈0.94, u<1.0),
     # что даёт ненулевые значения dx, dy, rim_bell и truth_reveal_factor.
     lens_sample = evaluate_breach_lens_refraction(
@@ -146,10 +143,10 @@ def build_health_and_parity_report() -> dict[str, Any]:
 # --- КОНЕЦ ФУНКЦИИ build_health_and_parity_report ---
 
 
-# ============================================================================
-# РАЗДЕЛ 3. ГЕНЕРАЦИЯ МОНОТОННОГО БИНАРНОГО КАДРА 'UNVS'
-# ============================================================================
 
+# --- КОНЕЦ РАЗДЕЛА 2: build_health_and_parity_report ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: generate_live_binary_step ---
 # --- НАЧАЛО ФУНКЦИИ generate_live_binary_step ---
 def generate_live_binary_step(
         tick: int,
@@ -181,3 +178,4 @@ def generate_live_binary_step(
     digest = compute_state_digest_fnv1a(safe_tick, count, pos_xyz, vel_xyz, energies)
     return pack_scene_binary_frame(safe_tick, seed, digest, pos_xyz)
 # --- КОНЕЦ ФУНКЦИИ generate_live_binary_step ---
+# --- КОНЕЦ РАЗДЕЛА 3: generate_live_binary_step ---

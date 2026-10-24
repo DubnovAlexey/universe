@@ -6,8 +6,15 @@
 // 2. Масштабировать длину векторов скорости логарифмически: L = log(1 + |v|).
 // 3. Отрисовывать 3 класса кривых (магистрали MST, мосты Габриэля, дендриты)
 //    с сужением радиуса по закону Мюррея r_parent^3 = sum(r_child^3).
+// ФУНКЦИИ: vs_truth_main, evaluate_world_grid, fs_truth_main.
+// ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+//   0. Контракты данных и uniform-ресурсы: TruthUniforms, SplineVertexInput, SplineVertexOutput.
+//   1. vs_truth_main: инженерная геометрия.
+//   2. evaluate_world_grid: координатная сетка.
+//   3. fs_truth_main: маска и цвет рентген-оптики.
 // ============================================================================
 
+// РАЗДЕЛ 0. КОНТРАКТЫ ДАННЫХ И UNIFORM-РЕСУРСЫ
 struct TruthUniforms {
     resolution: vec2<f32>,
     camera_drift: vec2<f32>,
@@ -40,6 +47,7 @@ struct SplineVertexOutput {
 // ----------------------------------------------------------------------------
 // 1. ВЕРШИННЫЙ ШЕЙДЕР ИНЖЕНЕРНОЙ ГЕОМЕТРИИ И ЛОГАРИФМИЧЕСКИХ ВЕКТОРОВ СКОРОСТИ
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ vs_truth_main ---
 @vertex
 fn vs_truth_main(in: SplineVertexInput) -> SplineVertexOutput {
     var out: SplineVertexOutput;
@@ -54,10 +62,12 @@ fn vs_truth_main(in: SplineVertexInput) -> SplineVertexOutput {
     out.afterglow = in.afterglow;
     return out;
 }
+// --- КОНЕЦ ФУНКЦИИ vs_truth_main ---
 
 // ----------------------------------------------------------------------------
 // 2. ФУНКЦИЯ МИРОВОЙ ИНЖЕНЕРНОЙ СЕТКИ ВНУТРИ ЛИНЗЫ И В РЕЖИМЕ LOGIC
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ evaluate_world_grid ---
 fn evaluate_world_grid(screen_pos: vec2<f32>, grid_step: f32) -> f32 {
     let world_coord = screen_pos - u_truth.camera_drift * 0.32;
     let cell = abs(fract(world_coord / grid_step - 0.5) - 0.5) * grid_step;
@@ -65,10 +75,12 @@ fn evaluate_world_grid(screen_pos: vec2<f32>, grid_step: f32) -> f32 {
     // Тонкая инженерная ось 0.65 px (MASTER 00 раздел 4)
     return 1.0 - smoothstep(0.0, 0.75, d_line);
 }
+// --- КОНЕЦ ФУНКЦИИ evaluate_world_grid ---
 
 // ----------------------------------------------------------------------------
 // 3. ФРАГМЕНТНЫЙ ШЕЙДЕР ОПТИКИ X-RAY / TRUTH
 // ----------------------------------------------------------------------------
+// --- НАЧАЛО ФУНКЦИИ fs_truth_main ---
 @fragment
 fn fs_truth_main(in: SplineVertexOutput) -> @location(0) vec4<f32> {
     let d_lens = distance(in.screen_pos, u_truth.lens_center);
@@ -101,3 +113,4 @@ fn fs_truth_main(in: SplineVertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(base_color, alpha);
 }
+// --- КОНЕЦ ФУНКЦИИ fs_truth_main ---

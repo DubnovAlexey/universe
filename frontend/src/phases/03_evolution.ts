@@ -8,12 +8,18 @@
 //    скульптурной оболочкой вокруг него.
 // 2. Преобразовать световой мост GENESIS в центральное соединение полушарий.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: computeEvolutionBrainTarget.
+// ============================================================================
+
 
 import type { MorphTargetPoint, QuantumParticle } from './01_void';
 
 // Пять концентрических оболочек кеплеровских колец по золотому сечению (Решение D-3)
 const KEPLER_RING_RATIOS: ReadonlyArray<number> = [0.22, 0.36, 0.52, 0.70, 0.88];
 
+// --- НАЧАЛО ФУНКЦИИ computeEvolutionBrainTarget ---
 export function computeEvolutionBrainTarget(
     p: QuantumParticle,
     centerX: number,
@@ -82,3 +88,4 @@ export function computeEvolutionBrainTarget(
     const energy = Math.min(1.0, 0.38 + thoughtWave * 0.56);
     return { x, y, energy };
 }
+// --- КОНЕЦ ФУНКЦИИ computeEvolutionBrainTarget ---

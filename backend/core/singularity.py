@@ -1,15 +1,15 @@
 # noinspection SpellCheckingInspection,PyUnresolvedReferences
 # ============================================================================
 # ФАЙЛ: backend/core/singularity.py
-# НАЗНАЧЕНИЕ: Релятивистская модель Чёрной дыры, светового эха RS Puppis и кодового потока
-# ЗАДАЧИ ФАЙЛА:
-# 1. Вычислять гравитационное отклонение лучей Эйнштейна alpha = 4GM / (c^2 * b) = 2 * R_s / b
-#    и релятивистское доплеровское усиление яркости аккреционного диска D^3.
-# 2. Моделировать волну светового эха переменной звезды RS Кормы (RS Puppis, Hubble)
-#    и многослойные оболочки звезды Вольфа — Райе («Кошачий глаз» NGC 6543).
-# 3. Генерировать непрерывный поток символов и структур для финального экрана.
+# НАЗНАЧЕНИЕ: Эталонная оптика чёрной дыры, светового эха и кодового потока.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. evaluate_black_hole_optics.
+# 3. sample_endless_cipher_stream.
+# Функции: evaluate_black_hole_optics, sample_endless_cipher_stream, __init__.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 import math
 
@@ -33,6 +33,7 @@ CIPHER_STREAM_PALETTE: tuple[str, ...] = (
 )
 
 
+# --- НАЧАЛО КЛАССА RelativisticBlackHoleSample ---
 class RelativisticBlackHoleSample:
     """Результат расчёта релятивистской оптики Чёрной дыры и оболочек туманности."""
 
@@ -45,6 +46,7 @@ class RelativisticBlackHoleSample:
         "rs_puppis_light_echo",
     )
 
+    # --- НАЧАЛО ФУНКЦИИ __init__ ---
     def __init__(
             self,
             impact_parameter_b: float,
@@ -60,8 +62,14 @@ class RelativisticBlackHoleSample:
         self.doppler_beaming_factor = doppler_beaming_factor
         self.cats_eye_shell_factor = cats_eye_shell_factor
         self.rs_puppis_light_echo = rs_puppis_light_echo
+    # --- КОНЕЦ ФУНКЦИИ __init__ ---
+# --- КОНЕЦ КЛАССА RelativisticBlackHoleSample ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: evaluate_black_hole_optics ---
+# --- НАЧАЛО ФУНКЦИИ evaluate_black_hole_optics ---
 def evaluate_black_hole_optics(
         px: float,
         py: float,
@@ -119,8 +127,13 @@ def evaluate_black_hole_optics(
         cats_eye_shell_factor=round(cats_eye_shell, 4),
         rs_puppis_light_echo=round(light_echo, 4),
     )
+# --- КОНЕЦ ФУНКЦИИ evaluate_black_hole_optics ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 2: evaluate_black_hole_optics ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: sample_endless_cipher_stream ---
+# --- НАЧАЛО ФУНКЦИИ sample_endless_cipher_stream ---
 def sample_endless_cipher_stream(
         seed: int,
         row_index: int,
@@ -137,3 +150,5 @@ def sample_endless_cipher_stream(
     glyph = CIPHER_STREAM_ALPHABET[h % len(CIPHER_STREAM_ALPHABET)]
     color = CIPHER_STREAM_PALETTE[(h >> 8) % len(CIPHER_STREAM_PALETTE)]
     return glyph, color
+# --- КОНЕЦ ФУНКЦИИ sample_endless_cipher_stream ---
+# --- КОНЕЦ РАЗДЕЛА 3: sample_endless_cipher_stream ---

@@ -1,27 +1,33 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/core/stress_solver.py
-# НАЗНАЧЕНИЕ: Решатель упругого напряжения мембраны и C¹-рефракции BREACH LENS
-# ЗАДАЧИ ФАЙЛА:
-# 1. Вычислять C¹-непрерывное радиальное и тангенциальное смещение
-#    delta(p) = r_hat * A * g(d) + t_hat * B * g(d) с колоколом g(u) = (1 - u^2)^2.
-# 2. Гарантировать строгое равенство g(d) = 0 за пределами кольца (u >= 1.0).
-# 3. Поддерживать полный математический паритет с stressState.ts и breach_math.rs.
+# НАЗНАЧЕНИЕ: Эталонная C¹-рефракция BREACH LENS и фактор раскрытия X-RAY.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. evaluate_breach_lens_refraction.
+# Функции: evaluate_breach_lens_refraction.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 from dataclasses import dataclass
 import math
 
 
+# --- НАЧАЛО КЛАССА LensRefractionSample ---
 @dataclass(frozen=True)
 class LensRefractionSample:
     dx: float
     dy: float
     rim_bell: float
     truth_reveal_factor: float
+# --- КОНЕЦ КЛАССА LensRefractionSample ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: evaluate_breach_lens_refraction ---
+# --- НАЧАЛО ФУНКЦИИ evaluate_breach_lens_refraction ---
 def evaluate_breach_lens_refraction(
         px: float,
         py: float,
@@ -93,3 +99,5 @@ def evaluate_breach_lens_refraction(
         rim_bell=round(g, 4),
         truth_reveal_factor=round(truth_reveal, 4),
     )
+# --- КОНЕЦ ФУНКЦИИ evaluate_breach_lens_refraction ---
+# --- КОНЕЦ РАЗДЕЛА 2: evaluate_breach_lens_refraction ---

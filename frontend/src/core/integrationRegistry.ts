@@ -3,6 +3,12 @@
 // ФАЙЛ: frontend/src/core/integrationRegistry.ts
 // НАЗНАЧЕНИЕ: Реестр полиглот-интеграций IntegrationRegistry (MASTER 00B v2.5)
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. IntegrationRegistryManager: constructor, initDefaultModules, updateModuleStatus, recordModuleStep,
+//      getModule, getAllModules, getHonestRenderLabel, getHonestPhysicsLabel, getHonestPythonLabel.
+// ============================================================================
+
 
 import type { ComputeSourceTag, HonestStatusLabel } from './contracts';
 
@@ -46,15 +52,22 @@ export interface PolyglotModuleRecord {
     lastError?: string;
 }
 
+// ============================================================================
+// РАЗДЕЛ. КЛАСС IntegrationRegistryManager
+// ============================================================================
+
 class IntegrationRegistryManager {
     private modules: Map<PolyglotModuleId, PolyglotModuleRecord> = new Map();
     private stepHistory: Map<PolyglotModuleId, number[]> = new Map();
     private readonly maxHistorySamples = 30;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (IntegrationRegistryManager) ---
     constructor() {
         this.initDefaultModules();
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ initDefaultModules (IntegrationRegistryManager) ---
     private initDefaultModules(): void {
         const defaults: PolyglotModuleRecord[] = [
             {
@@ -177,7 +190,9 @@ class IntegrationRegistryManager {
             this.stepHistory.set(rec.id, []);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ initDefaultModules (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateModuleStatus (IntegrationRegistryManager) ---
     public updateModuleStatus(
         id: PolyglotModuleId,
         status: ModuleRuntimeState,
@@ -190,7 +205,9 @@ class IntegrationRegistryManager {
         if (loadMs !== undefined) rec.loadMs = Number(loadMs.toFixed(2));
         if (lastError !== undefined) rec.lastError = lastError;
     }
+    // --- КОНЕЦ ФУНКЦИИ updateModuleStatus (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ recordModuleStep (IntegrationRegistryManager) ---
     public recordModuleStep(
         id: PolyglotModuleId,
         stepDurationMs: number,
@@ -217,27 +234,37 @@ class IntegrationRegistryManager {
         rec.stepP50Ms = Number(sorted[p50Idx].toFixed(2));
         rec.stepP95Ms = Number(sorted[p95Idx].toFixed(2));
     }
+    // --- КОНЕЦ ФУНКЦИИ recordModuleStep (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getModule (IntegrationRegistryManager) ---
     public getModule(id: PolyglotModuleId): Readonly<PolyglotModuleRecord> | undefined {
         return this.modules.get(id);
     }
+    // --- КОНЕЦ ФУНКЦИИ getModule (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getAllModules (IntegrationRegistryManager) ---
     public getAllModules(): ReadonlyArray<PolyglotModuleRecord> {
         return Array.from(this.modules.values());
     }
+    // --- КОНЕЦ ФУНКЦИИ getAllModules (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getHonestRenderLabel (IntegrationRegistryManager) ---
     public getHonestRenderLabel(): HonestStatusLabel {
         const gpu = this.modules.get('webgpu-render');
         return gpu && gpu.status === 'ready' && gpu.lastStepMs > 0
             ? 'WEBGPU ACTIVE'
             : 'CANVAS2D FALLBACK';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestRenderLabel (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getHonestPhysicsLabel (IntegrationRegistryManager) ---
     public getHonestPhysicsLabel(): HonestStatusLabel {
         const wasm = this.modules.get('wasm-physics');
         return wasm && wasm.status === 'ready' ? 'WASM READY' : 'TS FALLBACK';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestPhysicsLabel (IntegrationRegistryManager) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getHonestPythonLabel (IntegrationRegistryManager) ---
     public getHonestPythonLabel(): HonestStatusLabel {
         const server = this.modules.get('server-ws');
         if (server && server.status === 'ready') return 'SERVER CONNECTED';
@@ -246,6 +273,7 @@ class IntegrationRegistryManager {
         if (pyodide && pyodide.status === 'ready') return 'PYODIDE READY';
         return 'CLIENT-ONLY';
     }
+    // --- КОНЕЦ ФУНКЦИИ getHonestPythonLabel (IntegrationRegistryManager) ---
 }
 
 export const integrationRegistry = new IntegrationRegistryManager();

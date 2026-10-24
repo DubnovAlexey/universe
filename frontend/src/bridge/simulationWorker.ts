@@ -10,6 +10,13 @@
 // 3. При N > 260 применять прореживание stride = 2 и выборочный BFS (до 28 стартовых
 //    узлов) для поддержания высокой кадровой частоты в браузере.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: round2.
+//   3. NexusGraphEngine: constructor, buildBezierArcLengthLUT, sampleBezierByArcLength, createGraphEdge,
+//      computeAuthenticGraphMetrics, buildDeterministicGraph, getLastTelemetry.
+// ============================================================================
+
 
 import { integrationRegistry } from '../core/integrationRegistry';
 
@@ -52,9 +59,11 @@ export interface NexusGraphTelemetry {
     computeSource: '[python/pyodide]' | '[python/server]' | '[ts/graph_engine]';
 }
 
+// --- НАЧАЛО ФУНКЦИИ round2 ---
 function round2(val: number): number {
     return Math.round(val * 100) / 100;
 }
+// --- КОНЕЦ ФУНКЦИИ round2 ---
 
 export class NexusGraphEngine {
     private lastMetrics: NexusGraphTelemetry = {
@@ -69,11 +78,14 @@ export class NexusGraphEngine {
         computeSource: '[ts/graph_engine]',
     };
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (NexusGraphEngine) ---
     constructor() {
         integrationRegistry.updateModuleStatus('pyodide-graph', 'fallback', 0);
         integrationRegistry.updateModuleStatus('worker-physics', 'fallback', 0);
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ buildBezierArcLengthLUT (NexusGraphEngine) ---
     public static buildBezierArcLengthLUT(
         x0: number,
         y0: number,
@@ -100,7 +112,9 @@ export class NexusGraphEngine {
 
         return { arcLength: Math.max(1.0, round2(totalLen)), lut };
     }
+    // --- КОНЕЦ ФУНКЦИИ buildBezierArcLengthLUT (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ sampleBezierByArcLength (NexusGraphEngine) ---
     public static sampleBezierByArcLength(
         x0: number,
         y0: number,
@@ -132,7 +146,9 @@ export class NexusGraphEngine {
             y: inv * inv * y0 + 2 * inv * t * cy + t * t * y2,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ sampleBezierByArcLength (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ createGraphEdge (NexusGraphEngine) ---
     private createGraphEdge(
         a: GraphNodeInput,
         b: GraphNodeInput,
@@ -180,7 +196,9 @@ export class NexusGraphEngine {
             murrayRadiusPx,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ createGraphEdge (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ computeAuthenticGraphMetrics (NexusGraphEngine) ---
     private computeAuthenticGraphMetrics(
         activeNodes: ReadonlyArray<GraphNodeInput>,
         edges: ReadonlyArray<ComputedGraphEdge>
@@ -271,7 +289,9 @@ export class NexusGraphEngine {
             avgPathLength,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ computeAuthenticGraphMetrics (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ buildDeterministicGraph (NexusGraphEngine) ---
     public buildDeterministicGraph(
         nodes: ReadonlyArray<GraphNodeInput>,
         maxConnectDist: number,
@@ -443,10 +463,13 @@ export class NexusGraphEngine {
 
         return { edges, degreeByIndex };
     }
+    // --- КОНЕЦ ФУНКЦИИ buildDeterministicGraph (NexusGraphEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getLastTelemetry (NexusGraphEngine) ---
     public getLastTelemetry(): Readonly<NexusGraphTelemetry> {
         return this.lastMetrics;
     }
+    // --- КОНЕЦ ФУНКЦИИ getLastTelemetry (NexusGraphEngine) ---
 }
 
 export const nexusGraphEngine = new NexusGraphEngine();

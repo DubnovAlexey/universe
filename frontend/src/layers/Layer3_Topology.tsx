@@ -11,6 +11,12 @@
 // 3. Mount-once монтировщик (mountLayer3Topology): однократное создание DOM
 //    и плавное обновление значений без сброса анимации дыхания и Звездопада.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: renderLayer3TopologyView, mountLayer3Topology.
+//   3. mountLayer3Topology: update.
+// ============================================================================
+
 
 import {
     React,
@@ -22,6 +28,11 @@ import {
     type NexusGraphTelemetry,
 } from '../bridge/simulationWorker';
 import { universeStore, type UniverseState } from '../store/universeState';
+
+// --- НАЧАЛО ФУНКЦИИ renderLayer3TopologyView ---
+// ============================================================================
+// РАЗДЕЛ 2. ФУНКЦИЯ renderLayer3TopologyView
+// ============================================================================
 
 export function renderLayer3TopologyView(
     state: Readonly<UniverseState>,
@@ -133,6 +144,12 @@ export function renderLayer3TopologyView(
         </section>
     );
 }
+// --- КОНЕЦ ФУНКЦИИ renderLayer3TopologyView ---
+
+// --- НАЧАЛО ФУНКЦИИ mountLayer3Topology ---
+// ============================================================================
+// РАЗДЕЛ 3. ФУНКЦИЯ mountLayer3Topology
+// ============================================================================
 
 export function mountLayer3Topology(container: HTMLElement | null): () => void {
     if (!container) return () => {};
@@ -147,6 +164,7 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
     let elDiam: HTMLElement | null = null;
     let elPulses: HTMLElement | null = null;
 
+    // --- НАЧАЛО ФУНКЦИИ update (mountLayer3Topology) ---
     const update = (state: Readonly<UniverseState>): void => {
         const metrics = nexusGraphEngine.getLastTelemetry();
 
@@ -181,8 +199,10 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
         }
         if (elPulses) elPulses.textContent = String(state.telemetry.activePulses);
     };
+    // --- КОНЕЦ ФУНКЦИИ update (mountLayer3Topology) ---
 
     return universeStore.subscribe(update);
 }
+// --- КОНЕЦ ФУНКЦИИ mountLayer3Topology ---
 
 export default renderLayer3TopologyView;

@@ -10,6 +10,13 @@
 //    по всем 8 числовым полям сущности с точным подсчётом срабатываний.
 // 4. Вычислять и обновлять единый State Digest для оптик ILLUSION, NEXUS и X-RAY.
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. SceneBufferSoA: constructor, readHeader, writeHeader, snapshotPreviousPositions,
+//      computeInterpolatedPositions, syncEntityFromParticle, commitTickAndComputeDigest, getDigestHex,
+//      getNanGuardTriggers, resetNanGuardTriggers, reset.
+// ============================================================================
+
 
 import { EntityKindCode } from './contracts';
 import { computeQuantizedStateDigest, formatDigestHex } from './prng';
@@ -52,6 +59,7 @@ export class SceneBufferSoA {
 
     private nanGuardTriggeredCount = 0;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (SceneBufferSoA) ---
     constructor(capacity = 1024, initialSeed = 104729) {
         this.capacity = capacity;
         this.headerBuffer = new ArrayBuffer(HEADER_BYTE_LENGTH);
@@ -77,8 +85,10 @@ export class SceneBufferSoA {
             digest: 0,
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (SceneBufferSoA) ---
 
     // Чтение заголовка с гарантированным порядком байт little-endian
+    // --- НАЧАЛО ФУНКЦИИ readHeader (SceneBufferSoA) ---
     public readHeader(): SceneBufferHeader {
         return {
             magic: this.headerView.getUint32(0, true),
@@ -90,7 +100,9 @@ export class SceneBufferSoA {
             digest: this.headerView.getUint32(20, true),
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ readHeader (SceneBufferSoA) ---
 
+    // --- НАЧАЛО ФУНКЦИИ writeHeader (SceneBufferSoA) ---
     public writeHeader(header: SceneBufferHeader): void {
         const safeCount = Math.max(0, Math.min(this.capacity, header.count));
         this.headerView.setUint32(0, header.magic >>> 0, true);
@@ -101,16 +113,20 @@ export class SceneBufferSoA {
         this.headerView.setUint32(16, header.seed >>> 0, true);
         this.headerView.setUint32(20, header.digest >>> 0, true);
     }
+    // --- КОНЕЦ ФУНКЦИИ writeHeader (SceneBufferSoA) ---
 
     // Сохранение текущих позиций в prevPos перед выполнением очередного шага физики
+    // --- НАЧАЛО ФУНКЦИИ snapshotPreviousPositions (SceneBufferSoA) ---
     public snapshotPreviousPositions(activeCount: number): void {
         const limit = Math.min(this.capacity, activeCount) * 3;
         for (let i = 0; i < limit; i++) {
             this.prevPos[i] = this.pos[i];
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ snapshotPreviousPositions (SceneBufferSoA) ---
 
     // Вычисление интерполированных позиций между prevPos и pos с коэффициентом alpha ∈ [0, 1]
+    // --- НАЧАЛО ФУНКЦИИ computeInterpolatedPositions (SceneBufferSoA) ---
     public computeInterpolatedPositions(activeCount: number, alpha: number): void {
         const t = Math.max(0, Math.min(1, alpha));
         const invT = 1.0 - t;
@@ -119,8 +135,10 @@ export class SceneBufferSoA {
             this.interpPos[i] = this.prevPos[i] * invT + this.pos[i] * t;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ computeInterpolatedPositions (SceneBufferSoA) ---
 
     // Запись сущности с автоматической защитой от NaN / Infinity по всем 8 числовым полям
+    // --- НАЧАЛО ФУНКЦИИ syncEntityFromParticle (SceneBufferSoA) ---
     public syncEntityFromParticle(
         index: number,
         id: number,
@@ -173,8 +191,10 @@ export class SceneBufferSoA {
         this.energy[index] = safeEnergy;
         this.flags[index] = flagBits >>> 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ syncEntityFromParticle (SceneBufferSoA) ---
 
     // Фиксация тика и пересчёт контрольной суммы State Digest
+    // --- НАЧАЛО ФУНКЦИИ commitTickAndComputeDigest (SceneBufferSoA) ---
     public commitTickAndComputeDigest(tick: number, activeCount: number, seed: number): number {
         const clampedCount = Math.max(0, Math.min(this.capacity, activeCount));
         const digest = computeQuantizedStateDigest(
@@ -198,19 +218,27 @@ export class SceneBufferSoA {
 
         return digest;
     }
+    // --- КОНЕЦ ФУНКЦИИ commitTickAndComputeDigest (SceneBufferSoA) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getDigestHex (SceneBufferSoA) ---
     public getDigestHex(): string {
         return formatDigestHex(this.headerView.getUint32(20, true));
     }
+    // --- КОНЕЦ ФУНКЦИИ getDigestHex (SceneBufferSoA) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getNanGuardTriggers (SceneBufferSoA) ---
     public getNanGuardTriggers(): number {
         return this.nanGuardTriggeredCount;
     }
+    // --- КОНЕЦ ФУНКЦИИ getNanGuardTriggers (SceneBufferSoA) ---
 
+    // --- НАЧАЛО ФУНКЦИИ resetNanGuardTriggers (SceneBufferSoA) ---
     public resetNanGuardTriggers(): void {
         this.nanGuardTriggeredCount = 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ resetNanGuardTriggers (SceneBufferSoA) ---
 
+    // --- НАЧАЛО ФУНКЦИИ reset (SceneBufferSoA) ---
     public reset(newSeed: number): void {
         this.id.fill(0);
         this.kind.fill(0);
@@ -231,4 +259,5 @@ export class SceneBufferSoA {
             digest: 0,
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ reset (SceneBufferSoA) ---
 }

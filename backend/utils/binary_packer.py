@@ -1,14 +1,15 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/utils/binary_packer.py
-# НАЗНАЧЕНИЕ: Бинарный упаковщик/распаковщик пакетов SceneBuffer ('UNVS' Little-Endian)
-# ЗАДАЧИ ФАЙЛА:
-# 1. Паковать и распаковывать 24-байтный заголовок SceneBufferHeader ('UNVS' = 0x53564E55,
-#    schema_version = 2, flags, tick, count, seed, digest) строго в формате '<IHHIIII'.
-# 2. Выполнять санитизацию NaN / Infinity координат перед сериализацией.
-# 3. Гарантировать 100%-ную бинарную совместимость с PythonSocketClient в TypeScript.
+# НАЗНАЧЕНИЕ: Заголовок UNVS little-endian и сериализация координат Float32.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. sanitize_finite.
+# 3. unpack_and_validate_header.
+# Функции: sanitize_finite, pack_scene_binary_frame, unpack_and_validate_header.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 from dataclasses import dataclass
 import math
@@ -21,6 +22,7 @@ HEADER_STRUCT_FORMAT: str = "<IHHIIII"  # 24 байта, Little-Endian
 HEADER_BYTE_LENGTH: int = 24
 
 
+# --- НАЧАЛО КЛАССА ScenePacketHeader ---
 @dataclass(frozen=True)
 class ScenePacketHeader:
     magic: int
@@ -30,13 +32,20 @@ class ScenePacketHeader:
     count: int
     seed: int
     digest: int
+# --- КОНЕЦ КЛАССА ScenePacketHeader ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: sanitize_finite ---
+# --- НАЧАЛО ФУНКЦИИ sanitize_finite ---
 def sanitize_finite(value: float, fallback: float = 0.0) -> float:
     """Защита от NaN и Infinity перед упаковкой в бинарный буфер."""
     return value if math.isfinite(value) else fallback
+# --- КОНЕЦ ФУНКЦИИ sanitize_finite ---
 
 
+# --- НАЧАЛО ФУНКЦИИ pack_scene_binary_frame ---
 def pack_scene_binary_frame(
         tick: int,
         seed: int,
@@ -64,8 +73,13 @@ def pack_scene_binary_frame(
     payload_bytes = struct.pack(payload_format, *clean_floats)
 
     return header_bytes + payload_bytes
+# --- КОНЕЦ ФУНКЦИИ pack_scene_binary_frame ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 2: sanitize_finite ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: unpack_and_validate_header ---
+# --- НАЧАЛО ФУНКЦИИ unpack_and_validate_header ---
 def unpack_and_validate_header(packet: bytes) -> ScenePacketHeader | None:
     """
     Проверяет 24-байтный заголовок бинарного пакета. Возвращает None при повреждении.
@@ -93,3 +107,5 @@ def unpack_and_validate_header(packet: bytes) -> ScenePacketHeader | None:
         seed=seed,
         digest=digest,
     )
+# --- КОНЕЦ ФУНКЦИИ unpack_and_validate_header ---
+# --- КОНЕЦ РАЗДЕЛА 3: unpack_and_validate_header ---

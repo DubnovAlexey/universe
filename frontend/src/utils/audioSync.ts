@@ -4,6 +4,15 @@
 // НАЗНАЧЕНИЕ: Непрерывный аудио-движок синхронизации cosmic_ambient.mp3 с
 //             поддержкой мобильных браузеров iOS Safari / Android (UNIVERSE v2.5)
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: smoothAudioEnvelope.
+//   3. AudioSyncEngine: constructor, configureIosAudioSession, resolveAudioUrl, prepareAudioElement,
+//      trySilentAutoplayWithoutWarning, bindAutoStartListeners, removeUnlockListeners, onFirstUserGesture,
+//      ensureAnalyserGraph, startPlayback, setEnabled, isEnabled, toggleMute, triggerShockwavePulse,
+//      transitionToPhase, updateRealtimeModulation, getSnapshot.
+// ============================================================================
+
 
 import { integrationRegistry } from '../core/integrationRegistry';
 import { resourceLedger } from '../core/resourceLedger';
@@ -31,6 +40,11 @@ export interface AudioModulationSnapshot {
  * Frame-rate-independent envelope smoothing for audio-reactive visuals.
  * A shorter attack keeps transients legible; a longer release avoids flicker.
  */
+// ============================================================================
+// РАЗДЕЛ. ФУНКЦИЯ smoothAudioEnvelope
+// ============================================================================
+
+// --- НАЧАЛО ФУНКЦИИ smoothAudioEnvelope ---
 export function smoothAudioEnvelope(
     current: number,
     target: number,
@@ -48,6 +62,11 @@ export function smoothAudioEnvelope(
     const alpha = 1 - Math.exp(-safeDelta / tau);
     return safeCurrent + (safeTarget - safeCurrent) * alpha;
 }
+// --- КОНЕЦ ФУНКЦИИ smoothAudioEnvelope ---
+
+// ============================================================================
+// РАЗДЕЛ. КЛАСС AudioSyncEngine
+// ============================================================================
 
 export class AudioSyncEngine {
     private audioEl: HTMLAudioElement | null = null;
@@ -95,6 +114,7 @@ export class AudioSyncEngine {
         status: 'AWAITING_GESTURE',
     };
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (AudioSyncEngine) ---
     constructor() {
         if (typeof window !== 'undefined') {
             const ua = navigator.userAgent || '';
@@ -104,7 +124,9 @@ export class AudioSyncEngine {
             this.bindAutoStartListeners();
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ configureIosAudioSession (AudioSyncEngine) ---
     private configureIosAudioSession(): void {
         try {
             const nav = navigator as unknown as {
@@ -117,14 +139,18 @@ export class AudioSyncEngine {
             // Игнорируем в браузерах без navigator.audioSession
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ configureIosAudioSession (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ resolveAudioUrl (AudioSyncEngine) ---
     private resolveAudioUrl(): string {
         const rawBase =
             (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
         const normalizedBase = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
         return `${normalizedBase}audio/cosmic_ambient.mp3`;
     }
+    // --- КОНЕЦ ФУНКЦИИ resolveAudioUrl (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ prepareAudioElement (AudioSyncEngine) ---
     private prepareAudioElement(): void {
         const t0 = performance.now();
         integrationRegistry.updateModuleStatus('web-audio', 'loading');
@@ -179,7 +205,9 @@ export class AudioSyncEngine {
             integrationRegistry.updateModuleStatus('web-audio', 'fallback', 0);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ prepareAudioElement (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ trySilentAutoplayWithoutWarning (AudioSyncEngine) ---
     private trySilentAutoplayWithoutWarning(): void {
         if (!this.audioEl || !this.enabled || this.isPlayingMp3) return;
 
@@ -202,7 +230,9 @@ export class AudioSyncEngine {
                 });
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ trySilentAutoplayWithoutWarning (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ bindAutoStartListeners (AudioSyncEngine) ---
     private bindAutoStartListeners(): void {
         if (this.unlockBound || typeof window === 'undefined') return;
         this.unlockBound = true;
@@ -216,6 +246,7 @@ export class AudioSyncEngine {
             'touchstart',
         ] as const;
 
+        // --- НАЧАЛО ФУНКЦИИ removeUnlockListeners (AudioSyncEngine) ---
         const removeUnlockListeners = (): void => {
             if (!this.removeUnlockListenersFn) return;
             this.removeUnlockListenersFn = null;
@@ -223,7 +254,9 @@ export class AudioSyncEngine {
                 window.removeEventListener(gestureEvents[i], onFirstUserGesture, true);
             }
         };
+        // --- КОНЕЦ ФУНКЦИИ removeUnlockListeners (AudioSyncEngine) ---
 
+        // --- НАЧАЛО ФУНКЦИИ onFirstUserGesture (AudioSyncEngine) ---
         const onFirstUserGesture = (): void => {
             if (!this.enabled) return;
             if (!this.isPlayingMp3) {
@@ -232,6 +265,7 @@ export class AudioSyncEngine {
                 removeUnlockListeners();
             }
         };
+        // --- КОНЕЦ ФУНКЦИИ onFirstUserGesture (AudioSyncEngine) ---
 
         this.removeUnlockListenersFn = removeUnlockListeners;
 
@@ -246,7 +280,9 @@ export class AudioSyncEngine {
             this.trySilentAutoplayWithoutWarning();
         }, 40);
     }
+    // --- КОНЕЦ ФУНКЦИИ bindAutoStartListeners (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ ensureAnalyserGraph (AudioSyncEngine) ---
     private ensureAnalyserGraph(): void {
         if (this.ctx || typeof window === 'undefined' || !this.audioEl || this.isMobileWebKit) {
             return;
@@ -284,7 +320,9 @@ export class AudioSyncEngine {
             // При ограничении браузера воспроизводим напрямую через HTMLAudioElement
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ ensureAnalyserGraph (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ startPlayback (AudioSyncEngine) ---
     public startPlayback(fromUserGesture = true): void {
         this.configureIosAudioSession();
         if (!this.audioEl) {
@@ -348,7 +386,9 @@ export class AudioSyncEngine {
             universeStore.setAudioEnabled(true, 'PLAYING_MP3');
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ startPlayback (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setEnabled (AudioSyncEngine) ---
     public setEnabled(enabled: boolean): boolean {
         this.enabled = Boolean(enabled);
         if (this.enabled) {
@@ -363,16 +403,22 @@ export class AudioSyncEngine {
         }
         return this.enabled;
     }
+    // --- КОНЕЦ ФУНКЦИИ setEnabled (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ isEnabled (AudioSyncEngine) ---
     public isEnabled(): boolean {
         return this.enabled;
     }
+    // --- КОНЕЦ ФУНКЦИИ isEnabled (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ toggleMute (AudioSyncEngine) ---
     public toggleMute(forceMuted?: boolean): boolean {
         const nextEnabled = typeof forceMuted === 'boolean' ? !forceMuted : !this.enabled;
         return this.setEnabled(nextEnabled);
     }
+    // --- КОНЕЦ ФУНКЦИИ toggleMute (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ triggerShockwavePulse (AudioSyncEngine) ---
     public triggerShockwavePulse(
         arg1: number | string | boolean = 0.5,
         _arg2?: number | string | boolean,
@@ -384,7 +430,9 @@ export class AudioSyncEngine {
             this.shockwaveBoost + Math.max(0.1, intensity) * 0.45
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ triggerShockwavePulse (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ transitionToPhase (AudioSyncEngine) ---
     public transitionToPhase(
         phase: PhaseId | string | number | boolean,
         act?: string | number | boolean
@@ -400,7 +448,9 @@ export class AudioSyncEngine {
             this.startPlayback(true);
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ transitionToPhase (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateRealtimeModulation (AudioSyncEngine) ---
     public updateRealtimeModulation(
         arg1: number | PhaseId | boolean = 0,
         arg2?: number | PhaseId | boolean,
@@ -568,7 +618,9 @@ export class AudioSyncEngine {
 
         return this.cachedSnapshot;
     }
+    // --- КОНЕЦ ФУНКЦИИ updateRealtimeModulation (AudioSyncEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getSnapshot (AudioSyncEngine) ---
     public getSnapshot(simTimeSec = 0): AudioModulationSnapshot {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         if (nowMs - this.lastMasterUpdatePerfMs > 24) {
@@ -576,6 +628,7 @@ export class AudioSyncEngine {
         }
         return this.cachedSnapshot;
     }
+    // --- КОНЕЦ ФУНКЦИИ getSnapshot (AudioSyncEngine) ---
 }
 
 export const audioSync = new AudioSyncEngine();

@@ -1,16 +1,15 @@
 // ============================================================================
 // ФАЙЛ: physics_engine/src/breach_math.rs
 // НАЗНАЧЕНИЕ: Математическая модель преломления BREACH LENS (MASTER 04 v2.5)
-// ЗАДАЧИ ФАЙЛА:
-// 1. Вычислять C¹-непрерывное радиальное и тангенциальное смещение δ(p) = r̂·A·g(d) + t̂·B·g(d)
-//    с колоколообразной функцией кольца g(u) = (1 - u²)² вокруг d = 1.
-// 2. Учитывать анизотропную волновую модуляцию кромки warp(angle, sim_time_sec, global_stress)
-//    в полном паритете с stressState.ts и backend/core/stress_solver.py.
-// 3. Гарантировать строгое равенство g(d) = 0 за пределами границы кольца (u >= 1).
+// ОГЛАВЛЕНИЕ:
+// 1. compute_refraction_offset_with_stress: C¹-кольцо и волновая кромка линзы.
+// 2. compute_refraction_offset: обёртка с фиксированными напряжением и временем.
 // ============================================================================
 
 #![allow(dead_code)]
 
+// --- НАЧАЛО РАЗДЕЛА 1: ПОЛЕ ЛИНЗЫ С НАПРЯЖЕНИЕМ ---
+// --- НАЧАЛО ФУНКЦИИ compute_refraction_offset_with_stress ---
 pub fn compute_refraction_offset_with_stress(
     px: f32,
     py: f32,
@@ -32,8 +31,8 @@ pub fn compute_refraction_offset_with_stress(
 
     let warp = 1.0
         + ((angle * 3.0 + sim_time_sec * 1.7).sin() * 0.042
-        + (angle * 5.0 - sim_time_sec * 1.1).cos() * 0.024)
-        * (0.5 + global_stress * 0.5);
+            + (angle * 5.0 - sim_time_sec * 1.1).cos() * 0.024)
+            * (0.5 + global_stress * 0.5);
 
     let local_r = (lens_radius * warp).max(8.0);
     let d = dist / local_r;
@@ -63,7 +62,11 @@ pub fn compute_refraction_offset_with_stress(
 
     (offset_x, offset_y, g)
 }
+// --- КОНЕЦ ФУНКЦИИ compute_refraction_offset_with_stress ---
+// --- КОНЕЦ РАЗДЕЛА 1: ПОЛЕ ЛИНЗЫ С НАПРЯЖЕНИЕМ ---
 
+// --- НАЧАЛО РАЗДЕЛА 2: ОБЁРТКА С ПАРАМЕТРАМИ ПО УМОЛЧАНИЮ ---
+// --- НАЧАЛО ФУНКЦИИ compute_refraction_offset ---
 pub fn compute_refraction_offset(
     px: f32,
     py: f32,
@@ -83,3 +86,5 @@ pub fn compute_refraction_offset(
         0.0,
     )
 }
+// --- КОНЕЦ ФУНКЦИИ compute_refraction_offset ---
+// --- КОНЕЦ РАЗДЕЛА 2: ОБЁРТКА С ПАРАМЕТРАМИ ПО УМОЛЧАНИЮ ---

@@ -3,7 +3,15 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/pages/index.astro
 // НАЗНАЧЕНИЕ: Главная сцена v2.5 — заголовок ссылки "Alexey Dubnov"
+// ФУНКЦИИ: Статический каркас сцены, точки монтирования слоёв и загрузка renderer.ts.
+// ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+//   1. Импорты, начальная фаза и базовый путь ресурсов.
+//   2. Документ и метаданные страницы.
+//   3. Canvas, оптические слои и включение звука.
+//   4. Панели телеметрии, шкала фаз и управление.
+//   5. Подключение модуля renderer.ts.
 // ============================================================================
+// РАЗДЕЛ 1. ИМПОРТЫ И НАЧАЛЬНЫЕ ДАННЫЕ
 import '../styles/universe.css';
 import { UNIVERSE_PHASES, PHASE_ORDER } from '../store/universeState';
 
@@ -12,6 +20,7 @@ const rawBaseUrl = import.meta.env.BASE_URL || '/';
 const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 ---
 
+<!-- РАЗДЕЛ 2. ДОКУМЕНТ И МЕТАДАННЫЕ СТРАНИЦЫ -->
 <!doctype html>
 <html lang="ru">
 <head>
@@ -23,6 +32,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 </head>
 
 <body>
+<!-- РАЗДЕЛ 3. CANVAS, ОПТИЧЕСКИЕ СЛОИ И ВКЛЮЧЕНИЕ ЗВУКА -->
 <main class="universe-viewport">
 	<canvas
 		id="universe-canvas"
@@ -42,6 +52,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 
 	<div id="layer5-finale-root"></div>
 
+	<!-- РАЗДЕЛ 4. ПАНЕЛИ ТЕЛЕМЕТРИИ, ШКАЛА ФАЗ И УПРАВЛЕНИЕ -->
 	<div class="hud-overlay" id="hud-overlay-root">
 		<header class="hud-top-bar">
 			<section class="hud-panel brand-card" data-ui-panel="true">
@@ -124,6 +135,7 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 	</div>
 </main>
 
+<!-- РАЗДЕЛ 5. ПОДКЛЮЧЕНИЕ МОДУЛЯ РЕНДЕРИНГА -->
 <script src="../engine/renderer.ts"></script>
 </body>
 </html>

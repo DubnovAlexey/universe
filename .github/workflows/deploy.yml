@@ -1,7 +1,15 @@
 # ============================================================================
 # ФАЙЛ: .github/workflows/deploy.yml
-# НАЗНАЧЕНИЕ: Автоматическая верификация полиглот-ядра (Python + Rust + TS),
-#             прогон всех unit/регрессионных тестов и деплой на GitHub Pages
+# НАЗНАЧЕНИЕ: Верификация полиглот-ядра, сборка Rust/WASM и публикация GitHub Pages.
+# ФУНКЦИИ: Проверки Python, Rust, WASM и TypeScript; сборка и доставка Pages-артефакта.
+# ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+#   1. События запуска, разрешения и окружение workflow.
+#   2. Верификация исходников и сборка Pages-артефакта.
+#   3. Публикация проверенного артефакта на GitHub Pages.
+# ============================================================================
+
+# ============================================================================
+# РАЗДЕЛ 1. СОБЫТИЯ ЗАПУСКА, РАЗРЕШЕНИЯ И ОКРУЖЕНИЕ WORKFLOW
 # ============================================================================
 
 name: Deploy UNIVERSE to GitHub Pages
@@ -25,6 +33,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ============================================================================
+  # РАЗДЕЛ 2. ВЕРИФИКАЦИЯ ИСХОДНИКОВ И СБОРКА PAGES-АРТЕФАКТА
+  # ============================================================================
   build-and-verify:
     runs-on: ubuntu-24.04
     steps:
@@ -44,10 +55,12 @@ jobs:
 
       - name: Setup Rust Toolchain for Physics Crate Verification
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
-      - name: Run Rust Symplectic Physics Unit Tests (5 tests)
+      - name: Run Rust Symplectic Physics Unit Tests
         working-directory: ./physics_engine
-        run: cargo test
+        run: cargo test --locked
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -56,6 +69,12 @@ jobs:
 
       - name: Install Workspace Dependencies
         run: npm ci
+
+      - name: Build and Validate Raw Rust WebAssembly ABI v1
+        run: npm run build:wasm
+
+      - name: Verify Browser WebAssembly Runtime and TypeScript Parity
+        run: npm run verify:wasm
 
       - name: TypeScript Strict Typecheck
         working-directory: ./frontend
@@ -80,6 +99,9 @@ jobs:
         with:
           path: ./frontend/dist
 
+  # ============================================================================
+  # РАЗДЕЛ 3. ПУБЛИКАЦИЯ ПРОВЕРЕННОГО АРТЕФАКТА НА GITHUB PAGES
+  # ============================================================================
   deploy:
     environment:
       name: github-pages

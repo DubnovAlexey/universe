@@ -14,7 +14,7 @@
 //             в такт треку cosmic_ambient.mp3 без пересоздания DOM.
 //   РАЗДЕЛ 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
 //             mountLayer2Metrics) с честной динамической подписью источника физики
-//             ([rust/gravity.rs] при WASM_SIMD_ACTIVE или [ts/wasmBridge.ts] при TS_FALLBACK).
+//             ([rust/gravity.rs] при WASM_ACTIVE или [ts/wasmBridge.ts] при TS_FALLBACK).
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
@@ -257,16 +257,21 @@ class TelemetryWaterfallAnimator {
     private smoothedMusicPulse = 0.22;
     private smoothedMusicLow = 0.2;
 
+    // --- НАЧАЛО ФУНКЦИИ getTimeSec (TelemetryWaterfallAnimator) ---
     public getTimeSec(): number {
         return typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ getTimeSec (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
     public ensureRunning(): void {
         if (this.rafId !== 0 || typeof window === 'undefined') return;
         this.lastMs = performance.now();
         this.rafId = window.requestAnimationFrame(this.tick);
     }
+    // --- КОНЕЦ ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
     private tick = (nowMs: number): void => {
         const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
         this.lastMs = nowMs;
@@ -288,7 +293,9 @@ class TelemetryWaterfallAnimator {
 
         this.rafId = window.requestAnimationFrame(this.tick);
     };
+    // --- КОНЕЦ ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ stepDroplets (TelemetryWaterfallAnimator) ---
     private stepDroplets(dt: number, timeSec: number): void {
         const cascades: ReadonlyArray<2 | 3 | 4> = [2, 3, 4];
         const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
@@ -353,7 +360,9 @@ class TelemetryWaterfallAnimator {
         }
         this.droplets = active.slice(-28);
     }
+    // --- КОНЕЦ ФУНКЦИИ stepDroplets (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ computeSlotBreathCss (TelemetryWaterfallAnimator) ---
     public computeSlotBreathCss(
         slotKey: string,
         phaseSeed: number,
@@ -389,7 +398,9 @@ class TelemetryWaterfallAnimator {
                     )})`,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ computeSlotBreathCss (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateLiveDomElements (TelemetryWaterfallAnimator) ---
     private updateLiveDomElements(timeSec: number): void {
         if (typeof document === 'undefined') return;
 
@@ -488,11 +499,15 @@ class TelemetryWaterfallAnimator {
             });
         });
     }
+    // --- КОНЕЦ ФУНКЦИИ updateLiveDomElements (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getDropletsForCascade (TelemetryWaterfallAnimator) ---
     public getDropletsForCascade(cascadeId: 2 | 3 | 4): ReadonlyArray<StarfallDroplet> {
         return this.droplets.filter((d: StarfallDroplet) => d.cascadeId === cascadeId);
     }
+    // --- КОНЕЦ ФУНКЦИИ getDropletsForCascade (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getBreathingSlotStyle (TelemetryWaterfallAnimator) ---
     public getBreathingSlotStyle(
         slotKey: string,
         phaseSeed: number
@@ -506,6 +521,7 @@ class TelemetryWaterfallAnimator {
             textShadow: css.textShadow,
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ getBreathingSlotStyle (TelemetryWaterfallAnimator) ---
 }
 
 export const waterfallAnimator = new TelemetryWaterfallAnimator();
@@ -608,7 +624,7 @@ export function renderWaterfallMembraneDecor(cascadeId: 2 | 3 | 4): Element[] {
 
 // --- НАЧАЛО ФУНКЦИИ resolvePhysicsModuleTag ---
 function resolvePhysicsModuleTag(wasmStatus: UniverseState['telemetry']['wasmStatus']): string {
-    return wasmStatus === 'WASM_SIMD_ACTIVE'
+    return wasmStatus === 'WASM_ACTIVE'
         ? '[rust/gravity.rs]'
         : '[ts/wasmBridge.ts]';
 }
@@ -663,7 +679,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
 
                     <div className="metric-box">
                         <span className="label" data-bind="l2-drift-label">
-                            ΔE/E₀ {physSourceTag}
+                            REF64 ΔE/E₀ {physSourceTag}
                         </span>
                         <span
                             className="value"
@@ -753,6 +769,7 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     let elCore: HTMLElement | null = null;
     let elAudio: HTMLElement | null = null;
 
+    // --- НАЧАЛО ФУНКЦИИ update (mountLayer2Metrics) ---
     const update = (state: Readonly<UniverseState>): void => {
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer2MetricsView(state) as HTMLElement;
@@ -784,7 +801,7 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
         if (elFrameTime) {
             elFrameTime.textContent = `(${t.frameTimeMs}/${t.frameTimeP95Ms}ms)`;
         }
-        if (elDriftLabel) elDriftLabel.textContent = `ΔE/E₀ ${physSourceTag}`;
+        if (elDriftLabel) elDriftLabel.textContent = `REF64 ΔE/E₀ ${physSourceTag}`;
         if (elDrift) elDrift.textContent = t.energyDriftRatio.toExponential(2);
         if (elKuramotoLabel) elKuramotoLabel.textContent = `KURAMOTO r(t) ${physSourceTag}`;
         if (elKuramoto) elKuramoto.textContent = t.kuramotoOrderR.toFixed(3);
@@ -801,6 +818,7 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
             );
         }
     };
+    // --- КОНЕЦ ФУНКЦИИ update (mountLayer2Metrics) ---
 
     return universeStore.subscribe(update);
 }

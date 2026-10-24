@@ -7,6 +7,11 @@
 // 2. Плавно переключать профиль HIGH / MEDIUM / LOW с гистерезисом (без дребезга).
 // 3. Возвращать параметры масштабирования (число частиц, октавы FBM, DPR-кэп).
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. QualityGovernor: constructor, feedFrameTime, getProfile, getFrameP95Ms, setTierManual.
+// ============================================================================
+
 
 import type { QualityTier } from './contracts';
 
@@ -46,6 +51,10 @@ const QUALITY_PROFILES: Record<QualityTier, QualityProfileConfig> = {
     },
 };
 
+// ============================================================================
+// РАЗДЕЛ 2. КЛАСС QualityGovernor
+// ============================================================================
+
 export class QualityGovernor {
     private currentTier: QualityTier = 'HIGH';
     private lockedByUser = false;
@@ -54,6 +63,7 @@ export class QualityGovernor {
     private lastSwitchTimestampMs = 0;
     private readonly cooldownMs = 3500; // Гистерезис 3.5 секунды между переключениями ступеней
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (QualityGovernor) ---
     constructor() {
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
@@ -64,7 +74,9 @@ export class QualityGovernor {
             }
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (QualityGovernor) ---
 
+    // --- НАЧАЛО ФУНКЦИИ feedFrameTime (QualityGovernor) ---
     public feedFrameTime(frameTimeMs: number, nowMs: number): QualityTier {
         const clamped = Math.max(1, Math.min(100, frameTimeMs));
         this.emaFrameMs = this.emaFrameMs * 0.92 + clamped * 0.08;
@@ -101,22 +113,29 @@ export class QualityGovernor {
 
         return this.currentTier;
     }
+    // --- КОНЕЦ ФУНКЦИИ feedFrameTime (QualityGovernor) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getProfile (QualityGovernor) ---
     public getProfile(): Readonly<QualityProfileConfig> {
         return QUALITY_PROFILES[this.currentTier];
     }
+    // --- КОНЕЦ ФУНКЦИИ getProfile (QualityGovernor) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getFrameP95Ms (QualityGovernor) ---
     public getFrameP95Ms(): number {
         if (this.frameWindow.length === 0) return 16.7;
         const sorted = [...this.frameWindow].sort((a, b) => a - b);
         const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
         return Number(sorted[idx].toFixed(1));
     }
+    // --- КОНЕЦ ФУНКЦИИ getFrameP95Ms (QualityGovernor) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setTierManual (QualityGovernor) ---
     public setTierManual(tier: QualityTier): void {
         this.currentTier = tier;
         this.lockedByUser = true;
     }
+    // --- КОНЕЦ ФУНКЦИИ setTierManual (QualityGovernor) ---
 }
 
 export const qualityGovernor = new QualityGovernor();

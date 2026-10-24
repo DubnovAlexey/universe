@@ -3,26 +3,39 @@
 // ФАЙЛ: frontend/src/bridge/wasmBridge.ts
 // НАЗНАЧЕНИЕ: Мост Rust/WebAssembly и детерминированное симплектическое ядро (v2.5)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Загружать и валидировать полный C-ABI контракт physics_engine.wasm при (?wasm=1).
+// 1. Загружать C-ABI v1 без блокировки первого кадра (?wasm=0 отключает Rust).
 // 2. Интегрировать орбиты Velocity Verlet серией устойчивых подшагов (subSteps * subDt === safeDt),
 //    полностью исключая потерю времени шага при любой частоте кадров (20..144 FPS).
 // 3. Вычислять истинный относительный дрейф полной механической энергии ΔE/E₀.
+// РАЗДЕЛЫ: контракт ABI v1; состояние провайдеров; инициализация и миграция;
+//          загрузка и проверка памяти; общий шаг TS/Rust; чтение результатов.
+// ФУНКЦИИ: initKuramotoOscillators — reset; attachWasmExports/uploadCurrentState —
+// миграция; tryLoadWasmModule — асинхронная загрузка; useTypescriptFallback — отказ;
+// refreshMemoryViewsIfNeeded — указатели; stepSymplecticPhysics — расчёт;
+// getKuramotoPhase/getOrbitPosition/getIntegratedSimSec/isWasmActive — диагностика.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
 import { DeterministicPRNG } from '../core/prng';
 import type { SceneBufferSoA } from '../core/sceneBuffer';
 
+// НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ ABI И ЧИСЛЕННЫЕ КОНСТАНТЫ
 export interface RustWasmExports {
     memory: WebAssembly.Memory;
+    get_abi_version: () => number;
+    get_active_count: () => number;
     init_bodies: (seed: number, count: number) => number;
     step_verlet_nbody: (
         dt: number,
         gravity: number,
         kuramotoCoupling: number
-    ) => number;
+    ) => number; // ABI v1: 1 = complete successful step/no-op, 0 = rejection.
     get_positions_ptr: () => number;
     get_velocities_ptr: () => number;
+    get_phases_ptr: () => number;
+    get_omegas_ptr: () => number;
+    get_integrated_time: () => number;
+    commit_uploaded_state: (baselineEnergy: number, integratedSec: number) => number;
     get_energy_drift: () => number;
     get_kuramoto_r: () => number;
 }
@@ -40,12 +53,19 @@ const VERLET_ENSEMBLE_COUNT = 64;
 const GM_CONSERVATIVE = 4900.0;
 const PLUMMER_SOFTENING_SQ = 64.0;
 const MAX_STABLE_SUBSTEP_SEC = 0.004;
+// КОНЕЦ РАЗДЕЛА 1
 
+// НАЧАЛО РАЗДЕЛА 2. ПРОВАЙДЕРЫ, МИГРАЦИЯ И ОБЩИЙ ШАГ
 export class WasmPhysicsBridge {
     private wasmExports: RustWasmExports | null = null;
     private cachedMemoryBuffer: ArrayBufferLike | null = null;
     private wasmPosView: Float32Array | null = null;
     private wasmVelView: Float32Array | null = null;
+    private wasmPhaseView: Float32Array | null = null;
+    private wasmOmegaView: Float32Array | null = null;
+    private currentSeed = 104729;
+    private activeCount = 1024;
+    private nativeActive = false;
 
     private kuramotoPhases: Float32Array = new Float32Array(1024);
     private naturalOmegas: Float32Array = new Float32Array(1024);
@@ -55,10 +75,13 @@ export class WasmPhysicsBridge {
     private integratedSimSec = 0;
     private isInitialized = false;
 
+    // НАЧАЛО ФУНКЦИИ constructor
     constructor(initialSeed = 104729) {
         this.initKuramotoOscillators(initialSeed);
     }
+    // КОНЕЦ ФУНКЦИИ constructor
 
+    // НАЧАЛО ФУНКЦИИ computeEnsembleTotalEnergy
     private computeEnsembleTotalEnergy(): number {
         let totalEnergy = 0;
         for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
@@ -75,8 +98,14 @@ export class WasmPhysicsBridge {
         }
         return totalEnergy;
     }
+    // КОНЕЦ ФУНКЦИИ computeEnsembleTotalEnergy
 
-    public initKuramotoOscillators(seed: number): void {
+    // НАЧАЛО ФУНКЦИИ initKuramotoOscillators
+    public initKuramotoOscillators(seed: number, activeCount = this.activeCount): void {
+        this.currentSeed = seed >>> 0;
+        this.nativeActive = false;
+        this.activeCount = Number.isFinite(activeCount)
+            ? Math.max(0, Math.min(1024, Math.floor(activeCount))) : 0;
         const rng = new DeterministicPRNG(seed);
         for (let i = 0; i < this.kuramotoPhases.length; i++) {
             this.kuramotoPhases[i] = rng.nextRange(0, Math.PI * 2);
@@ -102,33 +131,71 @@ export class WasmPhysicsBridge {
         this.baselineTotalEnergy = this.computeEnsembleTotalEnergy();
         this.integratedSimSec = 0;
         this.isInitialized = true;
+        if (this.wasmExports) {
+            try {
+                this.uploadCurrentState();
+            } catch {
+                this.useTypescriptFallback();
+            }
+        }
     }
+    // КОНЕЦ ФУНКЦИИ initKuramotoOscillators
 
     /**
      * Проверяет, что переданный объект экспортов WASM реализует полный C-ABI контракт.
      */
+    // НАЧАЛО ФУНКЦИИ validateWasmExportsContract
     public static validateWasmExportsContract(
         exports: Partial<RustWasmExports> | null | undefined
     ): exports is RustWasmExports {
-        if (!exports || !exports.memory) return false;
-        return (
-            typeof exports.init_bodies === 'function' &&
-            typeof exports.step_verlet_nbody === 'function' &&
-            typeof exports.get_positions_ptr === 'function' &&
-            typeof exports.get_velocities_ptr === 'function' &&
-            typeof exports.get_energy_drift === 'function' &&
-            typeof exports.get_kuramoto_r === 'function'
-        );
+        if (!exports || !(exports.memory instanceof WebAssembly.Memory)) return false;
+        const functions: (keyof RustWasmExports)[] = [
+            'get_abi_version', 'get_active_count', 'init_bodies', 'step_verlet_nbody',
+            'get_positions_ptr', 'get_velocities_ptr', 'get_phases_ptr', 'get_omegas_ptr',
+            'get_integrated_time', 'commit_uploaded_state', 'get_energy_drift', 'get_kuramoto_r',
+        ];
+        if (!functions.every((name) => typeof exports[name] === 'function')) return false;
+        try { return exports.get_abi_version!() === 1; } catch { return false; }
     }
+    // КОНЕЦ ФУНКЦИИ validateWasmExportsContract
 
-    public async tryLoadWasmModule(seed: number, entityCount: number): Promise<boolean> {
+    /** Adopt the latest TS state, including progress made while the download was in flight. */
+    // НАЧАЛО ФУНКЦИИ attachWasmExports
+    public attachWasmExports(exports: Partial<RustWasmExports>): boolean {
+        if (!WasmPhysicsBridge.validateWasmExportsContract(exports)) return false;
+        try {
+            this.wasmExports = exports;
+            this.uploadCurrentState();
+            this.nativeActive = false;
+            integrationRegistry.updateModuleStatus('wasm-physics', 'loading');
+            return true;
+        } catch {
+            this.useTypescriptFallback();
+            return false;
+        }
+    }
+    // КОНЕЦ ФУНКЦИИ attachWasmExports
+
+    // НАЧАЛО ФУНКЦИИ useTypescriptFallback
+    public useTypescriptFallback(): void {
+        this.wasmExports = null;
+        this.cachedMemoryBuffer = null;
+        this.wasmPosView = this.wasmVelView = null;
+        this.wasmPhaseView = this.wasmOmegaView = null;
+        this.nativeActive = false;
+        integrationRegistry.updateModuleStatus('wasm-physics', 'fallback');
+    }
+    // КОНЕЦ ФУНКЦИИ useTypescriptFallback
+
+    // НАЧАЛО ФУНКЦИИ tryLoadWasmModule
+    public async tryLoadWasmModule(): Promise<boolean> {
         if (typeof window === 'undefined' || typeof WebAssembly === 'undefined') {
             integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', 0);
             return false;
         }
 
         const params = new URLSearchParams(window.location.search);
-        if (params.get('wasm') !== '1') {
+        if (params.get('wasm') === '0') {
             integrationRegistry.updateModuleStatus('wasm-physics', 'fallback', 0);
             return false;
         }
@@ -143,7 +210,7 @@ export class WasmPhysicsBridge {
             const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
             const wasmUrl = `${normalizedBase}wasm/physics_engine.wasm`;
 
-            const response = await fetch(wasmUrl, { method: 'GET' });
+            const response = await fetch(wasmUrl, { method: 'GET', cache: 'no-cache' });
             if (!response.ok) {
                 integrationRegistry.updateModuleStatus(
                     'wasm-physics',
@@ -191,22 +258,8 @@ export class WasmPhysicsBridge {
                 return false;
             }
 
-            this.wasmExports = rawExports;
-            this.wasmExports.init_bodies(seed >>> 0, entityCount >>> 0);
-
-            if (!this.refreshMemoryViewsIfNeeded(entityCount)) {
-                this.wasmExports = null;
-                integrationRegistry.updateModuleStatus(
-                    'wasm-physics',
-                    'fallback',
-                    performance.now() - t0
-                );
-                return false;
-            }
-
-            const loadMs = performance.now() - t0;
-            integrationRegistry.updateModuleStatus('wasm-physics', 'ready', loadMs);
-            return true;
+            // Adoption reads current seed/count: a restart during fetch takes precedence.
+            return this.attachWasmExports(rawExports);
         } catch {
             integrationRegistry.updateModuleStatus(
                 'wasm-physics',
@@ -216,40 +269,47 @@ export class WasmPhysicsBridge {
             return false;
         }
     }
+    // КОНЕЦ ФУНКЦИИ tryLoadWasmModule
 
-    private refreshMemoryViewsIfNeeded(entityCount: number): boolean {
-        if (!this.wasmExports) {
-            return false;
-        }
-
-        const currentBuffer = this.wasmExports.memory.buffer;
-        if (
-            this.cachedMemoryBuffer !== currentBuffer ||
-            !this.wasmPosView ||
-            !this.wasmVelView
-        ) {
-            const posPtr = this.wasmExports.get_positions_ptr();
-            const velPtr = this.wasmExports.get_velocities_ptr();
-            const floatLen = entityCount * 3;
-
-            if (
-                posPtr === 0 ||
-                velPtr === 0 ||
-                posPtr % 4 !== 0 ||
-                velPtr % 4 !== 0 ||
-                posPtr + floatLen * 4 > currentBuffer.byteLength ||
-                velPtr + floatLen * 4 > currentBuffer.byteLength
-            ) {
-                return false;
-            }
-
-            this.cachedMemoryBuffer = currentBuffer;
-            this.wasmPosView = new Float32Array(currentBuffer, posPtr, floatLen);
-            this.wasmVelView = new Float32Array(currentBuffer, velPtr, floatLen);
+    // НАЧАЛО ФУНКЦИИ refreshMemoryViewsIfNeeded
+    private refreshMemoryViewsIfNeeded(): boolean {
+        if (!this.wasmExports || this.wasmExports.get_active_count() !== this.activeCount) return false;
+        const buffer = this.wasmExports.memory.buffer;
+        const pointers = [this.wasmExports.get_positions_ptr(), this.wasmExports.get_velocities_ptr(),
+            this.wasmExports.get_phases_ptr(), this.wasmExports.get_omegas_ptr()];
+        const lengths = [VERLET_ENSEMBLE_COUNT * 3, VERLET_ENSEMBLE_COUNT * 3, 1024, 1024];
+        if (pointers.some((ptr, i) => !Number.isInteger(ptr) || ptr <= 0 || ptr % 4 !== 0 ||
+            ptr + lengths[i] * 4 > buffer.byteLength)) return false;
+        const views = [this.wasmPosView, this.wasmVelView, this.wasmPhaseView, this.wasmOmegaView];
+        if (this.cachedMemoryBuffer !== buffer || views.some((view, i) => !view || view.byteOffset !== pointers[i])) {
+            [this.wasmPosView, this.wasmVelView, this.wasmPhaseView, this.wasmOmegaView] =
+                pointers.map((ptr, i) => new Float32Array(buffer, ptr, lengths[i]));
+            this.cachedMemoryBuffer = buffer;
         }
         return true;
     }
+    // КОНЕЦ ФУНКЦИИ refreshMemoryViewsIfNeeded
 
+    // НАЧАЛО ФУНКЦИИ uploadCurrentState
+    private uploadCurrentState(): void {
+        if (!this.wasmExports) throw new Error('No WASM provider');
+        this.wasmExports.init_bodies(this.currentSeed, this.activeCount);
+        if (!this.refreshMemoryViewsIfNeeded()) throw new Error('Invalid WASM memory layout');
+        this.wasmPhaseView!.set(this.kuramotoPhases);
+        this.wasmOmegaView!.set(this.naturalOmegas);
+        for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
+            this.wasmPosView![i * 3] = this.verletOrbitPos[i * 2];
+            this.wasmPosView![i * 3 + 1] = this.verletOrbitPos[i * 2 + 1];
+            this.wasmVelView![i * 3] = this.verletOrbitVel[i * 2];
+            this.wasmVelView![i * 3 + 1] = this.verletOrbitVel[i * 2 + 1];
+        }
+        if (this.wasmExports.commit_uploaded_state(this.baselineTotalEnergy, this.integratedSimSec) !== 1) {
+            throw new Error('WASM rejected uploaded state');
+        }
+    }
+    // КОНЕЦ ФУНКЦИИ uploadCurrentState
+
+    // НАЧАЛО ФУНКЦИИ stepSymplecticPhysics
     public stepSymplecticPhysics(
         sceneBuffer: SceneBufferSoA,
         activeCount: number,
@@ -262,7 +322,17 @@ export class WasmPhysicsBridge {
         kuramotoCouplingK: number
     ): PhysicsStepTelemetry {
         const startMs = performance.now();
-        const count = Math.min(sceneBuffer.capacity, activeCount);
+        const count = Number.isFinite(activeCount)
+            ? Math.max(0, Math.min(1024, sceneBuffer.capacity, Math.floor(activeCount))) : 0;
+        const safeCoupling = Number.isFinite(kuramotoCouplingK) ? kuramotoCouplingK : 0;
+        const safeDt = Number.isFinite(fixedDt) && fixedDt > 0 && Number.isFinite(kuramotoCouplingK)
+            ? Math.min(0.05, fixedDt) : 0;
+        if (count !== this.activeCount) {
+            this.activeCount = count;
+            if (this.wasmExports) {
+                try { this.uploadCurrentState(); } catch { this.useTypescriptFallback(); }
+            }
+        }
 
         const orbitAngle = simTimeSec * 0.42;
         const sepX = viewportWidth * 0.18;
@@ -272,49 +342,43 @@ export class WasmPhysicsBridge {
         const b2x = centerX - Math.cos(orbitAngle) * sepX * 1.06;
         const b2y = centerY - Math.sin(orbitAngle) * sepY * 1.06;
 
-        if (
-            this.wasmExports &&
-            this.refreshMemoryViewsIfNeeded(count) &&
-            this.wasmPosView &&
-            this.wasmVelView
-        ) {
-            this.wasmExports.step_verlet_nbody(fixedDt, 1.0, kuramotoCouplingK);
-
-            const limit3 = count * 3;
-            for (let i = 0; i < limit3; i += 3) {
-                const wx = this.wasmPosView[i];
-                const wy = this.wasmPosView[i + 1];
-                if (Number.isFinite(wx) && Number.isFinite(wy)) {
-                    sceneBuffer.pos[i] = sceneBuffer.pos[i] * 0.92 + (centerX + wx) * 0.08;
-                    sceneBuffer.pos[i + 1] =
-                        sceneBuffer.pos[i + 1] * 0.92 + (centerY + wy) * 0.08;
+        if (this.wasmExports) {
+            try {
+                const expectedTime = this.integratedSimSec + (count > 0 ? safeDt : 0);
+                if (this.wasmExports.step_verlet_nbody(safeDt, 1.0, safeCoupling) !== 1) {
+                    throw new Error('WASM rejected physics step');
                 }
+                if (!this.refreshMemoryViewsIfNeeded()) throw new Error('WASM memory changed incompatibly');
+                const drift = this.wasmExports.get_energy_drift();
+                const order = this.wasmExports.get_kuramoto_r();
+                const integratedTime = this.wasmExports.get_integrated_time();
+                if (!this.wasmPosView!.every(Number.isFinite) || !this.wasmVelView!.every(Number.isFinite) ||
+                    !this.wasmPhaseView!.every(Number.isFinite) || !Number.isFinite(drift) || drift < 0 ||
+                    !Number.isFinite(order) || order < 0 || order > 1 ||
+                    !Number.isFinite(integratedTime) || Math.abs(integratedTime - expectedTime) > 1e-8) {
+                    throw new Error('WASM returned invalid state');
+                }
+                // Commit complete mirrors only after validation: failures resume TS from its last good step.
+                this.kuramotoPhases.set(this.wasmPhaseView!);
+                for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
+                    this.verletOrbitPos[i * 2] = this.wasmPosView![i * 3];
+                    this.verletOrbitPos[i * 2 + 1] = this.wasmPosView![i * 3 + 1];
+                    this.verletOrbitVel[i * 2] = this.wasmVelView![i * 3];
+                    this.verletOrbitVel[i * 2 + 1] = this.wasmVelView![i * 3 + 1];
+                }
+                this.integratedSimSec = integratedTime;
+                this.nativeActive = true;
+                const dur = performance.now() - startMs;
+                integrationRegistry.updateModuleStatus('wasm-physics', 'ready');
+                integrationRegistry.recordModuleStep('wasm-physics', dur, 24, 1024 * 4 + 64 * 4 * 4);
+                return { energyDriftRatio: drift, kuramotoOrderR: Number(order.toFixed(4)),
+                    barycenter1: [b1x, b1y], barycenter2: [b2x, b2y], stepDurationMs: dur, isWasmNative: true };
+            } catch {
+                this.useTypescriptFallback();
             }
-
-            const drift = this.wasmExports.get_energy_drift();
-            const rOrder = this.wasmExports.get_kuramoto_r();
-            const dur = performance.now() - startMs;
-            integrationRegistry.recordModuleStep(
-                'wasm-physics',
-                dur,
-                count * 12,
-                count * 12
-            );
-
-            return {
-                energyDriftRatio: Number.isFinite(drift) ? drift : 0.0,
-                kuramotoOrderR: Number.isFinite(rOrder) ? rOrder : 0.0,
-                barycenter1: [b1x, b1y],
-                barycenter2: [b2x, b2y],
-                stepDurationMs: dur,
-                isWasmNative: true,
-            };
         }
 
-        const safeDt =
-            Number.isFinite(fixedDt) && fixedDt > 0 ? Math.min(0.05, fixedDt) : 0;
-
-        if (safeDt > 0) {
+        if (safeDt > 0 && count > 0) {
             // Разбиваем safeDt на целое число малых симплектических подшагов (<= 4 мс),
             // чтобы сумма subSteps * subDt в точности равнялась safeDt без потери времени
             const subSteps = Math.max(1, Math.ceil(safeDt / MAX_STABLE_SUBSTEP_SEC));
@@ -338,7 +402,7 @@ export class WasmPhysicsBridge {
                     const theta = this.kuramotoPhases[i];
                     const dTheta =
                         this.naturalOmegas[i] +
-                        kuramotoCouplingK * Math.sin(stepMeanAngle - theta);
+                        safeCoupling * Math.sin(stepMeanAngle - theta);
                     const nextTheta = (theta + dTheta * subDt) % (Math.PI * 2);
                     this.kuramotoPhases[i] =
                         nextTheta < 0 ? nextTheta + Math.PI * 2 : nextTheta;
@@ -416,23 +480,41 @@ export class WasmPhysicsBridge {
             isWasmNative: false,
         };
     }
+    // КОНЕЦ ФУНКЦИИ stepSymplecticPhysics
 
+    // НАЧАЛО ФУНКЦИИ getKuramotoPhase
     public getKuramotoPhase(index: number): number {
         return this.kuramotoPhases[index % this.kuramotoPhases.length] ?? 0;
     }
+    // КОНЕЦ ФУНКЦИИ getKuramotoPhase
 
+    // НАЧАЛО ФУНКЦИИ getOrbitPosition
     public getOrbitPosition(orbitIndex: number): [number, number] {
         const idx = Math.max(0, Math.min(VERLET_ENSEMBLE_COUNT - 1, orbitIndex)) * 2;
         return [this.verletOrbitPos[idx], this.verletOrbitPos[idx + 1]];
     }
+    // КОНЕЦ ФУНКЦИИ getOrbitPosition
 
+    // НАЧАЛО ФУНКЦИИ getIntegratedSimSec
     public getIntegratedSimSec(): number {
         return this.integratedSimSec;
     }
+    // КОНЕЦ ФУНКЦИИ getIntegratedSimSec
 
+    // НАЧАЛО ФУНКЦИИ isInitializedReady
     public isInitializedReady(): boolean {
         return this.isInitialized;
     }
-}
+    // КОНЕЦ ФУНКЦИИ isInitializedReady
 
+    // НАЧАЛО ФУНКЦИИ isWasmActive
+    public isWasmActive(): boolean {
+        return this.nativeActive;
+    }
+    // КОНЕЦ ФУНКЦИИ isWasmActive
+}
+// КОНЕЦ РАЗДЕЛА 2
+
+// НАЧАЛО РАЗДЕЛА 3. ОБЩИЙ ЭКЗЕМПЛЯР ПРИЛОЖЕНИЯ
 export const wasmPhysicsBridge = new WasmPhysicsBridge();
+// КОНЕЦ РАЗДЕЛА 3

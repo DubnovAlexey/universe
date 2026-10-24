@@ -5,6 +5,12 @@
 //             протокола, шага времени Velocity Verlet, графа NEXUS (TS == Python),
 //             таймлайна 5-й фазы, скорости одометра и ресурсов (15 инвариантов)
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: assertCondition, runUniverseVerificationSuite.
+//   3. runUniverseVerificationSuite: check.
+// ============================================================================
+
 
 import {
     DeterministicPRNG,
@@ -41,6 +47,7 @@ export interface VerificationSuiteResult {
     details: string[];
 }
 
+// --- НАЧАЛО ФУНКЦИИ assertCondition ---
 function assertCondition(
     condition: boolean,
     description: string,
@@ -49,18 +56,22 @@ function assertCondition(
     details.push(`${condition ? '[PASS]' : '[FAIL]'} ${description}`);
     return condition;
 }
+// --- КОНЕЦ ФУНКЦИИ assertCondition ---
 
+// --- НАЧАЛО ФУНКЦИИ runUniverseVerificationSuite ---
 export function runUniverseVerificationSuite(): VerificationSuiteResult {
     const details: string[] = [];
     let totalChecks = 0;
     let passedChecks = 0;
 
+    // --- НАЧАЛО ФУНКЦИИ check (runUniverseVerificationSuite) ---
     const check = (cond: boolean, desc: string): void => {
         totalChecks++;
         if (assertCondition(cond, desc, details)) {
             passedChecks++;
         }
     };
+    // --- КОНЕЦ ФУНКЦИИ check (runUniverseVerificationSuite) ---
 
     // ------------------------------------------------------------------------
     // 1. ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG (TS <-> RUST <-> PYTHON)
@@ -511,3 +522,4 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         details,
     };
 }
+// --- КОНЕЦ ФУНКЦИИ runUniverseVerificationSuite ---

@@ -3,6 +3,16 @@
 // ФАЙЛ: frontend/src/store/universeState.ts
 // НАЗНАЧЕНИЕ: Единое хранилище состояния Вселенной и часов цикла UNIVERSE v2.5
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. Функции модуля: smootherstep.
+//   3. UniverseStore: constructor, syncViewportLayoutMode, parseUrlParameters, formatTimestamp,
+//      startPhaseWatchdog, reportRendererError, getState, getSceneBuffer, getQualityGovernor, subscribe,
+//      notifyListeners, setFinaleCardHovered, setPhase, togglePause, setTabHidden, toggleAutoCycle,
+//      setAudioEnabled, setAudioVolume, setInspectionLevel, toggleLayer, addTerminalLog, emitEvent,
+//      emitEventOnce, appendLogEvent, triggerUniverseRestart, completeRestartToVoid, updateTelemetry.
+// ============================================================================
+
 
 import { type InspectionLevel, type PhaseId } from '../core/contracts';
 import { GOLDEN_SEED } from '../core/prng';
@@ -33,7 +43,7 @@ export type AudioPlaybackStatus =
     | 'PLAYING_SYNTH'
     | 'MUTED';
 
-export type WasmExecutionStatus = 'WASM_SIMD_ACTIVE' | 'TS_FALLBACK';
+export type WasmExecutionStatus = 'WASM_ACTIVE' | 'TS_FALLBACK';
 
 export type PythonBackendExecutionStatus =
     | 'WS_CONNECTED'
@@ -216,10 +226,20 @@ export const UNIVERSE_PHASES: Record<PhaseId, PhaseMetadata> = {
     },
 };
 
+// ============================================================================
+// РАЗДЕЛ. ФУНКЦИЯ smootherstep
+// ============================================================================
+
+// --- НАЧАЛО ФУНКЦИИ smootherstep ---
 export function smootherstep(edge0: number, edge1: number, x: number): number {
     const u = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, edge1 - edge0)));
     return u * u * u * (u * (u * 6 - 15) + 10);
 }
+// --- КОНЕЦ ФУНКЦИИ smootherstep ---
+
+// ============================================================================
+// РАЗДЕЛ. КЛАСС UniverseStore
+// ============================================================================
 
 class UniverseStore {
     private readonly state: UniverseState;
@@ -233,6 +253,7 @@ class UniverseStore {
     private watchdogWarned = false;
     private isCompactMobileLayout = false;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (UniverseStore) ---
     constructor() {
         const urlParams = this.parseUrlParameters();
         this.qualityGovernor = qualityGovernor;
@@ -334,12 +355,14 @@ class UniverseStore {
             );
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (UniverseStore) ---
 
     /**
      * При пересечении границы мобильного вьюпорта (<= 920px) во время ресайза окна
      * или поворота устройства автоматически сворачивает перекрывающиеся панели телеметрии,
      * а при возврате на широкий десктопный экран (> 920px) раскрывает правую колонку.
      */
+    // --- НАЧАЛО ФУНКЦИИ syncViewportLayoutMode (UniverseStore) ---
     public syncViewportLayoutMode(viewportWidth: number): void {
         if (this.state.debugMode) return;
         const shouldBeCompact = viewportWidth <= 920;
@@ -357,7 +380,9 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ syncViewportLayoutMode (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ parseUrlParameters (UniverseStore) ---
     private parseUrlParameters(): {
         seed: number;
         debugMode: boolean;
@@ -387,7 +412,9 @@ class UniverseStore {
 
         return { seed, debugMode, kioskMode, reducedMotion };
     }
+    // --- КОНЕЦ ФУНКЦИИ parseUrlParameters (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ formatTimestamp (UniverseStore) ---
     private formatTimestamp(): string {
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
@@ -395,7 +422,9 @@ class UniverseStore {
         const ss = String(now.getSeconds()).padStart(2, '0');
         return `${hh}:${mm}:${ss}`;
     }
+    // --- КОНЕЦ ФУНКЦИИ formatTimestamp (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ startPhaseWatchdog (UniverseStore) ---
     private startPhaseWatchdog(): void {
         setInterval(() => {
             if (this.state.isPaused || this.state.isTabHidden) return;
@@ -411,26 +440,36 @@ class UniverseStore {
             }
         }, 750);
     }
+    // --- КОНЕЦ ФУНКЦИИ startPhaseWatchdog (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ reportRendererError (UniverseStore) ---
     public reportRendererError(errorMsg: string): void {
         if (this.state.lastRendererError === errorMsg) return;
         this.state.lastRendererError = errorMsg;
         this.appendLogEvent('renderer:error', errorMsg);
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ reportRendererError (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getState (UniverseStore) ---
     public getState(): Readonly<UniverseState> {
         return this.state;
     }
+    // --- КОНЕЦ ФУНКЦИИ getState (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getSceneBuffer (UniverseStore) ---
     public getSceneBuffer(): SceneBufferSoA {
         return this.sceneBuffer;
     }
+    // --- КОНЕЦ ФУНКЦИИ getSceneBuffer (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getQualityGovernor (UniverseStore) ---
     public getQualityGovernor(): QualityGovernor {
         return this.qualityGovernor;
     }
+    // --- КОНЕЦ ФУНКЦИИ getQualityGovernor (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ subscribe (UniverseStore) ---
     public subscribe(listener: StateListener): () => void {
         this.listeners.add(listener);
         listener(this.state);
@@ -438,7 +477,9 @@ class UniverseStore {
             this.listeners.delete(listener);
         };
     }
+    // --- КОНЕЦ ФУНКЦИИ subscribe (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ notifyListeners (UniverseStore) ---
     private notifyListeners(forceImmediate = false): void {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         if (!forceImmediate && now - this.lastUiNotifyMs < 90) {
@@ -447,12 +488,16 @@ class UniverseStore {
         this.lastUiNotifyMs = now;
         this.listeners.forEach((fn) => fn(this.state));
     }
+    // --- КОНЕЦ ФУНКЦИИ notifyListeners (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setFinaleCardHovered (UniverseStore) ---
     public setFinaleCardHovered(hovered: boolean): void {
         if (this.state.isFinaleCardHovered === hovered) return;
         this.state.isFinaleCardHovered = hovered;
     }
+    // --- КОНЕЦ ФУНКЦИИ setFinaleCardHovered (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setPhase (UniverseStore) ---
     public setPhase(phase: PhaseId): void {
         if (
             this.state.currentPhase === phase &&
@@ -490,7 +535,9 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ setPhase (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ togglePause (UniverseStore) ---
     public togglePause(): void {
         this.state.isPaused = !this.state.isPaused;
         this.lastTelemetryUpdateMs =
@@ -503,7 +550,9 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ togglePause (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setTabHidden (UniverseStore) ---
     public setTabHidden(hidden: boolean): void {
         this.state.isTabHidden = hidden;
         if (!hidden) {
@@ -512,7 +561,9 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ setTabHidden (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ toggleAutoCycle (UniverseStore) ---
     public toggleAutoCycle(): void {
         this.state.autoCyclePhases = !this.state.autoCyclePhases;
         this.appendLogEvent(
@@ -523,7 +574,9 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ toggleAutoCycle (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setAudioEnabled (UniverseStore) ---
     public setAudioEnabled(enabled: boolean, status?: AudioPlaybackStatus): void {
         this.state.audioEnabled = enabled;
         if (status) {
@@ -533,17 +586,23 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ setAudioEnabled (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setAudioVolume (UniverseStore) ---
     public setAudioVolume(volume: number): void {
         this.state.audioVolume = Math.max(0, Math.min(1, volume));
         this.notifyListeners(false);
     }
+    // --- КОНЕЦ ФУНКЦИИ setAudioVolume (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ setInspectionLevel (UniverseStore) ---
     public setInspectionLevel(level: InspectionLevel): void {
         this.state.inspectionLevel = level;
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ setInspectionLevel (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ toggleLayer (UniverseStore) ---
     public toggleLayer(layerKey: keyof UniverseLayersVisibility): void {
         const nextVal = !this.state.layers[layerKey];
         const isMobileViewport =
@@ -580,12 +639,16 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ toggleLayer (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ addTerminalLog (UniverseStore) ---
     public addTerminalLog(message: string, sourceTag = 'system:log'): void {
         this.appendLogEvent(sourceTag, message);
         this.notifyListeners(false);
     }
+    // --- КОНЕЦ ФУНКЦИИ addTerminalLog (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ emitEvent (UniverseStore) ---
     public emitEvent(
         typeOrMessage: string,
         message?: string,
@@ -596,7 +659,9 @@ class UniverseStore {
         this.appendLogEvent(resolvedType, resolvedMsg);
         this.notifyListeners(false);
     }
+    // --- КОНЕЦ ФУНКЦИИ emitEvent (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ emitEventOnce (UniverseStore) ---
     public emitEventOnce(
         uniqueKey: string,
         typeOrMessage: string,
@@ -611,7 +676,9 @@ class UniverseStore {
             optionalMessage !== undefined ? optionalMessage : typeOrMessage;
         this.appendLogEvent(resolvedType, resolvedMessage);
     }
+    // --- КОНЕЦ ФУНКЦИИ emitEventOnce (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ appendLogEvent (UniverseStore) ---
     private appendLogEvent(type: string, message: string): void {
         const ts = this.formatTimestamp();
         const nextEvent: ArchitectLogEvent = {
@@ -630,7 +697,9 @@ class UniverseStore {
             ...this.state.terminalLogs.slice(0, 24),
         ];
     }
+    // --- КОНЕЦ ФУНКЦИИ appendLogEvent (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ triggerUniverseRestart (UniverseStore) ---
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.isFinaleCardHovered = false;
@@ -645,7 +714,9 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ triggerUniverseRestart (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ completeRestartToVoid (UniverseStore) ---
     public completeRestartToVoid(): void {
         this.state.cycleCount += 1;
         this.emittedEventKeys.clear();
@@ -669,7 +740,9 @@ class UniverseStore {
         );
         this.notifyListeners(true);
     }
+    // --- КОНЕЦ ФУНКЦИИ completeRestartToVoid (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ updateTelemetry (UniverseStore) ---
     public updateTelemetry(partial: Partial<UniverseTelemetryState>): void {
         const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
         this.lastTelemetryUpdateMs = nowMs;
@@ -831,6 +904,7 @@ class UniverseStore {
 
         this.notifyListeners(false);
     }
+    // --- КОНЕЦ ФУНКЦИИ updateTelemetry (UniverseStore) ---
 }
 
 export const universeStore = new UniverseStore();

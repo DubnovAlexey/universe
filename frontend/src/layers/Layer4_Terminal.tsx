@@ -21,6 +21,11 @@ import {
 import { resourceLedger } from '../core/resourceLedger';
 import { universeStore, type UniverseState } from '../store/universeState';
 
+// --- НАЧАЛО ФУНКЦИИ renderLayer4TerminalView ---
+// ============================================================================
+// РАЗДЕЛ 2. ФУНКЦИЯ renderLayer4TerminalView
+// ============================================================================
+
 export function renderLayer4TerminalView(state: Readonly<UniverseState>): Element {
     const isVisible =
         state.layers.layer4_architectTerminal ||
@@ -123,6 +128,12 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
         </section>
     );
 }
+// --- КОНЕЦ ФУНКЦИИ renderLayer4TerminalView ---
+
+// --- НАЧАЛО ФУНКЦИИ mountLayer4Terminal ---
+// ============================================================================
+// РАЗДЕЛ 3. ФУНКЦИЯ mountLayer4Terminal
+// ============================================================================
 
 export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     if (!container) return () => {};
@@ -135,6 +146,7 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     const perfEls: Array<HTMLElement | null> = [];
     const logEls: Array<HTMLElement | null> = [];
 
+    // --- НАЧАЛО ФУНКЦИИ update (mountLayer4Terminal) ---
     const update = (state: Readonly<UniverseState>): void => {
         const modules = integrationRegistry.getAllModules();
 
@@ -197,8 +209,10 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
             }
         }
     };
+    // --- КОНЕЦ ФУНКЦИИ update (mountLayer4Terminal) ---
 
     return universeStore.subscribe(update);
 }
+// --- КОНЕЦ ФУНКЦИИ mountLayer4Terminal ---
 
 export default renderLayer4TerminalView;

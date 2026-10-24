@@ -1,8 +1,15 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/webgpu/breach.wgsl
 // НАЗНАЧЕНИЕ: Оптическое преломление BREACH LENS и линзирование Чёрной дыры (MASTER 04 / 05)
+// ФУНКЦИИ: evaluate_breach_lens_field, evaluate_relativistic_accretion, fs_breach_main.
+// ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+//   0. Контракты данных и uniform-ресурсы: BreachUniforms, BreachFragmentInput, LensRefractionResult.
+//   1. evaluate_breach_lens_field: поле преломления линзы.
+//   2. evaluate_relativistic_accretion: оптика аккреции.
+//   3. fs_breach_main: итоговый цвет и прозрачность.
 // ============================================================================
 
+// РАЗДЕЛ 0. КОНТРАКТЫ ДАННЫХ И UNIFORM-РЕСУРСЫ
 struct BreachUniforms {
     resolution: vec2<f32>,
     lens_center: vec2<f32>,
@@ -28,6 +35,8 @@ struct LensRefractionResult {
     core_xray_mask: f32,
 };
 
+// РАЗДЕЛ 1. evaluate_breach_lens_field
+// --- НАЧАЛО ФУНКЦИИ evaluate_breach_lens_field ---
 fn evaluate_breach_lens_field(frag_px: vec2<f32>) -> LensRefractionResult {
     var res: LensRefractionResult;
     res.offset_px = vec2<f32>(0.0, 0.0);
@@ -72,8 +81,11 @@ fn evaluate_breach_lens_field(frag_px: vec2<f32>) -> LensRefractionResult {
 
     return res;
 }
+// --- КОНЕЦ ФУНКЦИИ evaluate_breach_lens_field ---
 
 // Согласовано с backend/core/singularity.py: фотонное кольцо b_c = 1.48 * R_s, ширина 0.18 * R_s
+// РАЗДЕЛ 2. evaluate_relativistic_accretion
+// --- НАЧАЛО ФУНКЦИИ evaluate_relativistic_accretion ---
 fn evaluate_relativistic_accretion(frag_px: vec2<f32>) -> vec3<f32> {
     if (u_breach.accretion_strength <= 0.01) {
         return vec3<f32>(0.0);
@@ -105,7 +117,10 @@ fn evaluate_relativistic_accretion(frag_px: vec2<f32>) -> vec3<f32> {
 
     return color * u_breach.accretion_strength;
 }
+// --- КОНЕЦ ФУНКЦИИ evaluate_relativistic_accretion ---
 
+// РАЗДЕЛ 3. fs_breach_main
+// --- НАЧАЛО ФУНКЦИИ fs_breach_main ---
 @fragment
 fn fs_breach_main(in: BreachFragmentInput) -> @location(0) vec4<f32> {
     let frag_px = in.uv * u_breach.resolution;
@@ -128,3 +143,4 @@ fn fs_breach_main(in: BreachFragmentInput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(final_rgb, alpha);
 }
+// --- КОНЕЦ ФУНКЦИИ fs_breach_main ---

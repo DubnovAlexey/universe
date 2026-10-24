@@ -294,7 +294,7 @@ class FinaleCardDomAnimator {
                 }
             }
 
-            // УСКОРЕНО В ~3.5 РАЗА (по запросу пользователя и Аудиту P1 #4):
+            // Накопительный такт квантовой строки с ограниченной частотой:
             // Фаза накапливается через dtSec * boundedRateHz в диапазоне [18.0 .. 26.0] шагов/с.
             // При этом каждый не-пробельный символ вращается по индивидуальной скорости,
             // обеспечивая ~8–11 живых смен в секунду на каждый знак без зависимости от uptime.
@@ -541,6 +541,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     let repoLinkEl: HTMLAnchorElement | null = null;
     let restartBtn: HTMLButtonElement | null = null;
 
+    // --- НАЧАЛО ФУНКЦИИ update (mountLayer5CipherFinale) ---
     const update = (state: Readonly<UniverseState>): void => {
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer5CipherFinaleView(state) as HTMLElement;
@@ -588,6 +589,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
             restartBtn.tabIndex = showActions ? 0 : -1;
         }
     };
+    // --- КОНЕЦ ФУНКЦИИ update (mountLayer5CipherFinale) ---
 
     const unsubscribe = universeStore.subscribe(update);
     return () => {

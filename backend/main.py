@@ -1,16 +1,16 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/main.py
-# НАЗНАЧЕНИЕ: Главная точка входа Python-бэкенда UNIVERSE v2.5 (MASTER 00B / 03 / 05)
-# ============================================================================
-# ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-#   РАЗДЕЛ 1. Инициализация путей репозитория и счётчика монотонных тиков.
-#   РАЗДЕЛ 2. Класс HTTP-обработчика UniverseTelemetryHTTPHandler с точной
-#             маршрутизацией (/api/frame.bin с монотонным tick, /api/health,
-#             /api/verify-parity, /api/topology и 404 для неизвестных путей).
-#   РАЗДЕЛ 3. CLI-верификация (`python -m backend.main --verify`) и запуск сервера.
+# НАЗНАЧЕНИЕ: HTTP-эндпоинты телеметрии, монотонные кадры UNVS и CLI-верификация.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. UniverseTelemetryHTTPHandler.
+# 3. run_cli_verification.
+# Функции: next_monotonic_tick, run_cli_verification, run_standalone_server, _send_cors_headers,
+# _send_json, do_OPTIONS, do_GET, log_message.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -19,9 +19,6 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# ============================================================================
-# РАЗДЕЛ 1. НАСТРОЙКА ПУТЕЙ И МОНОТОННОГО СЧЁТЧИКА КАДРОВ
-# ============================================================================
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -44,10 +41,11 @@ def next_monotonic_tick() -> int:
 # --- КОНЕЦ ФУНКЦИИ next_monotonic_tick ---
 
 
-# ============================================================================
-# РАЗДЕЛ 2. АВТОНОМНЫЙ HTTP-ОБРАБОТЧИК ТЕЛЕМЕТРИИ И БИНАРНЫХ КАДРОВ 'UNVS'
-# ============================================================================
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: UniverseTelemetryHTTPHandler ---
+# --- НАЧАЛО КЛАССА UniverseTelemetryHTTPHandler ---
 class UniverseTelemetryHTTPHandler(BaseHTTPRequestHandler):
     """Автономный HTTP-обработчик телеметрии, топологии и бинарных кадров 'UNVS'."""
 
@@ -135,12 +133,13 @@ class UniverseTelemetryHTTPHandler(BaseHTTPRequestHandler):
     def log_message(self, format_str: str, *args: object) -> None:
         return
     # --- КОНЕЦ ФУНКЦИИ log_message ---
+# --- КОНЕЦ КЛАССА UniverseTelemetryHTTPHandler ---
 
 
-# ============================================================================
-# РАЗДЕЛ 3. CLI-ВЕРИФИКАЦИЯ ПАРИТЕТА И ЗАПУСК СЕРВЕРА
-# ============================================================================
 
+# --- КОНЕЦ РАЗДЕЛА 2: UniverseTelemetryHTTPHandler ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: run_cli_verification ---
 # --- НАЧАЛО ФУНКЦИИ run_cli_verification ---
 def run_cli_verification() -> int:
     """Запускает проверку побитового паритета PRNG, графа NEXUS, оптики и пакета 'UNVS'."""
@@ -167,3 +166,4 @@ if __name__ == "__main__":
 
     env_port = int(os.environ.get("PORT", "8000"))
     run_standalone_server(port=env_port)
+# --- КОНЕЦ РАЗДЕЛА 3: run_cli_verification ---

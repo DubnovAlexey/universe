@@ -3,6 +3,12 @@
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
 // НАЗНАЧЕНИЕ: Движок квантового одометра и персональной визитки v2.5 (MASTER 05)
 // ============================================================================
+// ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
+//   1. Зависимости, константы и контракты данных.
+//   2. CipherOdometerEngine: notifyPointerHover, resetClockForTest, getAccumulatedSpinPhase,
+//      getLineTypography, advanceBoundedSpinPhase, evaluateCells, verifyFinalLockedText.
+// ============================================================================
+
 
 import { DeterministicPRNG } from '../core/prng';
 import { smootherstep, universeStore } from '../store/universeState';
@@ -102,6 +108,10 @@ export interface OdometerGlyphCellState {
     glyphBreathAlpha: number;
 }
 
+// ============================================================================
+// РАЗДЕЛ. КЛАСС CipherOdometerEngine
+// ============================================================================
+
 export class CipherOdometerEngine {
     private pointerX = -9999;
     private pointerY = -9999;
@@ -110,21 +120,28 @@ export class CipherOdometerEngine {
     private lfoClockSec = 0;
     private lastEvalTimeSec = -1;
 
+    // --- НАЧАЛО ФУНКЦИИ notifyPointerHover (CipherOdometerEngine) ---
     public notifyPointerHover(clientX: number, clientY: number): void {
         this.pointerX = clientX;
         this.pointerY = clientY;
     }
+    // --- КОНЕЦ ФУНКЦИИ notifyPointerHover (CipherOdometerEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ resetClockForTest (CipherOdometerEngine) ---
     public resetClockForTest(startSec = 0): void {
         this.accumulatedSpinPhase = 0;
         this.lfoClockSec = 0;
         this.lastEvalTimeSec = startSec;
     }
+    // --- КОНЕЦ ФУНКЦИИ resetClockForTest (CipherOdometerEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getAccumulatedSpinPhase (CipherOdometerEngine) ---
     public getAccumulatedSpinPhase(): number {
         return this.accumulatedSpinPhase;
     }
+    // --- КОНЕЦ ФУНКЦИИ getAccumulatedSpinPhase (CipherOdometerEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ getLineTypography (CipherOdometerEngine) ---
     private getLineTypography(
         lineIndex: number,
         charCount: number,
@@ -179,11 +196,13 @@ export class CipherOdometerEngine {
 
         return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
+    // --- КОНЕЦ ФУНКЦИИ getLineTypography (CipherOdometerEngine) ---
 
     /**
      * Монотонно накапливает базовую фазу квантового барабана через приращение dtSec
      * в едином диапазоне [18.0 .. 26.0] Гц (в полном паритете с Layer5_CipherFinale.tsx).
      */
+    // --- НАЧАЛО ФУНКЦИИ advanceBoundedSpinPhase (CipherOdometerEngine) ---
     public advanceBoundedSpinPhase(
         liveTimeSec: number,
         reducedMotion: boolean,
@@ -218,7 +237,9 @@ export class CipherOdometerEngine {
         this.accumulatedSpinPhase += clampedDt * boundedRateHz;
         return this.accumulatedSpinPhase;
     }
+    // --- КОНЕЦ ФУНКЦИИ advanceBoundedSpinPhase (CipherOdometerEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ evaluateCells (CipherOdometerEngine) ---
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
@@ -434,7 +455,9 @@ export class CipherOdometerEngine {
 
         return cells;
     }
+    // --- КОНЕЦ ФУНКЦИИ evaluateCells (CipherOdometerEngine) ---
 
+    // --- НАЧАЛО ФУНКЦИИ verifyFinalLockedText (CipherOdometerEngine) ---
     public verifyFinalLockedText(viewportWidth = 1280, viewportHeight = 720): boolean {
         this.pointerX = -9999;
         this.pointerY = -9999;
@@ -449,6 +472,7 @@ export class CipherOdometerEngine {
                 c.targetX <= viewportWidth - 8
         );
     }
+    // --- КОНЕЦ ФУНКЦИИ verifyFinalLockedText (CipherOdometerEngine) ---
 }
 
 export const cipherOdometerEngine = new CipherOdometerEngine();

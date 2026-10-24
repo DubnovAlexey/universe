@@ -1,10 +1,18 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/test_backend_parity.py
-# НАЗНАЧЕНИЕ: Модульные тесты Python-ядра для запуска через стандартный
-#             раннер `python -B -m unittest discover -v` (UNIVERSE v2.5)
+# НАЗНАЧЕНИЕ: Шесть регрессионных тестов PRNG, UNVS, NEXUS, оптики и отчёта.
+# ОГЛАВЛЕНИЕ:
+# 1. ИМПОРТЫ И КОНТРАКТЫ.
+# 2. TestUniverseBackendParity.
+# 3. ЗАПУСК UNITTEST.
+# Функции: test_golden_prng_vectors_and_hash, test_state_digest_fnv1a_determinism,
+# test_binary_packer_header_and_nan_sanitization,
+# test_cross_language_nexus_6node_fixture_exact_parity,
+# test_breach_lens_and_black_hole_optics_bounds, test_health_report_and_live_binary_step.
 # ============================================================================
 
+# --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
 import unittest
 
@@ -34,9 +42,14 @@ from backend.utils.binary_packer import (
 )
 
 
+# --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
+
+# --- НАЧАЛО РАЗДЕЛА 2: TestUniverseBackendParity ---
+# --- НАЧАЛО КЛАССА TestUniverseBackendParity ---
 class TestUniverseBackendParity(unittest.TestCase):
     """Проверяет математические и бинарные инварианты Python-ядра UNIVERSE v2.5."""
 
+    # --- НАЧАЛО ФУНКЦИИ test_golden_prng_vectors_and_hash ---
     def test_golden_prng_vectors_and_hash(self) -> None:
         self.assertTrue(verify_golden_prng_parity())
         rng = DeterministicPRNG(GOLDEN_SEED)
@@ -47,7 +60,9 @@ class TestUniverseBackendParity(unittest.TestCase):
         h2 = DeterministicPRNG.hash_u32(GOLDEN_SEED, 42)
         self.assertEqual(h1, h2)
         self.assertGreater(h1, 0)
+    # --- КОНЕЦ ФУНКЦИИ test_golden_prng_vectors_and_hash ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_state_digest_fnv1a_determinism ---
     def test_state_digest_fnv1a_determinism(self) -> None:
         pos = [120.5, -84.25, 1.0, -45.0, 62.0, 0.8]
         vel = [4.0, -3.5, 0.0, -2.0, 5.0, 0.0]
@@ -57,7 +72,9 @@ class TestUniverseBackendParity(unittest.TestCase):
         d2 = compute_state_digest_fnv1a(10, 2, pos, vel, energy, stride=1)
         self.assertEqual(d1, d2)
         self.assertNotEqual(d1, 0)
+    # --- КОНЕЦ ФУНКЦИИ test_state_digest_fnv1a_determinism ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_binary_packer_header_and_nan_sanitization ---
     def test_binary_packer_header_and_nan_sanitization(self) -> None:
         pos_with_nan = [10.0, float("nan"), 1.0, float("inf"), -20.0, 0.5]
         packet = pack_scene_binary_frame(
@@ -78,7 +95,9 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertEqual(header.seed, GOLDEN_SEED)
         self.assertEqual(header.digest, 0x12345678)
         self.assertIsNone(unpack_and_validate_header(packet[:12]))
+    # --- КОНЕЦ ФУНКЦИИ test_binary_packer_header_and_nan_sanitization ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_cross_language_nexus_6node_fixture_exact_parity ---
     def test_cross_language_nexus_6node_fixture_exact_parity(self) -> None:
         """
         Общая каноническая 6-узловая выборка (идентичная parityAndSeams.test.ts),
@@ -134,7 +153,9 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertEqual(metrics.diameter_hops, 3)
         self.assertEqual(metrics.avg_path_length, 1.53)
         self.assertEqual(deg_map, {0: 2, 1: 3, 2: 3, 3: 3, 4: 2, 5: 3})
+    # --- КОНЕЦ ФУНКЦИИ test_cross_language_nexus_6node_fixture_exact_parity ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_breach_lens_and_black_hole_optics_bounds ---
     def test_breach_lens_and_black_hole_optics_bounds(self) -> None:
         outside = evaluate_breach_lens_refraction(
             px=500.0,
@@ -164,7 +185,9 @@ class TestUniverseBackendParity(unittest.TestCase):
         bh = evaluate_black_hole_optics(56.0, 0.0, 0.0, 0.0, 38.0, 1.0)
         self.assertGreater(bh.einstein_deflection_alpha, 0.0)
         self.assertGreater(bh.photon_ring_intensity, 0.0)
+    # --- КОНЕЦ ФУНКЦИИ test_breach_lens_and_black_hole_optics_bounds ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_health_report_and_live_binary_step ---
     def test_health_report_and_live_binary_step(self) -> None:
         report = build_health_and_parity_report()
         self.assertEqual(report["status"], "ok")
@@ -177,7 +200,13 @@ class TestUniverseBackendParity(unittest.TestCase):
         assert unpacked is not None
         self.assertEqual(unpacked.tick, 5)
         self.assertEqual(unpacked.count, 16)
+    # --- КОНЕЦ ФУНКЦИИ test_health_report_and_live_binary_step ---
+# --- КОНЕЦ КЛАССА TestUniverseBackendParity ---
 
 
+# --- КОНЕЦ РАЗДЕЛА 2: TestUniverseBackendParity ---
+
+# --- НАЧАЛО РАЗДЕЛА 3: ЗАПУСК UNITTEST ---
 if __name__ == "__main__":
     unittest.main()
+# --- КОНЕЦ РАЗДЕЛА 3: ЗАПУСК UNITTEST ---

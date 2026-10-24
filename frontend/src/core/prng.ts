@@ -21,16 +21,19 @@
 export class DeterministicPRNG {
     private state: number;
 
+    // --- НАЧАЛО ФУНКЦИИ constructor (DeterministicPRNG) ---
     constructor(seed: number) {
         this.state = seed >>> 0;
         if (this.state === 0) {
             this.state = 0x6d2b79f5;
         }
     }
+    // --- КОНЕЦ ФУНКЦИИ constructor (DeterministicPRNG) ---
 
     /**
      * Генерирует следующее беззнаковое 32-битное целое число (uint32).
      */
+    // --- НАЧАЛО ФУНКЦИИ nextU32 (DeterministicPRNG) ---
     public nextU32(): number {
         this.state = (this.state + 0x6d2b79f5) >>> 0;
         let z = this.state;
@@ -38,37 +41,46 @@ export class DeterministicPRNG {
         z = (z ^ (z + Math.imul(z ^ (z >>> 7), z | 61))) >>> 0;
         return (z ^ (z >>> 14)) >>> 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ nextU32 (DeterministicPRNG) ---
 
     /**
      * Генерирует число с плавающей точкой двойной точности в полуинтервале [0.0, 1.0).
      */
+    // --- НАЧАЛО ФУНКЦИИ nextFloat (DeterministicPRNG) ---
     public nextFloat(): number {
         return this.nextU32() / 4294967296.0;
     }
+    // --- КОНЕЦ ФУНКЦИИ nextFloat (DeterministicPRNG) ---
 
     /**
      * Генерирует число с плавающей точкой в заданном диапазоне [min, max).
      */
+    // --- НАЧАЛО ФУНКЦИИ nextRange (DeterministicPRNG) ---
     public nextRange(min: number, max: number): number {
         return min + this.nextFloat() * (max - min);
     }
+    // --- КОНЕЦ ФУНКЦИИ nextRange (DeterministicPRNG) ---
 
     /**
      * Чистая биективная хеш-функция SplitMix32 от пары (seed, index) без мутации состояния.
      */
+    // --- НАЧАЛО ФУНКЦИИ hashU32 (DeterministicPRNG) ---
     public static hashU32(seed: number, index: number): number {
         let h = ((seed >>> 0) ^ Math.imul(index >>> 0, 0x9e3779b9)) >>> 0;
         h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
         h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
         return (h ^ (h >>> 16)) >>> 0;
     }
+    // --- КОНЕЦ ФУНКЦИИ hashU32 (DeterministicPRNG) ---
 
     /**
      * Чистая детерминированная хеш-функция, возвращающая число в полуинтервале [0.0, 1.0).
      */
+    // --- НАЧАЛО ФУНКЦИИ hashFloat (DeterministicPRNG) ---
     public static hashFloat(seed: number, index: number): number {
         return DeterministicPRNG.hashU32(seed, index) / 4294967296.0;
     }
+    // --- КОНЕЦ ФУНКЦИИ hashFloat (DeterministicPRNG) ---
 }
 
 // ============================================================================
@@ -85,6 +97,7 @@ export const GOLDEN_U32_VECTORS: ReadonlyArray<number> = [
     2630884050,
 ];
 
+// --- НАЧАЛО ФУНКЦИИ verifyGoldenPrngParity ---
 export function verifyGoldenPrngParity(): boolean {
     const rng = new DeterministicPRNG(GOLDEN_SEED);
     for (let i = 0; i < GOLDEN_U32_VECTORS.length; i++) {
@@ -94,6 +107,7 @@ export function verifyGoldenPrngParity(): boolean {
     }
     return true;
 }
+// --- КОНЕЦ ФУНКЦИИ verifyGoldenPrngParity ---
 
 // ============================================================================
 // РАЗДЕЛ 3. ВЫЧИСЛЕНИЕ КОНТРОЛЬНОЙ СУММЫ СОСТОЯНИЯ (STATE DIGEST — FNV-1a 32-BIT)
@@ -104,10 +118,13 @@ export function verifyGoldenPrngParity(): boolean {
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
+// --- НАЧАЛО ФУНКЦИИ quantizeHalfUp ---
 export function quantizeHalfUp(val: number): number {
     return Math.floor(val + 0.5) | 0;
 }
+// --- КОНЕЦ ФУНКЦИИ quantizeHalfUp ---
 
+// --- НАЧАЛО ФУНКЦИИ computeQuantizedStateDigest ---
 export function computeQuantizedStateDigest(
     tick: number,
     count: number,
@@ -141,7 +158,10 @@ export function computeQuantizedStateDigest(
 
     return hash >>> 0;
 }
+// --- КОНЕЦ ФУНКЦИИ computeQuantizedStateDigest ---
 
+// --- НАЧАЛО ФУНКЦИИ formatDigestHex ---
 export function formatDigestHex(digest: number): string {
     return `0x${(digest >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
 }
+// --- КОНЕЦ ФУНКЦИИ formatDigestHex ---
