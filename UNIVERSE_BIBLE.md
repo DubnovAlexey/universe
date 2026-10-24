@@ -281,7 +281,7 @@
 
 ---
 
-## 10. СИСТЕМА ПРОВЕРОК И АВТОТЕСТОВ (25 АВТОМАТИЧЕСКИХ ПРОВЕРОК В 3 ЯЗЫКАХ)
+## 10. СИСТЕМА ПРОВЕРОК И АВТОТЕСТОВ (26 АВТОМАТИЧЕСКИХ ПРОВЕРОК В 3 ЯЗЫКАХ)
 
 | Команда | Что реально проверяет | Результат |
 | :--- | :--- | :---: |
@@ -318,4 +318,4 @@
     * Счётчик `nanGuardTriggeredCount` в `SceneBufferSoA` расширен на все 8 числовых полей.
     * В `ResourceLedger` добавлены `underflowCount`, `disposerErrors` и проверка всех 5 категорий ресурсов.
     * В `Layer4_Terminal.tsx` выведены все 8 модулей `IntegrationRegistry`.
-    * Добавлены 6 модульных тестов Python (`backend/test_backend_parity.py`), 5 модульных тестов Rust (`physics_engine/src/lib.rs`) и 14 инвариантов TypeScript (`parityAndSeams.test.ts`) — всего **25 автоматических проверок** в CI.
+    * Добавлены 6 модульных тестов Python (`backend/test_backend_parity.py`), 5 модульных тестов Rust (`physics_engine/src/lib.rs`) и 15 инвариантов TypeScript (`parityAndSeams.test.ts`) — всего **26 автоматических проверок** в CI.

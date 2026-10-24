@@ -3,17 +3,6 @@
 // ФАЙЛ: frontend/src/phases/01_void.ts
 // НАЗНАЧЕНИЕ: Ядро симуляции 5 фаз с C2-бесшовным морфингом по снимку состояния (v2.5)
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Контракты частиц, рёбер и синаптических импульсов (QuantumParticle,
-//             TopologyEdge, SynapticPulse).
-//   РАЗДЕЛ 2. Класс VoidPhaseSimulation: инициализация, ресайз, генерация 4 эшелонов
-//             глубины (Z0..Z3) и C2-гладкая кинематика фазы 01_VOID.
-//   РАЗДЕЛ 3. Главный шаг физического обновления (update):
-//             - фиксация снимка позиций при смене фазы и подакта сингулярности;
-//             - быстрое упругое схождение в Точку Нуля и раскрытие ореола в Акте D;
-//             - синхронизация с SceneBufferSoA и симплектическим ядром wasmPhysicsBridge.
-//   РАЗДЕЛ 4. Стабильное управление топологией графа NEXUS и кометами импульсов.
-// ============================================================================
 
 import { EntityKindCode, type PhaseId } from '../core/contracts';
 import { DeterministicPRNG } from '../core/prng';
@@ -30,14 +19,11 @@ import {
     type SingularityAct,
 } from '../store/universeState';
 import { stressStore } from '../store/stressState';
+import { audioSync } from '../utils/audioSync';
 import { computeGenesisTarget } from './02_genesis';
 import { computeEvolutionBrainTarget } from './03_evolution';
 import { computeCollapseStormTarget } from './04_collapse';
 import { computeSingularityTarget } from './05_singularity';
-
-// ============================================================================
-// РАЗДЕЛ 1. ТИПЫ И ИНТЕРФЕЙСЫ СУЩНОСТЕЙ СИМУЛЯЦИИ
-// ============================================================================
 
 export type DepthLayerTier = 'FOREGROUND' | 'MIDGROUND' | 'BACKGROUND' | 'DEEP_LAYER';
 export type NexusEdgeClass = ComputedEdgeClass;
@@ -143,10 +129,6 @@ export const BRAIN_HEMISPHERE_LOBES: ReadonlyArray<[number, number]> = [
     [0.34, 0.16],
 ];
 
-// ============================================================================
-// РАЗДЕЛ 2. ЯДРО СИМУЛЯЦИИ ПЯТИ ФАЗ (VoidPhaseSimulation)
-// ============================================================================
-
 export class VoidPhaseSimulation {
     private particles: QuantumParticle[] = [];
     private edges: TopologyEdge[] = [];
@@ -162,7 +144,6 @@ export class VoidPhaseSimulation {
     private lastTopologyBuildSimSec = -10;
     private prng: DeterministicPRNG;
 
-    // --- НАЧАЛО ФУНКЦИИ constructor (VoidPhaseSimulation) ---
     constructor(initialWidth = 1920, initialHeight = 1080) {
         this.width = initialWidth;
         this.height = initialHeight;
@@ -173,9 +154,7 @@ export class VoidPhaseSimulation {
         this.respawnParticles(targetCount);
         void wasmPhysicsBridge.tryLoadWasmModule(initialSeed, targetCount);
     }
-    // --- КОНЕЦ ФУНКЦИИ constructor (VoidPhaseSimulation) ---
 
-    // --- НАЧАЛО ФУНКЦИИ resize ---
     public resize(width: number, height: number): void {
         const scaleX = width / Math.max(1, this.width);
         const scaleY = height / Math.max(1, this.height);
@@ -192,9 +171,7 @@ export class VoidPhaseSimulation {
             p.morphOriginY *= scaleY;
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ resize ---
 
-    // --- НАЧАЛО ФУНКЦИИ respawnParticles ---
     public respawnParticles(count: number): void {
         const uState = universeStore.getState();
         const profileMult = universeStore.getQualityGovernor().getProfile().particleMultiplier;
@@ -218,9 +195,7 @@ export class VoidPhaseSimulation {
             this.particles.push(this.createSingleParticle(i, uState.seed));
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ respawnParticles ---
 
-    // --- НАЧАЛО ФУНКЦИИ createSingleParticle ---
     private createSingleParticle(id: number, seed: number): QuantumParticle {
         const r1 = DeterministicPRNG.hashFloat(seed, id * 37 + 1);
         const r2 = DeterministicPRNG.hashFloat(seed, id * 37 + 2);
@@ -290,9 +265,7 @@ export class VoidPhaseSimulation {
             quantumSpin: id % 2 === 0 ? 1 : -1,
         };
     }
-    // --- КОНЕЦ ФУНКЦИИ createSingleParticle ---
 
-    // --- НАЧАЛО ФУНКЦИИ computePhaseArchetypePoint ---
     private computePhaseArchetypePoint(
         phase: PhaseId,
         p: QuantumParticle,
@@ -351,12 +324,7 @@ export class VoidPhaseSimulation {
                 );
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ computePhaseArchetypePoint ---
 
-    // --- НАЧАЛО ФУНКЦИИ computeVoidChirpTarget ---
-    /**
-     * C2-гладкий расчёт 1-го акта (01_VOID) с использованием полинома Перлина smootherstep.
-     */
     private computeVoidChirpTarget(
         p: QuantumParticle,
         centerX: number,
@@ -410,13 +378,7 @@ export class VoidPhaseSimulation {
         );
         return { x, y, energy };
     }
-    // --- КОНЕЦ ФУНКЦИИ computeVoidChirpTarget ---
 
-    // ============================================================================
-    // РАЗДЕЛ 3. ГЛАВНЫЙ ШАГ ОБНОВЛЕНИЯ ФИЗИКИ И БЕСШОВНОГО МОРФИНГА (update)
-    // ============================================================================
-
-    // --- НАЧАЛО ФУНКЦИИ update ---
     public update(
         dtSeconds: number,
         phase: PhaseId,
@@ -432,7 +394,6 @@ export class VoidPhaseSimulation {
             this.respawnParticles(UNIVERSE_PHASES['03_EVOLUTION'].targetParticleCount);
         }
 
-        // При переходе в новую фазу фиксируем снимок текущих позиций каждой частицы
         if (phase !== this.activePhase) {
             for (let i = 0; i < this.particles.length; i++) {
                 const pt = this.particles[i];
@@ -455,8 +416,6 @@ export class VoidPhaseSimulation {
         const dt =
             Math.min(dtSeconds * timeScale, 0.05) * (uState.reducedMotion ? 0.45 : 1.0);
 
-        // В фазе 05_SINGULARITY морфинг идёт быстрее, чтобы сжатие в точку и разлёт в визитку
-        // происходили без малейшего отставания частиц от таймлайна
         const morphRate = phase === '05_SINGULARITY' ? 0.95 : 0.385;
         this.phaseMorphFactor = Math.min(1.0, this.phaseMorphFactor + dt * morphRate);
         const smoothBlend = smootherstep(0.0, 1.0, this.phaseMorphFactor);
@@ -466,6 +425,13 @@ export class VoidPhaseSimulation {
         const centerY = this.height * 0.5;
         const phaseProgress = uState.telemetry.phaseProgress;
         const nowMs = performance.now();
+
+        // Единый аудиоснимок на кадр для мягкой модуляции (Предложение 4)
+        const audioSnap = audioSync.getSnapshot(simTimeSec);
+        const highSparkBoost =
+            uState.reducedMotion || audioSnap.high < 0.06
+                ? 0.0
+                : Math.min(0.24, (audioSnap.high - 0.06) * 0.85);
 
         sceneBuffer.snapshotPreviousPositions(this.particles.length);
 
@@ -529,6 +495,14 @@ export class VoidPhaseSimulation {
             p.y += dy * springRate;
             p.energy += (targetEnergy - p.energy) * Math.min(1.0, dt * 3.6);
 
+            // Тонкие звёздные искры от высоких частот (high band) на частицах переднего/среднего плана
+            if (highSparkBoost > 0 && i % 11 === 0) {
+                p.synapticCharge = Math.min(
+                    1.0,
+                    Math.max(p.synapticCharge, highSparkBoost * 0.85)
+                );
+            }
+
             if (p.synapticCharge > 0) {
                 p.synapticCharge = Math.max(0, p.synapticCharge - dt * 1.05);
             }
@@ -578,8 +552,6 @@ export class VoidPhaseSimulation {
             uState.seed
         );
 
-        // Обновляем только физические показатели (без phaseElapsedSec),
-        // чтобы не вызывать двойное продвижение часов внутри одного кадра
         universeStore.updateTelemetry({
             tick: this.tickCounter,
             physicsStepMs: Number(physTelemetry.stepDurationMs.toFixed(2)),
@@ -588,15 +560,14 @@ export class VoidPhaseSimulation {
         });
 
         this.updateTopologyAndEdgeCurves(dt, phase, simTimeSec, uState.seed);
-        this.updateSynapticPulsesByArcLut(dt, phase, nowMs);
+        this.updateSynapticPulsesByArcLut(
+            dt,
+            phase,
+            nowMs,
+            uState.reducedMotion ? 0 : audioSnap.mid
+        );
     }
-    // --- КОНЕЦ ФУНКЦИИ update ---
 
-    // ============================================================================
-    // РАЗДЕЛ 4. ТОПОЛОГИЯ ГРАФА NEXUS И ДВИЖЕНИЕ СИНАПТИЧЕСКИХ ИМПУЛЬСОВ
-    // ============================================================================
-
-    // --- НАЧАЛО ФУНКЦИИ updateTopologyAndEdgeCurves ---
     private updateTopologyAndEdgeCurves(
         dt: number,
         phase: PhaseId,
@@ -706,10 +677,13 @@ export class VoidPhaseSimulation {
             };
         });
     }
-    // --- КОНЕЦ ФУНКЦИИ updateTopologyAndEdgeCurves ---
 
-    // --- НАЧАЛО ФУНКЦИИ updateSynapticPulsesByArcLut ---
-    private updateSynapticPulsesByArcLut(dt: number, phase: PhaseId, nowMs: number): void {
+    private updateSynapticPulsesByArcLut(
+        dt: number,
+        phase: PhaseId,
+        nowMs: number,
+        audioMidBand = 0
+    ): void {
         if (this.edges.length === 0) {
             this.pulses = [];
             return;
@@ -726,11 +700,19 @@ export class VoidPhaseSimulation {
                             ? 82
                             : 36;
 
+        // Полоса средних частот (mid band) мягко усиливает яркость новых импульсов в пределах [0.88 -. 1.0]
+        const midIntensityMod = Math.min(1.0, 0.88 + Math.max(0, audioMidBand - 0.08) * 0.35);
+
         if (this.pulses.length < maxPulses && this.prng.nextFloat() < 0.85) {
             const candidateIdx = this.prng.nextU32() % this.edges.length;
             const candidate = this.edges[candidateIdx];
             if (candidate && candidate.arcLength > 12.0) {
-                this.spawnPulseOnEdge(candidate, this.prng.nextFloat() > 0.5, 1.0, 2);
+                this.spawnPulseOnEdge(
+                    candidate,
+                    this.prng.nextFloat() > 0.5,
+                    midIntensityMod,
+                    2
+                );
             }
         }
 
@@ -788,9 +770,7 @@ export class VoidPhaseSimulation {
             }
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ updateSynapticPulsesByArcLut ---
 
-    // --- НАЧАЛО ФУНКЦИИ spawnPulseOnEdge ---
     private spawnPulseOnEdge(
         edge: TopologyEdge,
         forward: boolean,
@@ -833,9 +813,7 @@ export class VoidPhaseSimulation {
             cascadeDepth,
         });
     }
-    // --- КОНЕЦ ФУНКЦИИ spawnPulseOnEdge ---
 
-    // --- НАЧАЛО ФУНКЦИИ triggerCascadeFromNode ---
     private triggerCascadeFromNode(
         nodeIndex: number,
         prevIndex: number,
@@ -854,9 +832,7 @@ export class VoidPhaseSimulation {
             }
         }
     }
-    // --- КОНЕЦ ФУНКЦИИ triggerCascadeFromNode ---
 
-    // --- НАЧАЛО ФУНКЦИИ samplePulsePoint ---
     public samplePulsePoint(
         pulse: SynapticPulse,
         arcFraction: number
@@ -872,23 +848,17 @@ export class VoidPhaseSimulation {
             arcFraction
         );
     }
-    // --- КОНЕЦ ФУНКЦИИ samplePulsePoint ---
 
-    // --- НАЧАЛО ФУНКЦИИ getParticles ---
     public getParticles(): ReadonlyArray<QuantumParticle> {
         return this.particles;
     }
-    // --- КОНЕЦ ФУНКЦИИ getParticles ---
 
-    // --- НАЧАЛО ФУНКЦИИ getEdges ---
     public getEdges(): ReadonlyArray<TopologyEdge> {
         return this.edges;
     }
-    // --- КОНЕЦ ФУНКЦИИ getEdges ---
 
-    // --- НАЧАЛО ФУНКЦИИ getPulses ---
     public getPulses(): ReadonlyArray<SynapticPulse> {
         return this.pulses;
     }
-    // --- КОНЕЦ ФУНКЦИИ getPulses ---
 }
+

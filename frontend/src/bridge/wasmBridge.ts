@@ -3,9 +3,10 @@
 // ФАЙЛ: frontend/src/bridge/wasmBridge.ts
 // НАЗНАЧЕНИЕ: Мост Rust/WebAssembly и детерминированное симплектическое ядро (v2.5)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Загружать и валидировать physics_engine.wasm при явном запросе (?wasm=1).
-// 2. Вычислять истинный относительный дрейф полной механической энергии ΔE/E₀
-//    в симплектической схеме Velocity Verlet без искусственных констант и зажимов.
+// 1. Загружать и валидировать полный C-ABI контракт physics_engine.wasm при (?wasm=1).
+// 2. Интегрировать орбиты Velocity Verlet серией устойчивых подшагов (subSteps * subDt === safeDt),
+//    полностью исключая потерю времени шага при любой частоте кадров (20..144 FPS).
+// 3. Вычислять истинный относительный дрейф полной механической энергии ΔE/E₀.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -14,16 +15,16 @@ import type { SceneBufferSoA } from '../core/sceneBuffer';
 
 export interface RustWasmExports {
     memory: WebAssembly.Memory;
-    init_bodies?: (seed: number, count: number) => number;
-    step_verlet_nbody?: (
+    init_bodies: (seed: number, count: number) => number;
+    step_verlet_nbody: (
         dt: number,
         gravity: number,
         kuramotoCoupling: number
     ) => number;
-    get_positions_ptr?: () => number;
-    get_velocities_ptr?: () => number;
-    get_energy_drift?: () => number;
-    get_kuramoto_r?: () => number;
+    get_positions_ptr: () => number;
+    get_velocities_ptr: () => number;
+    get_energy_drift: () => number;
+    get_kuramoto_r: () => number;
 }
 
 export interface PhysicsStepTelemetry {
@@ -38,6 +39,7 @@ export interface PhysicsStepTelemetry {
 const VERLET_ENSEMBLE_COUNT = 64;
 const GM_CONSERVATIVE = 4900.0;
 const PLUMMER_SOFTENING_SQ = 64.0;
+const MAX_STABLE_SUBSTEP_SEC = 0.004;
 
 export class WasmPhysicsBridge {
     private wasmExports: RustWasmExports | null = null;
@@ -50,16 +52,13 @@ export class WasmPhysicsBridge {
     private verletOrbitPos: Float32Array = new Float32Array(VERLET_ENSEMBLE_COUNT * 2);
     private verletOrbitVel: Float32Array = new Float32Array(VERLET_ENSEMBLE_COUNT * 2);
     private baselineTotalEnergy = 0;
+    private integratedSimSec = 0;
     private isInitialized = false;
 
     constructor(initialSeed = 104729) {
         this.initKuramotoOscillators(initialSeed);
     }
 
-    /**
-     * Вычисляет полную механическую энергию (кинетическую + потенциальную Пламмера)
-     * контрольного ансамбля орбит.
-     */
     private computeEnsembleTotalEnergy(): number {
         let totalEnergy = 0;
         for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
@@ -101,7 +100,25 @@ export class WasmPhysicsBridge {
         }
 
         this.baselineTotalEnergy = this.computeEnsembleTotalEnergy();
+        this.integratedSimSec = 0;
         this.isInitialized = true;
+    }
+
+    /**
+     * Проверяет, что переданный объект экспортов WASM реализует полный C-ABI контракт.
+     */
+    public static validateWasmExportsContract(
+        exports: Partial<RustWasmExports> | null | undefined
+    ): exports is RustWasmExports {
+        if (!exports || !exports.memory) return false;
+        return (
+            typeof exports.init_bodies === 'function' &&
+            typeof exports.step_verlet_nbody === 'function' &&
+            typeof exports.get_positions_ptr === 'function' &&
+            typeof exports.get_velocities_ptr === 'function' &&
+            typeof exports.get_energy_drift === 'function' &&
+            typeof exports.get_kuramoto_r === 'function'
+        );
     }
 
     public async tryLoadWasmModule(seed: number, entityCount: number): Promise<boolean> {
@@ -163,15 +180,9 @@ export class WasmPhysicsBridge {
             }
 
             const instantiated = await WebAssembly.instantiate(bytes, { env: {} });
-            const exports = instantiated.instance.exports as unknown as RustWasmExports;
+            const rawExports = instantiated.instance.exports as Partial<RustWasmExports>;
 
-            if (
-                !exports ||
-                !exports.memory ||
-                typeof exports.step_verlet_nbody !== 'function' ||
-                typeof exports.get_positions_ptr !== 'function' ||
-                typeof exports.get_velocities_ptr !== 'function'
-            ) {
+            if (!WasmPhysicsBridge.validateWasmExportsContract(rawExports)) {
                 integrationRegistry.updateModuleStatus(
                     'wasm-physics',
                     'fallback',
@@ -180,10 +191,8 @@ export class WasmPhysicsBridge {
                 return false;
             }
 
-            this.wasmExports = exports;
-            if (exports.init_bodies) {
-                exports.init_bodies(seed >>> 0, entityCount >>> 0);
-            }
+            this.wasmExports = rawExports;
+            this.wasmExports.init_bodies(seed >>> 0, entityCount >>> 0);
 
             if (!this.refreshMemoryViewsIfNeeded(entityCount)) {
                 this.wasmExports = null;
@@ -209,11 +218,7 @@ export class WasmPhysicsBridge {
     }
 
     private refreshMemoryViewsIfNeeded(entityCount: number): boolean {
-        if (
-            !this.wasmExports ||
-            !this.wasmExports.get_positions_ptr ||
-            !this.wasmExports.get_velocities_ptr
-        ) {
+        if (!this.wasmExports) {
             return false;
         }
 
@@ -228,6 +233,8 @@ export class WasmPhysicsBridge {
             const floatLen = entityCount * 3;
 
             if (
+                posPtr === 0 ||
+                velPtr === 0 ||
                 posPtr % 4 !== 0 ||
                 velPtr % 4 !== 0 ||
                 posPtr + floatLen * 4 > currentBuffer.byteLength ||
@@ -266,7 +273,7 @@ export class WasmPhysicsBridge {
         const b2y = centerY - Math.sin(orbitAngle) * sepY * 1.06;
 
         if (
-            this.wasmExports?.step_verlet_nbody &&
+            this.wasmExports &&
             this.refreshMemoryViewsIfNeeded(count) &&
             this.wasmPosView &&
             this.wasmVelView
@@ -284,12 +291,8 @@ export class WasmPhysicsBridge {
                 }
             }
 
-            const drift = this.wasmExports.get_energy_drift
-                ? this.wasmExports.get_energy_drift()
-                : 0.0;
-            const rOrder = this.wasmExports.get_kuramoto_r
-                ? this.wasmExports.get_kuramoto_r()
-                : 0.78;
+            const drift = this.wasmExports.get_energy_drift();
+            const rOrder = this.wasmExports.get_kuramoto_r();
             const dur = performance.now() - startMs;
             integrationRegistry.recordModuleStep(
                 'wasm-physics',
@@ -308,74 +311,90 @@ export class WasmPhysicsBridge {
             };
         }
 
+        const safeDt =
+            Number.isFinite(fixedDt) && fixedDt > 0 ? Math.min(0.05, fixedDt) : 0;
+
+        if (safeDt > 0) {
+            // Разбиваем safeDt на целое число малых симплектических подшагов (<= 4 мс),
+            // чтобы сумма subSteps * subDt в точности равнялась safeDt без потери времени
+            const subSteps = Math.max(1, Math.ceil(safeDt / MAX_STABLE_SUBSTEP_SEC));
+            const subDt = safeDt / subSteps;
+            const halfDt = 0.5 * subDt;
+            const halfDtSq = 0.5 * subDt * subDt;
+
+            for (let step = 0; step < subSteps; step++) {
+                let stepCos = 0;
+                let stepSin = 0;
+                for (let i = 0; i < count; i++) {
+                    stepCos += Math.cos(this.kuramotoPhases[i]);
+                    stepSin += Math.sin(this.kuramotoPhases[i]);
+                }
+                const stepMeanAngle = Math.atan2(
+                    stepSin / Math.max(1, count),
+                    stepCos / Math.max(1, count)
+                );
+
+                for (let i = 0; i < count; i++) {
+                    const theta = this.kuramotoPhases[i];
+                    const dTheta =
+                        this.naturalOmegas[i] +
+                        kuramotoCouplingK * Math.sin(stepMeanAngle - theta);
+                    const nextTheta = (theta + dTheta * subDt) % (Math.PI * 2);
+                    this.kuramotoPhases[i] =
+                        nextTheta < 0 ? nextTheta + Math.PI * 2 : nextTheta;
+                }
+
+                for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
+                    const i2 = i * 2;
+                    const px = this.verletOrbitPos[i2];
+                    const py = this.verletOrbitPos[i2 + 1];
+                    const vx = this.verletOrbitVel[i2];
+                    const vy = this.verletOrbitVel[i2 + 1];
+
+                    const r0Sq = px * px + py * py + PLUMMER_SOFTENING_SQ;
+                    const r0 = Math.sqrt(r0Sq);
+                    const invR0Cubed = 1.0 / (r0Sq * r0);
+                    const ax0 = -GM_CONSERVATIVE * px * invR0Cubed;
+                    const ay0 = -GM_CONSERVATIVE * py * invR0Cubed;
+
+                    const nextPx = px + vx * subDt + ax0 * halfDtSq;
+                    const nextPy = py + vy * subDt + ay0 * halfDtSq;
+
+                    const r1Sq = nextPx * nextPx + nextPy * nextPy + PLUMMER_SOFTENING_SQ;
+                    const r1 = Math.sqrt(r1Sq);
+                    const invR1Cubed = 1.0 / (r1Sq * r1);
+                    const ax1 = -GM_CONSERVATIVE * nextPx * invR1Cubed;
+                    const ay1 = -GM_CONSERVATIVE * nextPy * invR1Cubed;
+
+                    const nextVx = vx + (ax0 + ax1) * halfDt;
+                    const nextVy = vy + (ay0 + ay1) * halfDt;
+
+                    this.verletOrbitPos[i2] = nextPx;
+                    this.verletOrbitPos[i2 + 1] = nextPy;
+                    this.verletOrbitVel[i2] = nextVx;
+                    this.verletOrbitVel[i2 + 1] = nextVy;
+                }
+
+                this.integratedSimSec += subDt;
+            }
+        }
+
         let sumCos = 0;
         let sumSin = 0;
         for (let i = 0; i < count; i++) {
             sumCos += Math.cos(this.kuramotoPhases[i]);
             sumSin += Math.sin(this.kuramotoPhases[i]);
         }
-        const meanAngle = Math.atan2(
-            sumSin / Math.max(1, count),
-            sumCos / Math.max(1, count)
-        );
         const kuramotoOrderR = Math.min(
             1.0,
             Math.hypot(sumCos / Math.max(1, count), sumSin / Math.max(1, count))
         );
-
-        const safeDt = Number.isFinite(fixedDt) && fixedDt > 0 ? Math.min(0.05, fixedDt) : 0;
-
-        if (safeDt > 0) {
-            for (let i = 0; i < count; i++) {
-                const theta = this.kuramotoPhases[i];
-                const dTheta =
-                    this.naturalOmegas[i] +
-                    kuramotoCouplingK * Math.sin(meanAngle - theta);
-                this.kuramotoPhases[i] = (theta + dTheta * safeDt) % (Math.PI * 2);
-            }
-
-            const subDt = Math.min(0.008, safeDt * 0.5);
-            const halfDt = 0.5 * subDt;
-            const halfDtSq = 0.5 * subDt * subDt;
-
-            for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
-                const i2 = i * 2;
-                const px = this.verletOrbitPos[i2];
-                const py = this.verletOrbitPos[i2 + 1];
-                const vx = this.verletOrbitVel[i2];
-                const vy = this.verletOrbitVel[i2 + 1];
-
-                const r0Sq = px * px + py * py + PLUMMER_SOFTENING_SQ;
-                const r0 = Math.sqrt(r0Sq);
-                const invR0Cubed = 1.0 / (r0Sq * r0);
-                const ax0 = -GM_CONSERVATIVE * px * invR0Cubed;
-                const ay0 = -GM_CONSERVATIVE * py * invR0Cubed;
-
-                const nextPx = px + vx * subDt + ax0 * halfDtSq;
-                const nextPy = py + vy * subDt + ay0 * halfDtSq;
-
-                const r1Sq = nextPx * nextPx + nextPy * nextPy + PLUMMER_SOFTENING_SQ;
-                const r1 = Math.sqrt(r1Sq);
-                const invR1Cubed = 1.0 / (r1Sq * r1);
-                const ax1 = -GM_CONSERVATIVE * nextPx * invR1Cubed;
-                const ay1 = -GM_CONSERVATIVE * nextPy * invR1Cubed;
-
-                const nextVx = vx + (ax0 + ax1) * halfDt;
-                const nextVy = vy + (ay0 + ay1) * halfDt;
-
-                this.verletOrbitPos[i2] = nextPx;
-                this.verletOrbitPos[i2 + 1] = nextPy;
-                this.verletOrbitVel[i2] = nextVx;
-                this.verletOrbitVel[i2 + 1] = nextVy;
-            }
-        }
 
         const totalMechanicalEnergy = this.computeEnsembleTotalEnergy();
         if (this.baselineTotalEnergy === 0 && totalMechanicalEnergy !== 0) {
             this.baselineTotalEnergy = totalMechanicalEnergy;
         }
 
-        // Истинный относительный дрейф полной механической энергии ΔE/E₀ без искусственного зажима
         const measuredDrift =
             this.baselineTotalEnergy !== 0
                 ? Math.abs(
@@ -400,6 +419,15 @@ export class WasmPhysicsBridge {
 
     public getKuramotoPhase(index: number): number {
         return this.kuramotoPhases[index % this.kuramotoPhases.length] ?? 0;
+    }
+
+    public getOrbitPosition(orbitIndex: number): [number, number] {
+        const idx = Math.max(0, Math.min(VERLET_ENSEMBLE_COUNT - 1, orbitIndex)) * 2;
+        return [this.verletOrbitPos[idx], this.verletOrbitPos[idx + 1]];
+    }
+
+    public getIntegratedSimSec(): number {
+        return this.integratedSimSec;
     }
 
     public isInitializedReady(): boolean {

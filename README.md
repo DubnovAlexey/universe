@@ -2,7 +2,7 @@
 
 [![Live Demo](https://img.shields.io/badge/GitHub_Pages-Launch_Experience-38bdf8?style=for-the-badge&logo=github)](https://dubnovalexey.github.io/universe/)
 [![Author Profile](https://img.shields.io/badge/GitHub-Alexey_Dubnov-6366f1?style=for-the-badge&logo=github)](https://github.com/DubnovAlexey)
-[![Deterministic Core](https://img.shields.io/badge/Verification-14_TS_%7C_6_Python_%7C_5_Rust_Tests-f59e0b?style=for-the-badge)](#5-truth-policy--runtime-module-statuses)
+[![Deterministic Core](https://img.shields.io/badge/Verification-15_TS_%7C_6_Python_%7C_5_Rust_Tests-f59e0b?style=for-the-badge)](#5-truth-policy--runtime-module-statuses)
 [![License: MIT](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](#license)
 
 * **Live Interactive Presentation (GitHub Pages):** [https://dubnovalexey.github.io/universe/](https://dubnovalexey.github.io/universe/)
@@ -107,7 +107,7 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
 
 ---
 
-## 6. Quick Start & Automated Verification Commands (25 Checks Across TS, Python & Rust)
+## 6. Quick Start & Automated Verification Commands (26 Checks Across TS, Python & Rust)
 
     git clone https://github.com/DubnovAlexey/universe.git
     cd universe
@@ -127,7 +127,7 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
 
 ## 1. О проекте и философской концепции
 
-**UNIVERSE (Нейроверс)** — полноэкранная интерактивная научно-художественная аудиовизуальная инсталляция («Из Нуля в Ноль», непрерывный цикл 108 секунд) и архитектурная презентация **Runtime Polyglot**, созданная **Алексеем Дубновым (`DubnovAlexey`)** и развёрнутая на **GitHub Pages**.
+**UNIVERSE (Нейроверс)** — полноэкранная интерактивная научно-художественная аудиовизуальная инсталляция (непрерывный цикл 108 секунд) и архитектурная презентация **Runtime Polyglot**, созданная **Алексеем Дубновым (`DubnovAlexey`)** и развёрнутая на **GitHub Pages**.
 
 **Философская ось проекта:** Космическая красота (`ILLUSION`), возникающая нейронная сеть мозга (`NEXUS`) и вычислительная логика (`X-RAY / TRUTH`) — это **три оптических прочтения одного и того же детерминированного буфера состояния симуляции (`SceneBufferSoA`)**.
 
@@ -150,7 +150,7 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
 
 ---
 
-## 3. Локальный запуск и команды верификации (25 проверок: 14 TS + 6 Python + 5 Rust)
+## 3. Локальный запуск и команды верификации (26 проверок: 15 TS + 6 Python + 5 Rust)
 
     git clone https://github.com/DubnovAlexey/universe.git
     cd universe

@@ -1,16 +1,7 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/core/graph_logic.py
-# НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS (MST + Gabriel + Murray + BFS, v2.4)
-# АРХИТЕКТУРНЫЕ РАЗДЕЛЫ МОДУЛЯ (ДЛЯ ТЕХНИЧЕСКОГО ОБСЛУЖИВАНИЯ):
-# 1. DTO-структуры узлов, криволинейных рёбер Безье и метрик топологии графа.
-# 2. Расчёт 5-точечной таблицы длины дуги (build_bezier_arc_length_lut) для
-#    равномерного движения синаптических импульсов.
-# 3. Синтез 3 классов связей (AXON_TRUNK по алгоритму Прима, BRIDGE по критерию
-#    Габриэля и DENDRITE по закону Мюррея r_parent^3 = sum r_child^3).
-# 4. Подлинное вычисление коэффициента кластеризации (по замкнутым треугольникам)
-#    и диаметра/среднего пути графа методом обхода в ширину (BFS) в полном
-#    паритете с frontend/src/bridge/simulationWorker.ts.
+# НАЗНАЧЕНИЕ: Движок когнитивной топологии NEXUS (MST + Gabriel + Murray + BFS, v2.5)
 # ============================================================================
 
 from __future__ import annotations
@@ -132,10 +123,6 @@ def _compute_authentic_invariants(
         nodes: Sequence[GraphNodeDTO],
         edges: Sequence[ComputedEdgeDTO],
 ) -> tuple[float, int, float]:
-    """
-    Реально вычисляет коэффициент кластеризации Уоттса — Строгаца по треугольникам
-    и диаметр/средний путь графа через обход в ширину (BFS).
-    """
     n_total = len(nodes)
     if n_total < 3 or not edges:
         return 0.0, 0, 0.0
@@ -145,7 +132,6 @@ def _compute_authentic_invariants(
         adj.setdefault(edge.from_index, set()).add(edge.to_index)
         adj.setdefault(edge.to_index, set()).add(edge.from_index)
 
-    # 1. Истинный локальный коэффициент кластеризации
     sum_local_c = 0.0
     eligible_nodes = 0
     for neighbors in adj.values():
@@ -164,7 +150,6 @@ def _compute_authentic_invariants(
 
     clustering_coeff = round(sum_local_c / eligible_nodes, 3) if eligible_nodes > 0 else 0.0
 
-    # 2. Обход в ширину (BFS) для измерения реального диаметра и средней длины пути
     sample_stride = max(1, n_total // 28)
     max_hops = 0
     total_path_dist = 0
@@ -199,9 +184,6 @@ def compute_nexus_topology(
         sim_time_sec: float = 0.0,
         source_tag: str = "[python/server]",
 ) -> tuple[list[ComputedEdgeDTO], dict[int, int], GraphTopologyMetricsDTO]:
-    """
-    Строит детерминированную топологию NEXUS (MST + Gabriel + Murray) и честные метрики графа.
-    """
     t0 = time.perf_counter()
     edges: list[ComputedEdgeDTO] = []
     degree_by_index: dict[int, int] = {n.index: 0 for n in nodes}
@@ -221,19 +203,20 @@ def compute_nexus_topology(
         )
         return edges, degree_by_index, empty_metrics
 
-    # 1. КЛАСС A (AXON_TRUNK): Остовное дерево Прима по главным хабам
+    # 1. КЛАСС A (AXON_TRUNK): Остовное дерево Прима с сохранением порядка вставки (как в JS Set)
     hub_nodes = list(nodes[: min(36, len(nodes))])
-    in_tree: set[int] = {0}
+    in_tree_set: set[int] = {0}
+    in_tree_order: list[int] = [0]
 
-    while len(in_tree) < len(hub_nodes):
+    while len(in_tree_order) < len(hub_nodes):
         best_u = -1
         best_v = -1
         best_dist = max_connect_dist * 1.65
 
-        for u_idx in in_tree:
+        for u_idx in in_tree_order:
             u = hub_nodes[u_idx]
             for v_idx, v in enumerate(hub_nodes):
-                if v_idx in in_tree:
+                if v_idx in in_tree_set:
                     continue
                 d = math.hypot(v.x - u.x, v.y - u.y)
                 if d < best_dist:
@@ -244,7 +227,8 @@ def compute_nexus_topology(
         if best_u == -1 or best_v == -1:
             break
 
-        in_tree.add(best_v)
+        in_tree_set.add(best_v)
+        in_tree_order.append(best_v)
         node_a = hub_nodes[best_u]
         node_b = hub_nodes[best_v]
         key = f"{min(node_a.node_id, node_b.node_id)}_{max(node_a.node_id, node_b.node_id)}"

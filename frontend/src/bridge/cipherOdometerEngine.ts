@@ -3,25 +3,10 @@
 // ФАЙЛ: frontend/src/bridge/cipherOdometerEngine.ts
 // НАЗНАЧЕНИЕ: Движок квантового одометра и персональной визитки v2.5 (MASTER 05)
 // ============================================================================
-// ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Канонические строки визитки (CANONICAL_FINALE_LINES) с выделенной
-//             первой строкой автора ('DUBNOV ALEXEY'), честным описанием стека
-//             и 10-тоновой холодной палитрой полутонов (MONOCHROME_NEBULA_PALETTE).
-//   РАЗДЕЛ 2. Контракт состояния ячейки барабана (OdometerGlyphCellState).
-//   РАЗДЕЛ 3. Класс CipherOdometerEngine:
-//     - Подраздел 3.1. Накопление монотонной фазы вращения с учётом паузы
-//                      (isPaused / isTabHidden) и ограниченной частотой.
-//     - Подраздел 3.2. Развёртывание символов строго из центральной Точки Нуля (cx, cy)
-//                      и верификация отсутствия клиппинга на ширинах 320..1920 px.
-// ============================================================================
 
 import { DeterministicPRNG } from '../core/prng';
 import { smootherstep, universeStore } from '../store/universeState';
 import { audioSync } from '../utils/audioSync';
-
-// ============================================================================
-// РАЗДЕЛ 1. КАНОНИЧЕСКИЕ СТРОКИ ВИЗИТКИ И МНОГОСЛОЙНАЯ ТЕНЕВАЯ ПАЛИТРА
-// ============================================================================
 
 export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
     'DUBNOV ALEXEY',
@@ -93,10 +78,6 @@ const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
     },
 ];
 
-// ============================================================================
-// РАЗДЕЛ 2. СТРУКТУРА СОСТОЯНИЯ ЯЧЕЙКИ БАРАБАНА ОДОМЕТРА
-// ============================================================================
-
 export interface OdometerGlyphCellState {
     lineIndex: number;
     charIndex: number;
@@ -121,10 +102,6 @@ export interface OdometerGlyphCellState {
     glyphBreathAlpha: number;
 }
 
-// ============================================================================
-// РАЗДЕЛ 3. КЛАСС ДВИЖКА ОДОМЕТРА И ВИЗИТКИ (CipherOdometerEngine)
-// ============================================================================
-
 export class CipherOdometerEngine {
     private pointerX = -9999;
     private pointerY = -9999;
@@ -133,18 +110,21 @@ export class CipherOdometerEngine {
     private lfoClockSec = 0;
     private lastEvalTimeSec = -1;
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.1. НАКОПЛЕНИЕ ОГРАНИЧЕННОЙ ФАЗЫ И ТИПОГРАФИКА СТРОК
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ notifyPointerHover ---
     public notifyPointerHover(clientX: number, clientY: number): void {
         this.pointerX = clientX;
         this.pointerY = clientY;
     }
-    // --- КОНЕЦ ФУНКЦИИ notifyPointerHover ---
 
-    // --- НАЧАЛО ФУНКЦИИ getLineTypography ---
+    public resetClockForTest(startSec = 0): void {
+        this.accumulatedSpinPhase = 0;
+        this.lfoClockSec = 0;
+        this.lastEvalTimeSec = startSec;
+    }
+
+    public getAccumulatedSpinPhase(): number {
+        return this.accumulatedSpinPhase;
+    }
+
     private getLineTypography(
         lineIndex: number,
         charCount: number,
@@ -199,15 +179,12 @@ export class CipherOdometerEngine {
 
         return { fontSizePx, stepWidthPx, colorHex, fontWeight };
     }
-    // --- КОНЕЦ ФУНКЦИИ getLineTypography ---
 
-    // --- НАЧАЛО ФУНКЦИИ advanceBoundedSpinPhase ---
     /**
-     * Монотонно накапливает фазу вращения барабанов через приращение dtSec
-     * с учётом флагов isPaused / isTabHidden и жёстко ограниченной положительной
-     * частотой [6.5 .. 10.5] Гц на символ. Скорость не зависит от uptime страницы.
+     * Монотонно накапливает базовую фазу квантового барабана через приращение dtSec
+     * в едином диапазоне [18.0 .. 26.0] Гц (в полном паритете с Layer5_CipherFinale.tsx).
      */
-    private advanceBoundedSpinPhase(
+    public advanceBoundedSpinPhase(
         liveTimeSec: number,
         reducedMotion: boolean,
         isSimActive: boolean,
@@ -232,27 +209,22 @@ export class CipherOdometerEngine {
         }
 
         const lfoMod =
-            1.4 * Math.sin(this.lfoClockSec * 0.85) +
-            0.8 * Math.cos(this.lfoClockSec * 1.75);
+            3.2 * Math.sin(this.lfoClockSec * 0.85) +
+            1.8 * Math.cos(this.lfoClockSec * 1.75);
         const boundedRateHz = Math.max(
-            6.5,
-            Math.min(10.5, 8.2 + lfoMod + heartbeat * 1.1)
+            18.0,
+            Math.min(26.0, 21.5 + lfoMod + heartbeat * 2.5)
         );
         this.accumulatedSpinPhase += clampedDt * boundedRateHz;
         return this.accumulatedSpinPhase;
     }
-    // --- КОНЕЦ ФУНКЦИИ advanceBoundedSpinPhase ---
 
-    // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 3.2. ВЫЧИСЛЕНИЕ ЯЧЕЕК ОДОМЕТРА И ПРОВЕРКА ВЁРСТКИ
-    // ------------------------------------------------------------------------
-
-    // --- НАЧАЛО ФУНКЦИИ evaluateCells ---
     public evaluateCells(
         viewportWidth: number,
         viewportHeight: number,
         assemblyProgress: number,
-        reducedMotion: boolean
+        reducedMotion: boolean,
+        overrideLiveTimeSec?: number
     ): OdometerGlyphCellState[] {
         const p = Math.max(0, Math.min(1, assemblyProgress));
         const uState = universeStore.getState();
@@ -260,7 +232,12 @@ export class CipherOdometerEngine {
         const isSimActive = !uState.isPaused && !uState.isTabHidden;
         const cx = viewportWidth * 0.5;
         const cy = viewportHeight * 0.5;
-        const nowMs = typeof performance !== 'undefined' ? performance.now() : p * 10000;
+        const nowMs =
+            overrideLiveTimeSec !== undefined
+                ? overrideLiveTimeSec * 1000
+                : typeof performance !== 'undefined'
+                    ? performance.now()
+                    : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
         const audioSnap = audioSync.getSnapshot(this.lfoClockSec);
@@ -345,8 +322,10 @@ export class CipherOdometerEngine {
                     ? smootherstep(0, 860, hoverRemainingMs) * 2.4
                     : 0.0;
 
+                // Индивидуальный делитель слота (0.5 или 0.35), дающий ~8–11 видимых смен символа/с
+                const slotFactor = cIdx % 3 === 0 ? 0.5 : 0.38;
                 const cellWheelPos =
-                    baseSpinPhase * (0.85 + r1 * 0.45) +
+                    baseSpinPhase * slotFactor +
                     cIdx * 0.35 +
                     r2 * 12.0 +
                     hoverSpeedBoost;
@@ -371,7 +350,8 @@ export class CipherOdometerEngine {
                     : QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs) % nGlyphs];
                 const upperChar =
                     QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs - 1) % nGlyphs];
-                const lowerChar = QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + 1) % nGlyphs];
+                const lowerChar =
+                    QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + 1) % nGlyphs];
 
                 let cellColor = typo.colorHex;
                 let shadowColor =
@@ -384,7 +364,7 @@ export class CipherOdometerEngine {
                 if (isEndlessLine || isHoverSpinning || !isLocked) {
                     const shadeWave =
                         Math.floor(
-                            baseSpinPhase * 0.9 +
+                            baseSpinPhase * 0.45 +
                             cIdx * 0.7 +
                             lineIdx * 1.7 +
                             r1 * 5.0
@@ -454,9 +434,7 @@ export class CipherOdometerEngine {
 
         return cells;
     }
-    // --- КОНЕЦ ФУНКЦИИ evaluateCells ---
 
-    // --- НАЧАЛО ФУНКЦИИ verifyFinalLockedText ---
     public verifyFinalLockedText(viewportWidth = 1280, viewportHeight = 720): boolean {
         this.pointerX = -9999;
         this.pointerY = -9999;
@@ -471,7 +449,6 @@ export class CipherOdometerEngine {
                 c.targetX <= viewportWidth - 8
         );
     }
-    // --- КОНЕЦ ФУНКЦИИ verifyFinalLockedText ---
 }
 
 export const cipherOdometerEngine = new CipherOdometerEngine();

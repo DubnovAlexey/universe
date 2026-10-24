@@ -61,7 +61,7 @@ jobs:
         working-directory: ./frontend
         run: npm run typecheck
 
-      - name: Run Universe Verification & Regression Suite (14 invariants)
+      - name: Run Universe Verification & Regression Suite (15 invariants)
         working-directory: ./frontend
         run: npm test
 

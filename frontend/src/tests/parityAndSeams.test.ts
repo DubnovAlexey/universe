@@ -2,8 +2,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/parityAndSeams.test.ts
 // НАЗНАЧЕНИЕ: Автоматический набор регрессионных проверок паритета, бинарного
-//             протокола, честного дрейфа энергии, таймлайна 5-й фазы, одометра
-//             и жизненного цикла ресурсов (UNIVERSE v2.5 — 14 инвариантов)
+//             протокола, шага времени Velocity Verlet, графа NEXUS (TS == Python),
+//             таймлайна 5-й фазы, скорости одометра и ресурсов (15 инвариантов)
 // ============================================================================
 
 import {
@@ -19,8 +19,9 @@ import {
 } from '../core/sceneBuffer';
 import { EntityKindCode } from '../core/contracts';
 import { resourceLedger } from '../core/resourceLedger';
-import { wasmPhysicsBridge } from '../bridge/wasmBridge';
+import { WasmPhysicsBridge, wasmPhysicsBridge } from '../bridge/wasmBridge';
 import {
+    NexusGraphEngine,
     nexusGraphEngine,
     type GraphNodeInput,
 } from '../bridge/simulationWorker';
@@ -153,7 +154,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 5. ПРОВЕРКА ЧЕСТНОГО ОТНОСИТЕЛЬНОГО ДРЕЙФА ЭНЕРГИИ ΔE/E₀ (БЕЗ ЗАЖИМОВ)
+    // 5. ПРОВЕРКА ЧЕСТНОГО ДРЕЙФА ЭНЕРГИИ ΔE/E₀ И КОНТРАКТА C-ABI WASM
     // ------------------------------------------------------------------------
     wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
     const zeroDtStep = wasmPhysicsBridge.stepSymplecticPhysics(
@@ -178,64 +179,105 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         1080,
         1.0
     );
+    const incompleteWasmRejected = !WasmPhysicsBridge.validateWasmExportsContract({
+        memory: {} as WebAssembly.Memory,
+    });
     check(
         zeroDtStep.energyDriftRatio === 0 &&
         activeDtStep.energyDriftRatio > 0 &&
         activeDtStep.energyDriftRatio < 0.01 &&
         activeDtStep.kuramotoOrderR > 0 &&
-        activeDtStep.kuramotoOrderR <= 1.0,
-        `Symplectic Velocity Verlet reports true ΔE/E₀ (0.0 at dt=0, ${activeDtStep.energyDriftRatio.toExponential(2)} at dt=16ms)`
+        activeDtStep.kuramotoOrderR <= 1.0 &&
+        incompleteWasmRejected,
+        `Symplectic Velocity Verlet reports true ΔE/E₀ (0.0 at dt=0, ${activeDtStep.energyDriftRatio.toExponential(2)} at dt=16ms) and validates full WASM ABI`
     );
 
     // ------------------------------------------------------------------------
-    // 6. ПРОВЕРКА ЭТАЛОННОГО 24-УЗЛОВОГО ГРАФА NEXUS (ПАРИТЕТ С PYTHON)
+    // 6. ПРОВЕРКА ОТСУТСТВИЯ ПОТЕРИ ВРЕМЕНИ ШАГА (2x8ms == 1x16ms == 4x4ms)
     // ------------------------------------------------------------------------
-    const rng24 = new DeterministicPRNG(GOLDEN_SEED);
-    const nodes24: GraphNodeInput[] = [];
-    for (let i = 0; i < 24; i++) {
-        const x = rng24.nextRange(-320.0, 320.0);
-        const y = rng24.nextRange(-240.0, 240.0);
-        const _z = rng24.nextRange(0.1, 1.5);
-        const _vx = rng24.nextRange(-18.0, 18.0);
-        const _vy = rng24.nextRange(-18.0, 18.0);
-        const e = rng24.nextRange(0.3, 0.95);
-        nodes24.push({
-            index: i,
-            id: i,
-            x,
-            y,
-            clusterId: i % 6,
-            energy: e,
-        });
-    }
-    const graph24 = nexusGraphEngine.buildDeterministicGraph(
-        nodes24,
+    wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
+    wasmPhysicsBridge.stepSymplecticPhysics(bufA, 16, 0.016, 0.016, 960, 540, 1920, 1080, 1.0);
+    const posAfter1x16 = wasmPhysicsBridge.getOrbitPosition(0);
+    const simSec1x16 = wasmPhysicsBridge.getIntegratedSimSec();
+
+    wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
+    wasmPhysicsBridge.stepSymplecticPhysics(bufA, 16, 0.008, 0.008, 960, 540, 1920, 1080, 1.0);
+    wasmPhysicsBridge.stepSymplecticPhysics(bufA, 16, 0.008, 0.016, 960, 540, 1920, 1080, 1.0);
+    const posAfter2x8 = wasmPhysicsBridge.getOrbitPosition(0);
+    const simSec2x8 = wasmPhysicsBridge.getIntegratedSimSec();
+
+    check(
+        Math.abs(simSec1x16 - 0.016) < 1e-6 &&
+        Math.abs(simSec2x8 - 0.016) < 1e-6 &&
+        Math.abs(posAfter1x16[0] - posAfter2x8[0]) < 1e-5 &&
+        Math.abs(posAfter1x16[1] - posAfter2x8[1]) < 1e-5,
+        `Velocity Verlet multi-substep integrator preserves full dt without loss (1x16ms == 2x8ms, integrated=${simSec1x16.toFixed(3)}s)`
+    );
+
+    // ------------------------------------------------------------------------
+    // 7. ТОЧНЫЙ КРОСС-ЯЗЫКОВОЙ ПАРИТЕТ ГРАФА NEXUS С PYTHON (6-NODE FIXTURE)
+    // ------------------------------------------------------------------------
+    const lutCheck = NexusGraphEngine.buildBezierArcLengthLUT(0, 0, 50, 30, 100, 0);
+    const lutExactOk =
+        lutCheck.arcLength === 114.36 &&
+        lutCheck.lut[0] === 0 &&
+        lutCheck.lut[1] === 29.59 &&
+        lutCheck.lut[2] === 57.18 &&
+        lutCheck.lut[3] === 84.77 &&
+        lutCheck.lut[4] === 114.36;
+
+    const fixture6: GraphNodeInput[] = [
+        { index: 0, id: 0, x: 0.0, y: 0.0, clusterId: 0, energy: 0.9 },
+        { index: 1, id: 1, x: 80.0, y: 0.0, clusterId: 0, energy: 0.8 },
+        { index: 2, id: 2, x: 40.0, y: 80.0, clusterId: 0, energy: 0.85 },
+        { index: 3, id: 3, x: 160.0, y: 0.0, clusterId: 1, energy: 0.75 },
+        { index: 4, id: 4, x: 240.0, y: 0.0, clusterId: 1, energy: 0.7 },
+        { index: 5, id: 5, x: 200.0, y: 80.0, clusterId: 1, energy: 0.8 },
+    ];
+    const graph6 = nexusGraphEngine.buildDeterministicGraph(
+        fixture6,
         220.0,
         GOLDEN_SEED,
-        1.0
+        0.0
     );
-    const tel24 = nexusGraphEngine.getLastTelemetry();
-    const lutMonotonic = graph24.edges.every(
-        (e) =>
-            e.lengthLUT[0] === 0 &&
-            e.lengthLUT[1] <= e.lengthLUT[2] &&
-            e.lengthLUT[2] <= e.lengthLUT[3] &&
-            e.lengthLUT[3] <= e.lengthLUT[4] &&
-            e.arcLength >= 1.0
-    );
+    const tel6 = nexusGraphEngine.getLastTelemetry();
+    const expectedIds = ['0_1', '1_3', '3_4', '0_2', '3_5', '1_2', '2_5', '4_5'];
+    const expectedClasses = [
+        'AXON_TRUNK',
+        'AXON_TRUNK',
+        'AXON_TRUNK',
+        'AXON_TRUNK',
+        'AXON_TRUNK',
+        'DENDRITE',
+        'BRIDGE',
+        'DENDRITE',
+    ];
+    const expectedRadii = [1.95, 1.95, 1.95, 1.95, 1.95, 1.14, 1.35, 1.31];
+
+    const idsMatch =
+        graph6.edges.length === expectedIds.length &&
+        graph6.edges.every(
+            (e, idx) =>
+                e.id === expectedIds[idx] &&
+                e.edgeClass === expectedClasses[idx] &&
+                e.murrayRadiusPx === expectedRadii[idx]
+        );
+    const metricsMatchPython =
+        tel6.trunkCount === 5 &&
+        tel6.bridgeCount === 1 &&
+        tel6.dendriteCount === 2 &&
+        tel6.avgDegree === 2.67 &&
+        tel6.clusteringCoeff === 0.556 &&
+        tel6.diameterHops === 3 &&
+        tel6.avgPathLength === 1.6;
+
     check(
-        graph24.edges.length > 0 &&
-        tel24.trunkCount > 0 &&
-        tel24.trunkCount + tel24.bridgeCount + tel24.dendriteCount ===
-        graph24.edges.length &&
-        tel24.diameterHops > 0 &&
-        tel24.avgPathLength > 0 &&
-        lutMonotonic,
-        `NEXUS 24-Node Reference Graph Parity (edges=${graph24.edges.length}, trunks=${tel24.trunkCount}, diameter=${tel24.diameterHops})`
+        lutExactOk && idsMatch && metricsMatchPython,
+        `Cross-Language NEXUS Graph Exact Parity with Python (edges=[${expectedIds.join(',')}], C=${tel6.clusteringCoeff}, D=${tel6.diameterHops})`
     );
 
     // ------------------------------------------------------------------------
-    // 7–10. ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
+    // 8–11. ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
     // ------------------------------------------------------------------------
     pythonSocketClient.resetSession();
 
@@ -280,7 +322,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 11–12. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX И ПАУЗА)
+    // 12–13. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX, СКОРОСТЬ 18..26 ГЦ И ПАУЗА)
     // ------------------------------------------------------------------------
     const testWidths = [320, 360, 390, 768, 1280, 1920];
     let allWidthsValid = true;
@@ -305,11 +347,19 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         'CipherOdometerEngine locks all static lines and author header without clipping (320px..1920px)'
     );
 
-    if (!universeStore.getState().isPaused) {
+    // Измеряем реальную скорость накопления фазы за 1.0 с (50 кадров по 20 мс)
+    if (universeStore.getState().isPaused) {
         universeStore.togglePause();
     }
-    const pausedCellsA = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false);
-    const pausedCellsB = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false);
+    cipherOdometerEngine.resetClockForTest(10.0);
+    for (let step = 1; step <= 50; step++) {
+        cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false, 10.0 + step * 0.02);
+    }
+    const measuredHzOver1Sec = cipherOdometerEngine.getAccumulatedSpinPhase();
+
+    universeStore.togglePause();
+    const pausedCellsA = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false, 12.0);
+    const pausedCellsB = cipherOdometerEngine.evaluateCells(1280, 720, 1.0, false, 12.5);
     const pauseFrozenOk =
         pausedCellsA.length > 0 &&
         pausedCellsA.every(
@@ -317,16 +367,17 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
                 cell.wheelPhaseFrac === pausedCellsB[idx].wheelPhaseFrac &&
                 cell.primaryChar === pausedCellsB[idx].primaryChar
         );
-    if (universeStore.getState().isPaused) {
-        universeStore.togglePause();
-    }
+    universeStore.togglePause();
+
     check(
+        measuredHzOver1Sec >= 18.0 &&
+        measuredHzOver1Sec <= 26.0 &&
         pauseFrozenOk,
-        'CipherOdometerEngine freezes quantum wheel phase while simulation is paused'
+        `CipherOdometerEngine base spin rate is strictly within [18..26] Hz (measured=${measuredHzOver1Sec.toFixed(2)} Hz) and freezes on pause`
     );
 
     // ------------------------------------------------------------------------
-    // 13. РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
+    // 14. РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
     // ------------------------------------------------------------------------
     universeStore.setPhase('05_SINGULARITY');
     universeStore.updateTelemetry({
@@ -367,7 +418,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 14. RESOURCELEDGER (UNDERFLOW / DISPOSER ERRORS) И 10 ЦИКЛОВ RESTART
+    // 15. RESOURCELEDGER (ZERO-ALLOWANCE LEAK CHECK, UNDERFLOW & 10X RESTART)
     // ------------------------------------------------------------------------
     resourceLedger.setBaseline();
     resourceLedger.trackRelease('workers', 1);
@@ -431,7 +482,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         allRestartsValid &&
         executedDisposersCount === 10 &&
         finalCounters.restartCount >= 10,
-        'ResourceLedger detects underflow/disposer faults and completes 10x Restart cycles with real cycleDisposables cleanup'
+        'ResourceLedger enforces zero-tolerance cycle baseline across all 5 categories and completes 10x Restart cycles'
     );
 
     universeStore.setPhase('01_VOID');

@@ -253,7 +253,8 @@ export class AudioSyncEngine {
             this.timeBuffer = new Float32Array(
                 new ArrayBuffer(this.analyser.fftSize * 4)
             );
-            resourceLedger.trackAllocation('audioNodes', 3);
+            // Регистрируем 3 узла WebAudio как однократный ресурс уровня страницы
+            resourceLedger.trackPageLifetimeAllocation('audioNodes', 3);
         } catch {
             // При ограничении браузера воспроизводим напрямую через HTMLAudioElement
         }
