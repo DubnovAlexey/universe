@@ -5,7 +5,7 @@
 // ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, getRenderableGlyphPool,
 // pickGlyph, scrambleCanonicalText. Все пулы — массивы полных code points.
 // ============================================================================
-import type { PhaseId } from '../store/universeState';
+import type { PhaseId } from './contracts';
 
 // НАЧАЛО РАЗДЕЛА 1. СЕМЕЙСТВА И ПРОФИЛИ
 export const GLYPH_FONT_STACK = '"JetBrains Mono", "Fira Code", Consolas, "Segoe UI Historic", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Symbol", monospace';

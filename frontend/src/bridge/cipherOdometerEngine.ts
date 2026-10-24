@@ -152,10 +152,10 @@ export class CipherOdometerEngine {
     } {
         const safeWidth = Math.max(296, viewportWidth - 36);
 
-        let idealFontPx = 15.0;
-        let idealStepRatio = 0.68;
-        let colorHex = '#cbd5e1';
-        let fontWeight = '500';
+        let idealFontPx: number;
+        let idealStepRatio: number;
+        let colorHex: string;
+        let fontWeight: string;
 
         if (lineIndex === 0) {
             idealFontPx = 25.5;

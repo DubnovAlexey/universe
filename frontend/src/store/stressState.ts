@@ -491,17 +491,16 @@ class StressStateController {
         const oneMinusU2 = 1.0 - u * u;
         const g = oneMinusU2 * oneMinusU2;
 
-        const radialUnitX = dx / dist;
-        const radialUnitY = dy / dist;
-        const tangentUnitX = -radialUnitY;
-        const tangentUnitY = radialUnitX;
+        // Радиальный базис (cos, sin); касательный повёрнут на +90°: (-sin, cos).
+        const radialCos = dx / dist;
+        const radialSin = dy / dist;
 
         const radialAmp = (6.5 + this.state.revealIntensity * 8.5) * g;
         const tangentAmp = Math.sin(angle * 4.0 + simTimeSec * 2.0) * 3.4 * g;
 
         return {
-            dx: radialUnitX * radialAmp + tangentUnitX * tangentAmp,
-            dy: radialUnitY * radialAmp + tangentUnitY * tangentAmp,
+            dx: radialCos * radialAmp - radialSin * tangentAmp,
+            dy: radialSin * radialAmp + radialCos * tangentAmp,
             rimHighlight: g,
             dispersionFactor: g * (this.state.isBreaching ? 0.85 : 0.35),
         };

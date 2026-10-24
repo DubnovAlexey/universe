@@ -20,7 +20,9 @@ QA-исправления и V1 реализованы в исходниках. 
 
 `npm run verify:all` сохраняет Python verifier/unittest, native Rust, TS typecheck/verification suite, реальную WASM-сборку/интеграции, Astro build и Pages artifact. В начало добавлен `npm run verify:repo`: он проверяет отслеживание исходников/fixtures и файлов запуска из npm scripts; guard также включён в CI.
 
-Последний проверенный удалённый [CI #43 на `f2ef49b`](https://github.com/DubnovAlexey/universe/actions/runs/40107715957) завершился ошибкой из-за отсутствия `frontend/scripts/build-wasm.mjs` в опубликованной ревизии. Локальные scripts и guard подготовлены; успешный новый удалённый CI требует новой опубликованной ревизии и отдельного результата запуска.
+Коммит `2eb9f57` опубликован в GitHub. В [CI #44](https://github.com/DubnovAlexey/universe/actions/runs/40129043413) наличие scripts, Python/Rust/TypeScript и 5 WASM-интеграций проверены успешно; `npm ci` сообщает 0 уязвимостей. Astro build завершился ошибкой: `setup-node` с диапазоном `22` выбрал из кэша Node `22.23.3`, тогда как Astro `7.4.2` требует `>=22.23.4`. Проверка Pages-артефакта и публикация были пропущены.
+
+В workflow диапазон изменён на `^22.23.4`: он исключает старый patch из кэша и сохраняет ветку Node 22. Разбор YAML и проверка semver подтверждают, что `22.23.3` отклоняется, `22.23.4` допускается, а весь диапазон соответствует `engines.node` проекта. Под официальным portable Node `22.23.4` / npm `10.9.9`, с `NODE_ENV=production`, команды `npm run build` и `npm run verify:pages-artifact` завершились успешно; SHA-256 архива Node проверен по официальному SHASUMS. Успешный удалённый CI требует коммита с этим исправлением и отдельного результата нового запуска.
 <!-- КОНЕЦ РАЗДЕЛА 1 -->
 
 <!-- НАЧАЛО РАЗДЕЛА 2. ПОДТВЕРЖДЁННЫЕ ИСПРАВЛЕНИЯ -->

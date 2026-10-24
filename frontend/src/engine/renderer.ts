@@ -366,9 +366,9 @@ export class UniverseRenderer {
      */
     private spawnCurvedFieldSignal(rng: DeterministicPRNG): CurvedFieldSignal {
         const side = rng.nextU32() % 4;
-        let xNorm = 0;
-        let yNorm = 0;
-        let angle = 0;
+        let xNorm: number;
+        let yNorm: number;
+        let angle: number;
 
         if (side === 0) {
             xNorm = -0.56;
