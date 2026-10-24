@@ -87,7 +87,7 @@ class TestUniverseBackendParity(unittest.TestCase):
         """
         arc_len, lut = build_bezier_arc_length_lut(0.0, 0.0, 50.0, 30.0, 100.0, 0.0)
         self.assertEqual(arc_len, 105.39)
-        self.assertEqual(lut, (0.0, 29.59, 57.18, 84.77, 114.36))
+        self.assertEqual(lut, (0.0, 27.41, 52.69, 77.97, 105.39))
 
         fixture_nodes = [
             GraphNodeDTO(index=0, node_id=0, x=0.0, y=0.0, cluster_id=0, energy=0.9),
