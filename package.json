@@ -4,7 +4,7 @@
   "type": "module",
   "version": "2.5.0",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.23.4"
   },
   "workspaces": [
     "frontend"
@@ -17,7 +17,8 @@
     "test:python": "python -B -m unittest discover -v",
     "test:rust": "cargo test --manifest-path physics_engine/Cargo.toml --locked",
     "verify:python": "python -B -m backend.main --verify",
-    "verify:all": "npm run verify:python && npm run test:python && npm run test:rust && npm run typecheck && npm test && npm run build:wasm && npm run verify:wasm && npm run build && npm run verify:pages-artifact",
+    "verify:repo": "node frontend/scripts/verify-repository.mjs",
+    "verify:all": "npm run verify:repo && npm run verify:python && npm run test:python && npm run test:rust && npm run typecheck && npm test && npm run build:wasm && npm run verify:wasm && npm run build && npm run verify:pages-artifact",
     "build": "npm --prefix frontend run build",
     "build:wasm": "node frontend/scripts/build-wasm.mjs",
     "verify:wasm": "node frontend/scripts/verify-wasm-runtime.mjs",
@@ -26,7 +27,7 @@
     "astro": "npm --prefix frontend run astro"
   },
   "dependencies": {
-    "astro": "7.2.8"
+    "astro": "7.4.2"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

@@ -29,9 +29,6 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # ============================================================================
   # РАЗДЕЛ 2. ВЕРИФИКАЦИЯ ИСХОДНИКОВ И СБОРКА PAGES-АРТЕФАКТА
@@ -40,17 +37,25 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Verify Repository Source Completeness
+        run: npm run verify:repo
 
       - name: Setup Python 3.11 for Backend Parity Verification
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
       - name: Verify Python Core Golden PRNG, NEXUS Topology & Binary Packet Parity
         run: python -B -m backend.main --verify
 
-      - name: Run Python Backend Unit Tests (6 tests)
+      - name: Run Python Backend Unit Tests
         run: python -B -m unittest discover -v
 
       - name: Setup Rust Toolchain for Physics Crate Verification
@@ -61,11 +66,6 @@ jobs:
       - name: Run Rust Symplectic Physics Unit Tests
         working-directory: ./physics_engine
         run: cargo test --locked
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
 
       - name: Install Workspace Dependencies
         run: npm ci
@@ -80,7 +80,7 @@ jobs:
         working-directory: ./frontend
         run: npm run typecheck
 
-      - name: Run Universe Verification & Regression Suite (16 invariants)
+      - name: Run Universe Verification & Regression Suite
         working-directory: ./frontend
         run: npm test
 
@@ -95,7 +95,7 @@ jobs:
         run: npm run verify:pages-artifact
 
       - name: Upload GitHub Pages Artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./frontend/dist
 
@@ -111,4 +111,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

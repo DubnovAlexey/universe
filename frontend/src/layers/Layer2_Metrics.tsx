@@ -18,7 +18,8 @@
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
-import { audioSync } from '../utils/audioSync';
+import { getVisualSignals } from '../core/visualSignals';
+import { pickGlyph } from '../core/glyphGrammar';
 
 // ============================================================================
 // РАЗДЕЛ 1. АВТОНОМНАЯ ФАБРИКА JSX -> DOM/SVG ELEMENT (БЕЗ ОШИБКИ TS2322)
@@ -143,8 +144,6 @@ export interface StarfallDroplet {
     maxLife: number;
 }
 
-const STARFALL_GLYPH_POOL = '0123456789ABCDEF.+-xΔr∑';
-
 // --- НАЧАЛО ФУНКЦИИ buildLivingBreachContourPath ---
 export function buildLivingBreachContourPath(
     width: number,
@@ -256,10 +255,11 @@ class TelemetryWaterfallAnimator {
     private lastMs = 0;
     private smoothedMusicPulse = 0.22;
     private smoothedMusicLow = 0.2;
+    private lastSignalSec = 0;
 
     // --- НАЧАЛО ФУНКЦИИ getTimeSec (TelemetryWaterfallAnimator) ---
     public getTimeSec(): number {
-        return typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
+        return getVisualSignals().simTimeSec;
     }
     // --- КОНЕЦ ФУНКЦИИ getTimeSec (TelemetryWaterfallAnimator) ---
 
@@ -275,15 +275,19 @@ class TelemetryWaterfallAnimator {
     private tick = (nowMs: number): void => {
         const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
         this.lastMs = nowMs;
-        const timeSec = nowMs * 0.001;
+        const signals = getVisualSignals();
+        const timeSec = signals.simTimeSec;
+        if (timeSec < this.lastSignalSec) {
+            this.nextSpawnSec = { 2: timeSec + 0.5, 3: timeSec + 0.85, 4: timeSec + 1.2 };
+            this.droplets = [];
+            this.ignitedSlots.clear();
+        }
+        this.lastSignalSec = timeSec;
 
         const uState = universeStore.getState();
-        if (!uState.isTabHidden && !uState.reducedMotion) {
-            const audioSnap = audioSync.getSnapshot(timeSec);
-            this.smoothedMusicPulse =
-                this.smoothedMusicPulse * 0.92 + audioSnap.pulse * 0.08;
-            this.smoothedMusicLow =
-                this.smoothedMusicLow * 0.92 + audioSnap.low * 0.08;
+        if (!uState.isTabHidden && !signals.reducedMotion && !signals.isPaused) {
+            this.smoothedMusicPulse = signals.pulse;
+            this.smoothedMusicLow = signals.low;
 
             if (!uState.isPaused) {
                 this.stepDroplets(dt, timeSec);
@@ -315,11 +319,8 @@ class TelemetryWaterfallAnimator {
                 const slotKey = pool[(this.dropCounter * 3 + cId) % pool.length];
                 this.ignitedSlots.set(slotKey, timeSec);
 
-                const glyph =
-                    STARFALL_GLYPH_POOL[
-                    (this.dropCounter * 11 + Math.floor(timeSec * 17)) %
-                    STARFALL_GLYPH_POOL.length
-                        ];
+                const signals = getVisualSignals();
+                const glyph = pickGlyph(signals.phase, this.dropCounter, Math.floor(timeSec * 3), signals.seed);
 
                 this.droplets.push({
                     id: this.dropCounter++,
@@ -812,10 +813,7 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
             elCore.textContent = `${t.wasmStatus} · ${t.pythonBackendStatus}`;
         }
         if (elAudio) {
-            elAudio.textContent = `${t.audioStatus} ({t.silenceRmsDb.toFixed(1)} dBFS)`.replace(
-                '{t.silenceRmsDb.toFixed(1)}',
-                t.silenceRmsDb.toFixed(1)
-            );
+            elAudio.textContent = `${t.audioStatus} (${t.silenceRmsDb.toFixed(1)} dBFS)`;
         }
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer2Metrics) ---

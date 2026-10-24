@@ -12,7 +12,8 @@
 
 import { DeterministicPRNG } from '../core/prng';
 import { smootherstep, universeStore } from '../store/universeState';
-import { audioSync } from '../utils/audioSync';
+import { getVisualSignals } from '../core/visualSignals';
+import { getRenderableGlyphPool } from '../core/glyphGrammar';
 
 export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
     'DUBNOV ALEXEY',
@@ -23,9 +24,6 @@ export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, s
 ];
 
 const ENDLESS_SPIN_LINE_INDEX = 2;
-
-const QUANTUM_STREAM_GLYPHS =
-    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡∷';
 
 const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
     colorHex: string;
@@ -261,7 +259,7 @@ export class CipherOdometerEngine {
                     : p * 10000;
         const liveTimeSec = nowMs * 0.001;
 
-        const audioSnap = audioSync.getSnapshot(this.lfoClockSec);
+        const audioSnap = getVisualSignals();
         const baseSpinPhase = this.advanceBoundedSpinPhase(
             liveTimeSec,
             reducedMotion,
@@ -282,21 +280,23 @@ export class CipherOdometerEngine {
 
         const lineOffsetsY = [-98, -50, -4, 42, 82];
         const cells: OdometerGlyphCellState[] = [];
-        const nGlyphs = QUANTUM_STREAM_GLYPHS.length;
+        const quantumGlyphs = getRenderableGlyphPool(uState.currentPhase);
+        const nGlyphs = quantumGlyphs.length;
         const nShades = MONOCHROME_NEBULA_PALETTE.length;
 
         let globalIdx = 0;
 
         for (let lineIdx = 0; lineIdx < CANONICAL_FINALE_LINES.length; lineIdx++) {
             const lineStr = CANONICAL_FINALE_LINES[lineIdx];
-            const len = lineStr.length;
+            const lineCharacters = Array.from(lineStr);
+            const len = lineCharacters.length;
             const typo = this.getLineTypography(lineIdx, len, viewportWidth);
             const lineWidth = len * typo.stepWidthPx;
             const startX = cx - lineWidth * 0.5 + typo.stepWidthPx * 0.5;
             const baseTargetY = cy + lineOffsetsY[lineIdx];
 
             for (let cIdx = 0; cIdx < len; cIdx++) {
-                const targetChar = lineStr[cIdx];
+                const targetChar = lineCharacters[cIdx];
                 const baseTargetX = startX + cIdx * typo.stepWidthPx;
 
                 const targetX = cx + (baseTargetX - cx) * cardHeartbeat;
@@ -368,11 +368,11 @@ export class CipherOdometerEngine {
 
                 const primaryChar = isLocked
                     ? targetChar
-                    : QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs) % nGlyphs];
+                    : quantumGlyphs[(baseGlyphIdx + nGlyphs) % nGlyphs];
                 const upperChar =
-                    QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + nGlyphs - 1) % nGlyphs];
+                    quantumGlyphs[(baseGlyphIdx + nGlyphs - 1) % nGlyphs];
                 const lowerChar =
-                    QUANTUM_STREAM_GLYPHS[(baseGlyphIdx + 1) % nGlyphs];
+                    quantumGlyphs[(baseGlyphIdx + 1) % nGlyphs];
 
                 let cellColor = typo.colorHex;
                 let shadowColor =

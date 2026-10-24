@@ -1,0 +1,1087 @@
+{
+  "purpose": "Shared deterministic NEXUS parity inputs and expected output for TypeScript and Python.",
+  "index": [
+    "inputs",
+    "expected"
+  ],
+  "source": "backend/api/transport.py:build_health_and_parity_report",
+  "coverage": "24 active nodes, all edge classes, complete BFS; this fixture does not exercise BFS start-node sampling.",
+  "inputs": {
+    "seed": 104729,
+    "maxConnectDist": 220.0,
+    "simTimeSec": 1.0,
+    "nodes": [
+      {
+        "index": 0,
+        "id": 0,
+        "x": -271.5334264934063,
+        "y": 149.0322995558381,
+        "clusterId": 0,
+        "energy": 0.6897509157424793
+      },
+      {
+        "index": 1,
+        "id": 1,
+        "x": 15.905992984771729,
+        "y": 238.48989196121693,
+        "clusterId": 1,
+        "energy": 0.34946577482623975
+      },
+      {
+        "index": 2,
+        "id": 2,
+        "x": -305.990299731493,
+        "y": -182.2597387433052,
+        "clusterId": 2,
+        "energy": 0.41253911118255926
+      },
+      {
+        "index": 3,
+        "id": 3,
+        "x": -230.1431567966938,
+        "y": -77.1877571940422,
+        "clusterId": 3,
+        "energy": 0.673840902140364
+      },
+      {
+        "index": 4,
+        "id": 4,
+        "x": 296.49369329214096,
+        "y": -37.77747340500355,
+        "clusterId": 4,
+        "energy": 0.5256418532342649
+      },
+      {
+        "index": 5,
+        "id": 5,
+        "x": 135.30909851193428,
+        "y": 41.35994464159012,
+        "clusterId": 5,
+        "energy": 0.43510556289693336
+      },
+      {
+        "index": 6,
+        "id": 6,
+        "x": 178.048075735569,
+        "y": 84.76843077689409,
+        "clusterId": 0,
+        "energy": 0.6913789494661613
+      },
+      {
+        "index": 7,
+        "id": 7,
+        "x": -53.258958011865616,
+        "y": -55.98659500479698,
+        "clusterId": 1,
+        "energy": 0.31057960268808527
+      },
+      {
+        "index": 8,
+        "id": 8,
+        "x": 315.26690125465393,
+        "y": 64.47292048484087,
+        "clusterId": 2,
+        "energy": 0.4966062359628267
+      },
+      {
+        "index": 9,
+        "id": 9,
+        "x": -164.65756222605705,
+        "y": 164.9568836018443,
+        "clusterId": 3,
+        "energy": 0.5021099217003211
+      },
+      {
+        "index": 10,
+        "id": 10,
+        "x": 234.9717317521572,
+        "y": -109.61528845131397,
+        "clusterId": 4,
+        "energy": 0.7979867141810245
+      },
+      {
+        "index": 11,
+        "id": 11,
+        "x": -49.955971390008926,
+        "y": -28.47219418734312,
+        "clusterId": 5,
+        "energy": 0.5430094081209972
+      },
+      {
+        "index": 12,
+        "id": 12,
+        "x": 124.38112661242485,
+        "y": 44.198509342968464,
+        "clusterId": 0,
+        "energy": 0.3263519354048185
+      },
+      {
+        "index": 13,
+        "id": 13,
+        "x": 281.4212207496166,
+        "y": 105.92291202396154,
+        "clusterId": 1,
+        "energy": 0.8565091603668407
+      },
+      {
+        "index": 14,
+        "id": 14,
+        "x": -195.93056052923203,
+        "y": -182.73981291800737,
+        "clusterId": 2,
+        "energy": 0.45456321391975507
+      },
+      {
+        "index": 15,
+        "id": 15,
+        "x": 157.38358542323112,
+        "y": 14.23000205308199,
+        "clusterId": 3,
+        "energy": 0.65285137075698
+      },
+      {
+        "index": 16,
+        "id": 16,
+        "x": -269.0281894803047,
+        "y": 177.82671678811312,
+        "clusterId": 4,
+        "energy": 0.5896185797872021
+      },
+      {
+        "index": 17,
+        "id": 17,
+        "x": 268.7202039361,
+        "y": 14.521055035293102,
+        "clusterId": 5,
+        "energy": 0.720493848575279
+      },
+      {
+        "index": 18,
+        "id": 18,
+        "x": 212.46807634830475,
+        "y": 141.46840039640665,
+        "clusterId": 0,
+        "energy": 0.33100863079307596
+      },
+      {
+        "index": 19,
+        "id": 19,
+        "x": -226.82383954524994,
+        "y": 5.901520885527134,
+        "clusterId": 1,
+        "energy": 0.8176871786010451
+      },
+      {
+        "index": 20,
+        "id": 20,
+        "x": 183.38952764868736,
+        "y": 8.531623631715775,
+        "clusterId": 2,
+        "energy": 0.747671998234
+      },
+      {
+        "index": 21,
+        "id": 21,
+        "x": -117.42830589413643,
+        "y": -74.99473001807928,
+        "clusterId": 3,
+        "energy": 0.8351509098545646
+      },
+      {
+        "index": 22,
+        "id": 22,
+        "x": -17.123181372880936,
+        "y": -99.55817073583603,
+        "clusterId": 4,
+        "energy": 0.8034052282338962
+      },
+      {
+        "index": 23,
+        "id": 23,
+        "x": -316.3321839272976,
+        "y": -212.25998740643263,
+        "clusterId": 5,
+        "energy": 0.5918742759968154
+      }
+    ]
+  },
+  "expected": {
+    "edges": [
+      {
+        "id": "0_16",
+        "fromIndex": 0,
+        "toIndex": 16,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -271.53,
+        "y1": 149.03,
+        "x2": -269.03,
+        "y2": 177.83,
+        "ctrlX": -266.41,
+        "ctrlY": 163.09,
+        "arcLength": 29.23,
+        "lengthLUT": [
+          0.0,
+          7.37,
+          14.61,
+          21.86,
+          29.23
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "9_16",
+        "fromIndex": 16,
+        "toIndex": 9,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -269.03,
+        "y1": 177.83,
+        "x2": -164.66,
+        "y2": 164.96,
+        "ctrlX": -215.36,
+        "ctrlY": 183.43,
+        "arcLength": 106.03,
+        "lengthLUT": [
+          0.0,
+          26.68,
+          53.01,
+          79.35,
+          106.03
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "0_19",
+        "fromIndex": 0,
+        "toIndex": 19,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -271.53,
+        "y1": 149.03,
+        "x2": -226.82,
+        "y2": 5.9,
+        "ctrlX": -230.69,
+        "ctrlY": 83.24,
+        "arcLength": 151.5,
+        "lengthLUT": [
+          0.0,
+          38.18,
+          75.75,
+          113.32,
+          151.5
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "3_19",
+        "fromIndex": 19,
+        "toIndex": 3,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -226.82,
+        "y1": 5.9,
+        "x2": -230.14,
+        "y2": -77.19,
+        "ctrlX": -238.67,
+        "ctrlY": -35.24,
+        "arcLength": 83.93,
+        "lengthLUT": [
+          0.0,
+          21.14,
+          41.97,
+          62.79,
+          83.93
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "3_14",
+        "fromIndex": 3,
+        "toIndex": 14,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -230.14,
+        "y1": -77.19,
+        "x2": -195.93,
+        "y2": -182.74,
+        "ctrlX": -199.01,
+        "ctrlY": -125.42,
+        "arcLength": 112.17,
+        "lengthLUT": [
+          0.0,
+          28.29,
+          56.09,
+          83.89,
+          112.17
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "2_14",
+        "fromIndex": 14,
+        "toIndex": 2,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -195.93,
+        "y1": -182.74,
+        "x2": -305.99,
+        "y2": -182.26,
+        "ctrlX": -250.9,
+        "ctrlY": -167.69,
+        "arcLength": 111.3,
+        "lengthLUT": [
+          0.0,
+          28.07,
+          55.65,
+          83.22,
+          111.3
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "2_23",
+        "fromIndex": 2,
+        "toIndex": 23,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -305.99,
+        "y1": -182.26,
+        "x2": -316.33,
+        "y2": -212.26,
+        "ctrlX": -307.7,
+        "ctrlY": -198.45,
+        "arcLength": 31.99,
+        "lengthLUT": [
+          0.0,
+          8.05,
+          16.0,
+          23.94,
+          31.99
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "3_21",
+        "fromIndex": 3,
+        "toIndex": 21,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -230.14,
+        "y1": -77.19,
+        "x2": -117.43,
+        "y2": -74.99,
+        "ctrlX": -173.53,
+        "ctrlY": -89.36,
+        "arcLength": 113.71,
+        "lengthLUT": [
+          0.0,
+          28.62,
+          56.85,
+          85.09,
+          113.71
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "7_21",
+        "fromIndex": 21,
+        "toIndex": 7,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -117.43,
+        "y1": -74.99,
+        "x2": -53.26,
+        "y2": -55.99,
+        "ctrlX": -83.29,
+        "ctrlY": -72.43,
+        "arcLength": 67.41,
+        "lengthLUT": [
+          0.0,
+          16.95,
+          33.71,
+          50.46,
+          67.41
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "7_11",
+        "fromIndex": 7,
+        "toIndex": 11,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -53.26,
+        "y1": -55.99,
+        "x2": -49.96,
+        "y2": -28.47,
+        "ctrlX": -48.0,
+        "ctrlY": -42.66,
+        "arcLength": 28.01,
+        "lengthLUT": [
+          0.0,
+          7.06,
+          14.0,
+          20.95,
+          28.01
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "7_22",
+        "fromIndex": 7,
+        "toIndex": 22,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -53.26,
+        "y1": -55.99,
+        "x2": -17.12,
+        "y2": -99.56,
+        "ctrlX": -30.58,
+        "ctrlY": -73.95,
+        "arcLength": 57.0,
+        "lengthLUT": [
+          0.0,
+          14.33,
+          28.5,
+          42.67,
+          57.0
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "11_12",
+        "fromIndex": 11,
+        "toIndex": 12,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -49.96,
+        "y1": -28.47,
+        "x2": 124.38,
+        "y2": 44.2,
+        "ctrlX": 28.48,
+        "ctrlY": 28.81,
+        "arcLength": 190.57,
+        "lengthLUT": [
+          0.0,
+          47.98,
+          95.28,
+          142.59,
+          190.57
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "5_12",
+        "fromIndex": 12,
+        "toIndex": 5,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 124.38,
+        "y1": 44.2,
+        "x2": 135.31,
+        "y2": 41.36,
+        "ctrlX": 130.22,
+        "ctrlY": 44.23,
+        "arcLength": 11.41,
+        "lengthLUT": [
+          0.0,
+          2.88,
+          5.71,
+          8.54,
+          11.41
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "5_15",
+        "fromIndex": 5,
+        "toIndex": 15,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 135.31,
+        "y1": 41.36,
+        "x2": 157.38,
+        "y2": 14.23,
+        "ctrlX": 142.9,
+        "ctrlY": 24.99,
+        "arcLength": 35.33,
+        "lengthLUT": [
+          0.0,
+          8.9,
+          17.66,
+          26.42,
+          35.33
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "15_20",
+        "fromIndex": 15,
+        "toIndex": 20,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 157.38,
+        "y1": 14.23,
+        "x2": 183.39,
+        "y2": 8.53,
+        "ctrlX": 170.93,
+        "ctrlY": 13.85,
+        "arcLength": 26.77,
+        "lengthLUT": [
+          0.0,
+          6.72,
+          13.39,
+          20.05,
+          26.77
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "5_6",
+        "fromIndex": 5,
+        "toIndex": 6,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 135.31,
+        "y1": 41.36,
+        "x2": 178.05,
+        "y2": 84.77,
+        "ctrlX": 150.62,
+        "ctrlY": 69.03,
+        "arcLength": 61.65,
+        "lengthLUT": [
+          0.0,
+          15.56,
+          30.83,
+          46.09,
+          61.65
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "6_18",
+        "fromIndex": 6,
+        "toIndex": 18,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 178.05,
+        "y1": 84.77,
+        "x2": 212.47,
+        "y2": 141.47,
+        "ctrlX": 201.93,
+        "ctrlY": 109.07,
+        "arcLength": 66.9,
+        "lengthLUT": [
+          0.0,
+          16.84,
+          33.45,
+          50.06,
+          66.9
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "13_18",
+        "fromIndex": 18,
+        "toIndex": 13,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 212.47,
+        "y1": 141.47,
+        "x2": 281.42,
+        "y2": 105.92,
+        "ctrlX": 250.55,
+        "ctrlY": 130.69,
+        "arcLength": 78.07,
+        "lengthLUT": [
+          0.0,
+          19.62,
+          39.04,
+          58.46,
+          78.07
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "8_13",
+        "fromIndex": 13,
+        "toIndex": 8,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 281.42,
+        "y1": 105.92,
+        "x2": 315.27,
+        "y2": 64.47,
+        "ctrlX": 303.52,
+        "ctrlY": 89.42,
+        "arcLength": 54.03,
+        "lengthLUT": [
+          0.0,
+          13.61,
+          27.02,
+          40.42,
+          54.03
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "8_17",
+        "fromIndex": 8,
+        "toIndex": 17,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 315.27,
+        "y1": 64.47,
+        "x2": 268.72,
+        "y2": 14.52,
+        "ctrlX": 297.75,
+        "ctrlY": 34.13,
+        "arcLength": 68.84,
+        "lengthLUT": [
+          0.0,
+          17.32,
+          34.42,
+          51.52,
+          68.84
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "4_17",
+        "fromIndex": 17,
+        "toIndex": 4,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 268.72,
+        "y1": 14.52,
+        "x2": 296.49,
+        "y2": -37.78,
+        "ctrlX": 289.14,
+        "ctrlY": -8.16,
+        "arcLength": 59.79,
+        "lengthLUT": [
+          0.0,
+          15.06,
+          29.89,
+          44.73,
+          59.79
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "4_10",
+        "fromIndex": 4,
+        "toIndex": 10,
+        "edgeClass": "AXON_TRUNK",
+        "x1": 296.49,
+        "y1": -37.78,
+        "x2": 234.97,
+        "y2": -109.62,
+        "ctrlX": 255.87,
+        "ctrlY": -65.25,
+        "arcLength": 95.68,
+        "lengthLUT": [
+          0.0,
+          24.14,
+          47.84,
+          71.54,
+          95.68
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "1_9",
+        "fromIndex": 9,
+        "toIndex": 1,
+        "edgeClass": "AXON_TRUNK",
+        "x1": -164.66,
+        "y1": 164.96,
+        "x2": 15.91,
+        "y2": 238.49,
+        "ctrlX": -64.09,
+        "ctrlY": 176.46,
+        "arcLength": 197.32,
+        "lengthLUT": [
+          0.0,
+          49.8,
+          98.66,
+          147.52,
+          197.32
+        ],
+        "murrayRadiusPx": 1.95
+      },
+      {
+        "id": "0_9",
+        "fromIndex": 0,
+        "toIndex": 9,
+        "edgeClass": "BRIDGE",
+        "x1": -271.53,
+        "y1": 149.03,
+        "x2": -164.66,
+        "y2": 164.96,
+        "ctrlX": -215.55,
+        "ctrlY": 139.9,
+        "arcLength": 109.76,
+        "lengthLUT": [
+          0.0,
+          27.78,
+          54.88,
+          81.98,
+          109.76
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "1_18",
+        "fromIndex": 1,
+        "toIndex": 18,
+        "edgeClass": "BRIDGE",
+        "x1": 15.91,
+        "y1": 238.49,
+        "x2": 212.47,
+        "y2": 141.47,
+        "ctrlX": 99.87,
+        "ctrlY": 160.96,
+        "arcLength": 222.16,
+        "lengthLUT": [
+          0.0,
+          56.13,
+          111.08,
+          166.03,
+          222.16
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "2_3",
+        "fromIndex": 2,
+        "toIndex": 3,
+        "edgeClass": "BRIDGE",
+        "x1": -305.99,
+        "y1": -182.26,
+        "x2": -230.14,
+        "y2": -77.19,
+        "ctrlX": -251.51,
+        "ctrlY": -141.67,
+        "arcLength": 131.57,
+        "lengthLUT": [
+          0.0,
+          33.29,
+          65.79,
+          98.28,
+          131.57
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "4_5",
+        "fromIndex": 4,
+        "toIndex": 5,
+        "edgeClass": "BRIDGE",
+        "x1": 296.49,
+        "y1": -37.78,
+        "x2": 135.31,
+        "y2": 41.36,
+        "ctrlX": 228.56,
+        "ctrlY": 27.58,
+        "arcLength": 182.4,
+        "lengthLUT": [
+          0.0,
+          46.17,
+          91.2,
+          136.23,
+          182.4
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "4_6",
+        "fromIndex": 4,
+        "toIndex": 6,
+        "edgeClass": "BRIDGE",
+        "x1": 296.49,
+        "y1": -37.78,
+        "x2": 178.05,
+        "y2": 84.77,
+        "ctrlX": 217.67,
+        "ctrlY": 4.55,
+        "arcLength": 173.12,
+        "lengthLUT": [
+          0.0,
+          43.82,
+          86.56,
+          129.3,
+          173.12
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "6_12",
+        "fromIndex": 6,
+        "toIndex": 12,
+        "edgeClass": "DENDRITE",
+        "x1": 178.05,
+        "y1": 84.77,
+        "x2": 124.38,
+        "y2": 44.2,
+        "ctrlX": 157.29,
+        "ctrlY": 56.44,
+        "arcLength": 68.21,
+        "lengthLUT": [
+          0.0,
+          17.24,
+          34.1,
+          50.97,
+          68.21
+        ],
+        "murrayRadiusPx": 1.04
+      },
+      {
+        "id": "7_14",
+        "fromIndex": 7,
+        "toIndex": 14,
+        "edgeClass": "BRIDGE",
+        "x1": -53.26,
+        "y1": -55.99,
+        "x2": -195.93,
+        "y2": -182.74,
+        "ctrlX": -142.68,
+        "ctrlY": -99.01,
+        "arcLength": 193.25,
+        "lengthLUT": [
+          0.0,
+          48.79,
+          96.62,
+          144.46,
+          193.25
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "9_19",
+        "fromIndex": 9,
+        "toIndex": 19,
+        "edgeClass": "BRIDGE",
+        "x1": -164.66,
+        "y1": 164.96,
+        "x2": -226.82,
+        "y2": 5.9,
+        "ctrlX": -176.1,
+        "ctrlY": 77.75,
+        "arcLength": 172.39,
+        "lengthLUT": [
+          0.0,
+          43.42,
+          86.19,
+          128.97,
+          172.39
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "10_20",
+        "fromIndex": 10,
+        "toIndex": 20,
+        "edgeClass": "BRIDGE",
+        "x1": 234.97,
+        "y1": -109.62,
+        "x2": 183.39,
+        "y2": 8.53,
+        "ctrlX": 195.2,
+        "ctrlY": -56.65,
+        "arcLength": 130.04,
+        "lengthLUT": [
+          0.0,
+          32.73,
+          65.02,
+          97.3,
+          130.04
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "11_21",
+        "fromIndex": 11,
+        "toIndex": 21,
+        "edgeClass": "DENDRITE",
+        "x1": -49.96,
+        "y1": -28.47,
+        "x2": -117.43,
+        "y2": -74.99,
+        "ctrlX": -78.4,
+        "ctrlY": -59.41,
+        "arcLength": 82.62,
+        "lengthLUT": [
+          0.0,
+          20.79,
+          41.31,
+          61.83,
+          82.62
+        ],
+        "murrayRadiusPx": 1.14
+      },
+      {
+        "id": "11_22",
+        "fromIndex": 11,
+        "toIndex": 22,
+        "edgeClass": "DENDRITE",
+        "x1": -49.96,
+        "y1": -28.47,
+        "x2": -17.12,
+        "y2": -99.56,
+        "ctrlX": -41.48,
+        "ctrlY": -67.68,
+        "arcLength": 78.91,
+        "lengthLUT": [
+          0.0,
+          19.85,
+          39.45,
+          59.06,
+          78.91
+        ],
+        "murrayRadiusPx": 1.04
+      },
+      {
+        "id": "12_15",
+        "fromIndex": 12,
+        "toIndex": 15,
+        "edgeClass": "DENDRITE",
+        "x1": 124.38,
+        "y1": 44.2,
+        "x2": 157.38,
+        "y2": 14.23,
+        "ctrlX": 137.1,
+        "ctrlY": 25.05,
+        "arcLength": 45.02,
+        "lengthLUT": [
+          0.0,
+          11.34,
+          22.51,
+          33.68,
+          45.02
+        ],
+        "murrayRadiusPx": 1.04
+      },
+      {
+        "id": "13_17",
+        "fromIndex": 13,
+        "toIndex": 17,
+        "edgeClass": "DENDRITE",
+        "x1": 281.42,
+        "y1": 105.92,
+        "x2": 268.72,
+        "y2": 14.52,
+        "ctrlX": 285.89,
+        "ctrlY": 58.72,
+        "arcLength": 93.08,
+        "lengthLUT": [
+          0.0,
+          23.43,
+          46.54,
+          69.65,
+          93.08
+        ],
+        "murrayRadiusPx": 1.14
+      },
+      {
+        "id": "14_19",
+        "fromIndex": 14,
+        "toIndex": 19,
+        "edgeClass": "BRIDGE",
+        "x1": -195.93,
+        "y1": -182.74,
+        "x2": -226.82,
+        "y2": 5.9,
+        "ctrlX": -190.3,
+        "ctrlY": -84.97,
+        "arcLength": 192.64,
+        "lengthLUT": [
+          0.0,
+          48.46,
+          96.32,
+          144.18,
+          192.64
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "15_17",
+        "fromIndex": 15,
+        "toIndex": 17,
+        "edgeClass": "DENDRITE",
+        "x1": 157.38,
+        "y1": 14.23,
+        "x2": 268.72,
+        "y2": 14.52,
+        "ctrlX": 213.02,
+        "ctrlY": 27.04,
+        "arcLength": 112.23,
+        "lengthLUT": [
+          0.0,
+          28.24,
+          56.12,
+          84.0,
+          112.23
+        ],
+        "murrayRadiusPx": 1.04
+      },
+      {
+        "id": "18_20",
+        "fromIndex": 18,
+        "toIndex": 20,
+        "edgeClass": "BRIDGE",
+        "x1": 212.47,
+        "y1": 141.47,
+        "x2": 183.39,
+        "y2": 8.53,
+        "ctrlX": 211.88,
+        "ctrlY": 71.95,
+        "arcLength": 137.01,
+        "lengthLUT": [
+          0.0,
+          34.44,
+          68.51,
+          102.57,
+          137.01
+        ],
+        "murrayRadiusPx": 1.35
+      },
+      {
+        "id": "21_22",
+        "fromIndex": 21,
+        "toIndex": 22,
+        "edgeClass": "BRIDGE",
+        "x1": -117.43,
+        "y1": -74.99,
+        "x2": -17.12,
+        "y2": -99.56,
+        "ctrlX": -69.85,
+        "ctrlY": -97.79,
+        "arcLength": 103.97,
+        "lengthLUT": [
+          0.0,
+          26.13,
+          51.99,
+          77.84,
+          103.97
+        ],
+        "murrayRadiusPx": 1.35
+      }
+    ],
+    "degreeByIndex": [
+      3,
+      2,
+      3,
+      4,
+      4,
+      4,
+      4,
+      4,
+      2,
+      4,
+      2,
+      4,
+      4,
+      3,
+      4,
+      4,
+      2,
+      4,
+      4,
+      4,
+      3,
+      4,
+      3,
+      1
+    ],
+    "telemetry": {
+      "trunkCount": 23,
+      "bridgeCount": 11,
+      "dendriteCount": 6,
+      "avgDegree": 3.33,
+      "clusteringCoeff": 0.384,
+      "diameterHops": 8,
+      "avgPathLength": 3.29
+    }
+  }
+}

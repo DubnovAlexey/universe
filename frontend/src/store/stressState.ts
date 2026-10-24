@@ -522,7 +522,7 @@ class StressStateController {
             const dy = y - this.state.lensY;
             const dist = Math.hypot(dx, dy);
             const angle = Math.atan2(dy, dx);
-            const localR = this.getDeformedLensRadiusAtAngle(angle);
+            const localR = this.getDeformedLensRadiusAtAngle(angle, uState.telemetry.simulationTimeSec);
 
             if (dist < localR) {
                 const norm = dist / Math.max(1, localR);

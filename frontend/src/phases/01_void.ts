@@ -632,7 +632,8 @@ export class VoidPhaseSimulation {
                 const midY = (a.y + b.y) * 0.5;
                 const dx = b.x - a.x;
                 const dy = b.y - a.y;
-                const bendSign = (a.id + b.id + seed) % 2 === 0 ? 1 : -1;
+                const bendSeed = e.edgeClass === 'AXON_TRUNK' ? seed : 0;
+                const bendSign = (a.id + b.id + bendSeed) % 2 === 0 ? 1 : -1;
                 const bendScale = e.edgeClass === 'AXON_TRUNK' ? 0.14 : 0.16;
                 const ctrlOffset =
                     Math.sin(simTimeSec * 0.65 + (a.id + b.id) * 0.1) * 0.5 + 0.5;

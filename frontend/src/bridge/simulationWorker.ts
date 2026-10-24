@@ -12,7 +12,7 @@
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. Функции модуля: round2.
+//   2. Функции модуля: roundGraphDecimal.
 //   3. NexusGraphEngine: constructor, buildBezierArcLengthLUT, sampleBezierByArcLength, createGraphEdge,
 //      computeAuthenticGraphMetrics, buildDeterministicGraph, getLastTelemetry.
 // ============================================================================
@@ -59,11 +59,13 @@ export interface NexusGraphTelemetry {
     computeSource: '[python/pyodide]' | '[python/server]' | '[ts/graph_engine]';
 }
 
-// --- НАЧАЛО ФУНКЦИИ round2 ---
-function round2(val: number): number {
-    return Math.round(val * 100) / 100;
+// --- НАЧАЛО ФУНКЦИИ roundGraphDecimal ---
+export function roundGraphDecimal(value: number, digits = 2): number {
+    // Общий TS/Python контракт: полуцелые значения округляются к +∞, включая отрицательные.
+    const scale = 10 ** digits;
+    return Math.floor(value * scale + 0.5) / scale;
 }
-// --- КОНЕЦ ФУНКЦИИ round2 ---
+// --- КОНЕЦ ФУНКЦИИ roundGraphDecimal ---
 
 export class NexusGraphEngine {
     private lastMetrics: NexusGraphTelemetry = {
@@ -105,12 +107,12 @@ export class NexusGraphEngine {
             const px = inv * inv * x0 + 2 * inv * t * cx + t * t * x2;
             const py = inv * inv * y0 + 2 * inv * t * cy + t * t * y2;
             totalLen += Math.hypot(px - prevX, py - prevY);
-            lut[step] = round2(totalLen);
+            lut[step] = roundGraphDecimal(totalLen);
             prevX = px;
             prevY = py;
         }
 
-        return { arcLength: Math.max(1.0, round2(totalLen)), lut };
+        return { arcLength: Math.max(1.0, roundGraphDecimal(totalLen)), lut };
     }
     // --- КОНЕЦ ФУНКЦИИ buildBezierArcLengthLUT (NexusGraphEngine) ---
 
@@ -185,12 +187,12 @@ export class NexusGraphEngine {
             fromIndex: a.index,
             toIndex: b.index,
             edgeClass,
-            x1: round2(a.x),
-            y1: round2(a.y),
-            x2: round2(b.x),
-            y2: round2(b.y),
-            ctrlX: round2(ctrlX),
-            ctrlY: round2(ctrlY),
+            x1: roundGraphDecimal(a.x),
+            y1: roundGraphDecimal(a.y),
+            x2: roundGraphDecimal(b.x),
+            y2: roundGraphDecimal(b.y),
+            ctrlX: roundGraphDecimal(ctrlX),
+            ctrlY: roundGraphDecimal(ctrlY),
             arcLength,
             lengthLUT: lut,
             murrayRadiusPx,
@@ -245,7 +247,7 @@ export class NexusGraphEngine {
 
         const clusteringCoeff =
             nodesWithDegreeAtLeast2 > 0
-                ? Number((sumLocalClustering / nodesWithDegreeAtLeast2).toFixed(3))
+                ? roundGraphDecimal(sumLocalClustering / nodesWithDegreeAtLeast2, 3)
                 : 0;
 
         const sampleStride = Math.max(1, Math.floor(n / 28));
@@ -280,7 +282,7 @@ export class NexusGraphEngine {
 
         const avgPathLength =
             reachablePairs > 0
-                ? Number((totalPathDist / reachablePairs).toFixed(2))
+                ? roundGraphDecimal(totalPathDist / reachablePairs)
                 : 0;
 
         return {
@@ -411,7 +413,7 @@ export class NexusGraphEngine {
                 const murrayRadiusPx =
                     edgeClass === 'BRIDGE'
                         ? 1.35
-                        : round2(1.65 * Math.pow(childBranchOrder, -1 / 3));
+                        : roundGraphDecimal(1.65 * Math.pow(childBranchOrder, -1 / 3));
 
                 const bendSign = (a.id + b.id) % 2 === 0 ? 1 : -1;
                 edges.push(
@@ -453,11 +455,11 @@ export class NexusGraphEngine {
             trunkCount: trunks,
             bridgeCount: bridges,
             dendriteCount: dendrites,
-            avgDegree: round2(avgDeg),
+            avgDegree: roundGraphDecimal(avgDeg),
             clusteringCoeff: realInvariants.clusteringCoeff,
             diameterHops: realInvariants.diameterHops,
             avgPathLength: realInvariants.avgPathLength,
-            computeTimeMs: round2(durMs),
+            computeTimeMs: roundGraphDecimal(durMs),
             computeSource: '[ts/graph_engine]',
         };
 

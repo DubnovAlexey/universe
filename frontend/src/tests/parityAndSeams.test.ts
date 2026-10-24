@@ -3,7 +3,7 @@
 // ФАЙЛ: frontend/src/tests/parityAndSeams.test.ts
 // НАЗНАЧЕНИЕ: Автоматический набор регрессионных проверок паритета, бинарного
 //             протокола, шага времени Velocity Verlet, графа NEXUS (TS == Python),
-//             таймлайна 5-й фазы, скорости одометра и ресурсов (15 инвариантов)
+//             геометрии линзы, таймлайна 5-й фазы, скорости одометра и ресурсов.
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
@@ -29,6 +29,7 @@ import { WasmPhysicsBridge, wasmPhysicsBridge } from '../bridge/wasmBridge';
 import {
     NexusGraphEngine,
     nexusGraphEngine,
+    roundGraphDecimal,
     type GraphNodeInput,
 } from '../bridge/simulationWorker';
 import { pythonSocketClient } from '../bridge/pythonSocketClient';
@@ -38,7 +39,11 @@ import {
     type OdometerGlyphCellState,
 } from '../bridge/cipherOdometerEngine';
 import { universeStore } from '../store/universeState';
+import { stressStore, type StressStateData } from '../store/stressState';
+import { VoidPhaseSimulation, type TopologyEdge } from '../phases/01_void';
 import { smoothAudioEnvelope } from '../utils/audioSync';
+import { runVisualSignalChecks } from './visualSignals.test';
+import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
     passed: boolean;
@@ -74,7 +79,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     // --- КОНЕЦ ФУНКЦИИ check (runUniverseVerificationSuite) ---
 
     // ------------------------------------------------------------------------
-    // 1. ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG (TS <-> RUST <-> PYTHON)
+    // ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG И АУДИООГИБАЮЩИХ (TS <-> RUST <-> PYTHON)
     // ------------------------------------------------------------------------
     check(
         verifyGoldenPrngParity(),
@@ -98,7 +103,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 2–4. ПРОВЕРКА SCENEBUFFERSOA ('UNVS', STATE DIGEST, 8-FIELD NAN-GUARD)
+    // ПРОВЕРКА SCENEBUFFERSOA ('UNVS', STATE DIGEST, 8-FIELD NAN-GUARD)
     // ------------------------------------------------------------------------
     const bufA = new SceneBufferSoA(64, GOLDEN_SEED);
     const bufB = new SceneBufferSoA(64, GOLDEN_SEED);
@@ -182,7 +187,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 5. ПРОВЕРКА ЧЕСТНОГО ДРЕЙФА ЭНЕРГИИ ΔE/E₀ И КОНТРАКТА C-ABI WASM
+    // ПРОВЕРКА ЧЕСТНОГО ДРЕЙФА ЭНЕРГИИ ΔE/E₀ И КОНТРАКТА C-ABI WASM
     // ------------------------------------------------------------------------
     wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
     const zeroDtStep = wasmPhysicsBridge.stepSymplecticPhysics(
@@ -221,7 +226,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 6. ПРОВЕРКА ОТСУТСТВИЯ ПОТЕРИ ВРЕМЕНИ ШАГА (2x8ms == 1x16ms == 4x4ms)
+    // ПРОВЕРКА ОТСУТСТВИЯ ПОТЕРИ ВРЕМЕНИ ШАГА (2x8ms == 1x16ms == 4x4ms)
     // ------------------------------------------------------------------------
     wasmPhysicsBridge.initKuramotoOscillators(GOLDEN_SEED);
     wasmPhysicsBridge.stepSymplecticPhysics(bufA, 16, 0.016, 0.016, 960, 540, 1920, 1080, 1.0);
@@ -243,7 +248,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 7. ТОЧНЫЙ КРОСС-ЯЗЫКОВОЙ ПАРИТЕТ ГРАФА NEXUS С PYTHON (6-NODE FIXTURE)
+    // КРОСС-ЯЗЫКОВОЙ ПАРИТЕТ NEXUS: МАЛАЯ И ТРАНСПОРТНАЯ ВЫБОРКИ
     // ------------------------------------------------------------------------
     const lutCheck = NexusGraphEngine.buildBezierArcLengthLUT(0, 0, 50, 30, 100, 0);
     const lutExactOk =
@@ -304,8 +309,155 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         `Cross-Language NEXUS Graph Exact Parity with Python (edges=[${expectedIds.join(',')}], C=${tel6.clusteringCoeff}, D=${tel6.diameterHops})`
     );
 
+    // --- НАЧАЛО РАЗДЕЛА: ОБЩАЯ ВЫБОРКА NEXUS И ГЕОМЕТРИЧЕСКИЕ РЕГРЕССИИ ---
+    const roundingCases = [
+        [1.125, 2, 1.13], [-1.125, 2, -1.12],
+        [2.625, 2, 2.63], [-2.625, 2, -2.62],
+        [1.0625, 3, 1.063], [-1.0625, 3, -1.062],
+    ];
+    const roundedEndpoints = nexusGraphEngine.buildDeterministicGraph([
+        { index: 0, id: 0, x: -1.125, y: 1.125, clusterId: 0, energy: 1 },
+        { index: 1, id: 1, x: 20.125, y: -2.625, clusterId: 0, energy: 1 },
+        { index: 2, id: 2, x: 40, y: 20, clusterId: 1, energy: 1 },
+    ], 220, GOLDEN_SEED, 0).edges[0];
+    check(
+        roundingCases.every(([value, digits, expected]) => roundGraphDecimal(value, digits) === expected) &&
+            roundedEndpoints.x1 === -1.12 && roundedEndpoints.y1 === 1.13 &&
+            roundedEndpoints.x2 === 20.13 && roundedEndpoints.y2 === -2.62,
+        'NEXUS decimal publication uses floor(value * scale + 0.5) / scale, including negative ties toward +infinity'
+    );
+
+    const transportRng = new DeterministicPRNG(nexusParity24.inputs.seed);
+    const transportNodes: GraphNodeInput[] = [];
+    for (let index = 0; index < 24; index++) {
+        const x = transportRng.nextRange(-320, 320);
+        const y = transportRng.nextRange(-240, 240);
+        transportRng.nextRange(0.1, 1.5);
+        transportRng.nextRange(-18, 18);
+        transportRng.nextRange(-18, 18);
+        const energy = transportRng.nextRange(0.3, 0.95);
+        transportNodes.push({ index, id: index, x, y, clusterId: index % 6, energy });
+    }
+    const graph24 = nexusGraphEngine.buildDeterministicGraph(
+        nexusParity24.inputs.nodes,
+        nexusParity24.inputs.maxConnectDist,
+        nexusParity24.inputs.seed,
+        nexusParity24.inputs.simTimeSec
+    );
+    const telemetry24 = nexusGraphEngine.getLastTelemetry();
+    const metrics24Match = Object.entries(nexusParity24.expected.telemetry).every(
+        ([key, expected]) => telemetry24[key as keyof typeof telemetry24] === expected
+    );
+    // 24 узла запускают BFS из каждого узла; выборочный BFS этой выборкой не покрывается.
+    check(
+        JSON.stringify(transportNodes) === JSON.stringify(nexusParity24.inputs.nodes) &&
+            JSON.stringify(graph24.edges) === JSON.stringify(nexusParity24.expected.edges) &&
+            nexusParity24.expected.degreeByIndex.every((degree, index) => graph24.degreeByIndex.get(index) === degree) &&
+            metrics24Match,
+        'Shared transport 24-node NEXUS fixture matches Python exactly: inputs, all 40 edges/controls/LUT/radii, degrees and metrics (complete BFS)'
+    );
+
+    const curvedEdges = graph24.edges.filter(
+        (edge) => edge.arcLength > Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1) + 0.5
+    );
+    let curvedSamplingValid = curvedEdges.length > 0;
+    let differsFromRawParameter = false;
+    for (const edge of curvedEdges) {
+        const start = NexusGraphEngine.sampleBezierByArcLength(
+            edge.x1, edge.y1, edge.ctrlX, edge.ctrlY, edge.x2, edge.y2, edge.lengthLUT, 0
+        );
+        const end = NexusGraphEngine.sampleBezierByArcLength(
+            edge.x1, edge.y1, edge.ctrlX, edge.ctrlY, edge.x2, edge.y2, edge.lengthLUT, 1
+        );
+        curvedSamplingValid &&= start.x === edge.x1 && start.y === edge.y1 && end.x === edge.x2 && end.y === edge.y2;
+        for (let segment = 0; segment < 4; segment++) {
+            const arcFraction = (edge.lengthLUT[segment] + edge.lengthLUT[segment + 1]) / (2 * edge.arcLength);
+            const point = NexusGraphEngine.sampleBezierByArcLength(
+                edge.x1, edge.y1, edge.ctrlX, edge.ctrlY, edge.x2, edge.y2, edge.lengthLUT, arcFraction
+            );
+            const t = (segment + 0.5) / 4;
+            const expectedX = (1 - t) ** 2 * edge.x1 + 2 * (1 - t) * t * edge.ctrlX + t ** 2 * edge.x2;
+            const expectedY = (1 - t) ** 2 * edge.y1 + 2 * (1 - t) * t * edge.ctrlY + t ** 2 * edge.y2;
+            curvedSamplingValid &&= Math.hypot(point.x - expectedX, point.y - expectedY) < 1e-9;
+            const rawX = (1 - arcFraction) ** 2 * edge.x1 + 2 * (1 - arcFraction) * arcFraction * edge.ctrlX + arcFraction ** 2 * edge.x2;
+            const rawY = (1 - arcFraction) ** 2 * edge.y1 + 2 * (1 - arcFraction) * arcFraction * edge.ctrlY + arcFraction ** 2 * edge.y2;
+            differsFromRawParameter ||= Math.hypot(point.x - rawX, point.y - rawY) > 0.05;
+        }
+    }
+    check(
+        curvedSamplingValid && differsFromRawParameter,
+        'Curved-edge arc LUT sampling preserves endpoints and interpolates each length interval instead of using the raw Bezier parameter'
+    );
+
+    // Изолированный экземпляр выполняет обе реальные ветви обновления без загрузки WASM.
+    const topologySimulation = Object.create(VoidPhaseSimulation.prototype) as {
+        particles: Array<GraphNodeInput & { depthTier: 'MIDGROUND'; degree: number }>;
+        edges: TopologyEdge[];
+        afterglowMap: Map<string, number>;
+        width: number;
+        height: number;
+        lastTopologyBuildSimSec: number;
+        updateTopologyAndEdgeCurves(dt: number, phase: '03_EVOLUTION', simTimeSec: number, seed: number): void;
+    };
+    Object.assign(topologySimulation, {
+        particles: fixture6.map((node) => ({ ...node, depthTier: 'MIDGROUND', degree: 0 })),
+        edges: [], afterglowMap: new Map(), width: 920, height: 920, lastTopologyBuildSimSec: -10,
+    });
+    topologySimulation.updateTopologyAndEdgeCurves(0, '03_EVOLUTION', 1, GOLDEN_SEED);
+    const builtEdges = topologySimulation.edges.map((edge) => ({ ...edge }));
+    topologySimulation.updateTopologyAndEdgeCurves(0, '03_EVOLUTION', 1.001, GOLDEN_SEED);
+    const fastEdges = topologySimulation.edges.map((edge) => ({ ...edge }));
+    topologySimulation.lastTopologyBuildSimSec = -10;
+    topologySimulation.updateTopologyAndEdgeCurves(0, '03_EVOLUTION', 1.001, GOLDEN_SEED);
+    check(
+        new Set(builtEdges.map((edge) => edge.edgeClass)).size === 3 &&
+            fastEdges.every((edge, index) => {
+                const before = builtEdges[index];
+                const rebuilt = topologySimulation.edges[index];
+                return edge.id === before.id && edge.id === rebuilt.id &&
+                    Math.hypot(edge.ctrlX - before.ctrlX, edge.ctrlY - before.ctrlY) < 0.02 &&
+                    Math.abs(edge.ctrlX - rebuilt.ctrlX) <= 0.0051 &&
+                    Math.abs(edge.ctrlY - rebuilt.ctrlY) <= 0.0051;
+            }),
+        'All three edge classes keep the same bend through rebuild -> intermediate update -> rebuild with an odd seed'
+    );
+
+    const stressState = stressStore.getState() as StressStateData;
+    const savedStress = { ...stressState };
+    const lensUniverseState = universeStore.getState();
+    const savedLensTime = lensUniverseState.telemetry.simulationTimeSec;
+    const savedLogicConvergence = lensUniverseState.opticalWeights.logicConvergence;
+    let lensTimeValid = true;
+    const lensReveals: number[] = [];
+    try {
+        Object.assign(stressState, {
+            lensX: 0, lensY: 0, currentBreachRadius: 100, globalStress: 1,
+            revealIntensity: 1, shockwaves: [], spontaneousRifts: [],
+        });
+        lensUniverseState.opticalWeights.logicConvergence = 0;
+        for (const time of [0, 2]) {
+            lensUniverseState.telemetry.simulationTimeSec = time;
+            const localRadius = stressStore.getDeformedLensRadiusAtAngle(0, time);
+            const normalizedRadius = 100 / localRadius;
+            const fade = (normalizedRadius - 0.55) / 0.45;
+            const expectedReveal = normalizedRadius >= 1 ? 0 : 1 - fade * fade * (3 - 2 * fade);
+            const reveal = stressStore.getTruthRevealFactorAt(100, 0);
+            lensReveals.push(reveal);
+            lensTimeValid &&= Math.abs(reveal - expectedReveal) < 1e-12;
+        }
+    } finally {
+        Object.assign(stressState, savedStress);
+        lensUniverseState.telemetry.simulationTimeSec = savedLensTime;
+        lensUniverseState.opticalWeights.logicConvergence = savedLogicConvergence;
+    }
+    check(
+        lensTimeValid && lensReveals[0] > 0.001 && lensReveals[1] === 0,
+        'Truth reveal follows the deformed lens boundary at current simulation time as a fixed point crosses the animated rim'
+    );
+    // --- КОНЕЦ РАЗДЕЛА: ОБЩАЯ ВЫБОРКА NEXUS И ГЕОМЕТРИЧЕСКИЕ РЕГРЕССИИ ---
+
     // ------------------------------------------------------------------------
-    // 8–11. ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
+    // ПРОВЕРКА БИНАРНОГО ПРОТОКОЛА PYTHONSOCKETCLIENT
     // ------------------------------------------------------------------------
     pythonSocketClient.resetSession();
 
@@ -350,7 +502,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 12–13. ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX, СКОРОСТЬ 18..26 ГЦ И ПАУЗА)
+    // ПРОВЕРКА CIPHERODOMETERENGINE (ВЁРСТКА 320..1920 PX, СКОРОСТЬ 18..26 ГЦ И ПАУЗА)
     // ------------------------------------------------------------------------
     const testWidths = [320, 360, 390, 768, 1280, 1920];
     let allWidthsValid = true;
@@ -405,7 +557,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 14. РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
+    // РЕГРЕССИОННЫЙ ТЕСТ 5-Й ФАЗЫ (БЕЗ ЗАВИСАНИЯ И С СОХРАНЕНИЕМ ВИЗИТКИ)
     // ------------------------------------------------------------------------
     universeStore.setPhase('05_SINGULARITY');
     universeStore.updateTelemetry({
@@ -446,7 +598,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     // ------------------------------------------------------------------------
-    // 15. RESOURCELEDGER (ZERO-ALLOWANCE LEAK CHECK, UNDERFLOW & 10X RESTART)
+    // RESOURCELEDGER (ZERO-ALLOWANCE LEAK CHECK, UNDERFLOW & 10X RESTART)
     // ------------------------------------------------------------------------
     resourceLedger.setBaseline();
     resourceLedger.trackRelease('workers', 1);
@@ -514,6 +666,8 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     );
 
     universeStore.setPhase('01_VOID');
+
+    for (const result of runVisualSignalChecks()) check(result.passed, result.description);
 
     return {
         passed: passedChecks === totalChecks,

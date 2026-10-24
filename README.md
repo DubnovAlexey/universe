@@ -2,7 +2,7 @@
 
 [![Live Demo](https://img.shields.io/badge/GitHub_Pages-Launch_Experience-38bdf8?style=for-the-badge&logo=github)](https://dubnovalexey.github.io/universe/)
 [![Author Profile](https://img.shields.io/badge/GitHub-Alexey_Dubnov-6366f1?style=for-the-badge&logo=github)](https://github.com/DubnovAlexey)
-[![Deterministic Core](https://img.shields.io/badge/Verification-16_TS_%7C_6_Python_%7C_13_Rust_%7C_5_WASM-f59e0b?style=for-the-badge)](#5-truth-policy--runtime-module-statuses)
+[![Deterministic Core](https://img.shields.io/badge/Verification-27_TS_%7C_8_Python_%7C_13_Rust_%7C_5_WASM-f59e0b?style=for-the-badge)](#5-truth-policy--runtime-module-statuses)
 [![License: MIT](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](#license)
 
 * **Live Interactive Presentation (GitHub Pages):** [https://dubnovalexey.github.io/universe/](https://dubnovalexey.github.io/universe/)
@@ -19,7 +19,7 @@
 
 **Core Philosophical Axis:** Cosmic beauty (`ILLUSION`), emergent neural topology (`NEXUS`), and computational logic (`X-RAY / TRUTH`) share the final scene coordinates. The physics provider advances before artistic targets; those targets produce the particle geometry consumed by Canvas, graph quantization and the `SceneBufferSoA` publication. A sampled state digest is diagnostic rather than proof of complete optical equivalence.
 
-- **For Viewers:** A self-starting generative sci-fi film driven by light, deep velvet shadows, multi-echelon parallax (`Z0`–`Z4`), living non-Euclidean wave rings, spiral dust clouds, and spatial ambient sound. In the finale (`05. SINGULARITY`), the "Cat's Eye" nebula corona and Black Hole collapse into a single point of light and seamlessly unfold into an interactive holographic developer manifesto card (`DUBNOV ALEXEY`) with direct links to the author's main GitHub profile and project repository. Across subsequent cycles, the manifesto card remains softly suspended in a translucent `.ambient-loop` state, illuminating on mouse hover at any moment.
+- **For Viewers:** A self-starting generative sci-fi film driven by light, deep velvet shadows, multi-echelon parallax (`Z0`–`Z4`), living non-Euclidean wave rings, spiral dust clouds, and spatial ambient sound. In the finale (`05. SINGULARITY`), the "Cat's Eye" nebula corona and Black Hole collapse into a single point of light and seamlessly unfold into an interactive holographic developer manifesto card (`DUBNOV ALEXEY`) with direct links to the author's main GitHub profile and project repository. After the first complete cycle, the card rises over 12 seconds of active scene time and remains in a translucent `.ambient-loop` state (opacity `0.60`), with a soft shadow and transparent radial underlay. Hover or keyboard focus reveals it. Pause freezes the rise; reduced motion uses a static position.
 - **For Professors & CTOs:** A transparent architecture combining **Astro, TypeScript, a custom zero-dependency JSX DOM/SVG factory, High-DPI Canvas 2D, Rust and Python reference/verification modules, WGSL shader specifications, and Web Audio API** around a shared Structure-of-Arrays (`SoA`) contract.
 
 **Runtime in the current static build:** The visual cycle starts on page load. Audio playback is attempted immediately and continues after the browser allows it; autoplay policies may require the visitor's first gesture. Rust/WASM loads asynchronously by default through raw C ABI v1; `?wasm=0` forces TypeScript. Both providers advance the same Kuramoto phases, which affect particle breathing and the late-GENESIS triad, plus a separate conservative ensemble of 64 reference orbits used for energy telemetry. The artistic scene remains choreographed and is not a full N-body simulation. Python stays an offline/CI reference. WebGPU is capability-probed only; Canvas 2D remains the active renderer and NEXUS runs synchronously in TypeScript. The WASM artifact and its integration checks are verified locally; a complete browser presentation check remains open. Actual frame rate depends on the device and browser; `60–144 FPS` is a design target.
@@ -109,7 +109,9 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
 
 ---
 
-## 6. Quick Start & Automated Verification Commands (35 Unit Checks + 5 WASM Integration Checks)
+V1 is implemented in source: one immutable phase/audio/stress snapshot per existing frame feeds Canvas, waterfall and DOM consumers. Code-point glyph pools include mathematics and historical symbols, with a browser font filter and ASCII fallback. Corner groups, the phase scale, controls and finale static lines use three `160–180 ms` roll steps followed by a readable `280–320 ms` canonical dwell; leave/blur, pause and reduced motion restore exact text and stable accessible names. The autonomous odometer retains `18–26 Hz`. The shared NEXUS fixture covers all 40 edges of the transport 24-node graph alongside fixture6; neither fixture exercises sampled BFS.
+
+## 6. Quick Start & Automated Verification Commands (48 Unit Checks + 5 WASM Integration Checks)
 
     git clone https://github.com/DubnovAlexey/universe.git
     cd universe
@@ -125,9 +127,9 @@ Every status badge in `LAYER_02`, `LAYER_03`, and `LAYER_04` initializes with `0
     npm run build
     npm run verify:pages-artifact
 
-`npm run build:wasm` requires Rust with the `wasm32-unknown-unknown` target. `npm run verify:all` runs Python verification/tests, native Rust tests, TypeScript typecheck/tests, WASM build/integration checks and the static build/artifact checks. The five WASM checks cover 600 mixed steps against TS, memory growth/count, seed/reset and late adoption, trap/ABI/pointer fallback, and native-phase influence on visible coordinates and their graph/SoA publication. Browser review remains a separate check.
+The current build uses Astro `7.4.2` and requires Node.js `>=22.23.4`; use `npm ci` with the committed lockfile. `npm audit` reports zero vulnerabilities after the dependency update. `npm run build:wasm` requires Rust with the `wasm32-unknown-unknown` target. `npm run verify:repo` checks that npm entry scripts and source/fixtures are tracked before CI. `npm run verify:all` starts with this guard, then runs Python verification/tests, native Rust tests, TypeScript typecheck/tests, WASM build/integration checks and the static build/artifact checks. The five WASM checks cover 600 mixed steps against TS, memory growth/count, seed/reset and late adoption, trap/ABI/pointer fallback, and native-phase influence on visible coordinates and their graph/SoA publication. Browser review remains a separate check. [QA coverage and open checks](docs/QA_STATUS.md) record the current boundary.
 
-The complete verification command passed. Production smoke confirmed default native mode, the finale and persistent card on entering the second cycle, forced TS fallback, and a `507×684` native viewport with visible controls; no warnings/errors were recorded in those runs. Full device/audio/Safari coverage and a repeatable performance baseline remain open.
+The final `npm run verify:all` passed: 48 unit checks (27 TS, 8 Python, 13 Rust), 5 real-WASM checks, typecheck, Astro build and Pages artifact, without warnings in that terminal run. Selective production smoke on `1440×900` and `507×684` confirmed the persistent raised card, visible actions, keyboard focus, canonical accessible labels, pause restoration and supplementary glyphs; no warnings/errors were recorded. Continuous 108-second viewing, audio audibility, Safari/iOS, OS reduced motion and repeatable performance measurements remain open. [QA status](docs/QA_STATUS.md) separates these checks from remote CI.
 
 ---
 ---
@@ -140,7 +142,7 @@ The complete verification command passed. Production smoke confirmed default nat
 
 **Философская ось проекта:** Космическая красота (`ILLUSION`), возникающая нейронная сеть мозга (`NEXUS`) и вычислительная логика (`X-RAY / TRUTH`) используют общие итоговые координаты сцены. Физический provider выполняется до расчёта художественных целей; итоговая геометрия частиц поступает в Canvas, квантование графа и публикацию `SceneBufferSoA`. Выборочный дайджест служит диагностикой и не доказывает полного тождества оптик.
 
-- **Для зрителя:** визуальный цикл запускается при открытии страницы (на компьютере и телефоне); музыка запускается сразу, если браузер разрешает автозапуск, или после первого жеста пользователя, если браузер его блокирует. В 5-й фазе корона «Кошачьего глаза» (`NGC 6543`) и Чёрная дыра сжимаются в яркую микро-точку и **без паузы** раскрываются в голографическую визитку **`DUBNOV ALEXEY`** с парящей в воздухе без рамок квантовой строкой и кнопками перехода в профиль GitHub и репозиторий. После первого круга космос продолжает движение, а визитка остаётся на фоне (`.ambient-loop`) и доступна при наведении или клавиатурном фокусе.
+- **Для зрителя:** визуальный цикл запускается при открытии страницы (на компьютере и телефоне); музыка запускается сразу, если браузер разрешает автозапуск, или после первого жеста пользователя, если браузер его блокирует. В 5-й фазе корона «Кошачьего глаза» (`NGC 6543`) и Чёрная дыра сжимаются в яркую микро-точку и **без паузы** раскрываются в голографическую визитку **`DUBNOV ALEXEY`** с парящей в воздухе без рамок квантовой строкой и кнопками перехода в профиль GitHub и репозиторий. После первого полного круга визитка за 12 секунд активного времени плавно поднимается и остаётся на фоне (`.ambient-loop`, opacity `0.60`) с мягкой тенью и прозрачной радиальной подложкой; она доступна при наведении или клавиатурном фокусе. Пауза замораживает подъём, reduced motion задаёт статичное положение.
 
 **Техническая граница текущей статической сборки:** Rust/WASM асинхронно загружается по умолчанию через raw C ABI v1; `?wasm=0` принудительно выбирает TypeScript. Оба provider рассчитывают одинаковые фазы Курамото для дыхания частиц и геометрии позднего GENESIS, а также отдельные 64 консервативные контрольные орбиты для энергетической телеметрии. Художественная сцена не является полной N-body симуляцией. Python остаётся офлайн/CI reference, NEXUS работает синхронно в TS. WebGPU только проверяется на поддержку; Canvas 2D выполняет активную отрисовку. Реальный WASM и интеграционные сценарии проверены локально; полная браузерная демонстрация проверяется отдельно.
 - **Для системного архитектора и CTO:** браузерная часть соединяет **Astro, TypeScript, Rust/WASM, Canvas 2D и Web Audio API**; Python даёт независимые эталоны и проверки, WGSL представлен спецификациями.
@@ -161,7 +163,9 @@ The complete verification command passed. Production smoke confirmed default nat
 
 ---
 
-## 3. Локальный запуск и проверки (35 модульных: 16 TS + 6 Python + 13 Rust; 5 интеграционных WASM)
+V1 реализован в исходниках: один неизменяемый снимок фазы, аудио и stress на существующий кадр объединяет Canvas, водопад и DOM. Пулы полных code point включают математику и исторические символы; браузер проверяет наличие глифа в доступном шрифте и использует ASCII fallback. Hover угловых групп, фазовой шкалы, управления и статических строк визитки выполняет три шага roll по `160–180 мс`, затем удерживает точный текст `280–320 мс`; уход курсора/blur, пауза и reduced motion восстанавливают текст и стабильные доступные имена. Автономный одометр сохраняет `18–26 Гц`. Паритет NEXUS проверяется fixture6 и общей transport-выборкой на 24 узлах/40 рёбрах; выборочный BFS ими не покрывается.
+
+## 3. Локальный запуск и проверки (48 модульных: 27 TS + 8 Python + 13 Rust; 5 интеграционных WASM)
 
     git clone https://github.com/DubnovAlexey/universe.git
     cd universe
@@ -177,9 +181,9 @@ The complete verification command passed. Production smoke confirmed default nat
     npm run build
     npm run verify:pages-artifact
 
-Для сборки WASM нужен Rust target `wasm32-unknown-unknown`. Полная команда `npm run verify:all` включает Python verifier и тесты, native Rust, TypeScript typecheck/инварианты, сборку и 5 интеграционных проверок WASM, Astro и Pages artifact. Интеграционные проверки охватывают 600 смешанных шагов TS/Rust, memory growth/count, seed/reset и позднее подключение, fallback при trap/неверном ABI/указателях и влияние Rust-фазы на видимые координаты, граф и SoA. Полный браузерный сценарий проверяется отдельно.
+Текущая сборка использует Astro `7.4.2` и Node.js `>=22.23.4`; зависимости устанавливаются через `npm ci` по lock-файлу. После обновления зависимостей `npm audit` сообщает 0 уязвимостей. Для сборки WASM нужен Rust target `wasm32-unknown-unknown`. `npm run verify:repo` проверяет отслеживаемые npm entry scripts и исходники/fixtures перед CI. Полная команда `npm run verify:all` начинает с этого guard, затем включает Python verifier и тесты, native Rust, TypeScript typecheck/инварианты, сборку и 5 интеграционных проверок WASM, Astro и Pages artifact. Интеграционные проверки охватывают 600 смешанных шагов TS/Rust, memory growth/count, seed/reset и позднее подключение, fallback при trap/неверном ABI/указателях и влияние Rust-фазы на видимые координаты, граф и SoA. Полный браузерный сценарий проверяется отдельно; [покрытие QA и открытые проверки](docs/QA_STATUS.md) сведены в отдельном документе.
 
-Полная команда проверки прошла. Выборочный production smoke подтвердил default native, финал и сохранённую визитку при входе во второй цикл, принудительный TS fallback и native на viewport `507×684` с видимым управлением; warning/error в просмотренных запусках не зарегистрированы. Полное покрытие устройств/звука/Safari и воспроизводимый performance baseline остаются открытыми.
+Финальный `npm run verify:all` прошёл: 48 модульных проверок (27 TS, 8 Python, 13 Rust), 5 интеграций реального WASM, typecheck, Astro build и Pages artifact, без warning/error в этом терминальном прогоне. Выборочный production smoke на `1440×900` и `507×684` подтвердил сохранённую приподнятую карточку, видимые действия, клавиатурный фокус, канонические доступные имена, восстановление при паузе и supplementary глифы; warning/error не зарегистрированы. Непрерывный просмотр 108 секунд, слышимость звука, Safari/iOS, системный reduced motion и воспроизводимый performance baseline остаются открытыми. [Статус QA](docs/QA_STATUS.md) отдельно указывает границу удалённого CI.
 
 ---
 

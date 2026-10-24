@@ -6,11 +6,12 @@
 //             постоянного полупрозрачного режима на фоне цикла (MASTER 05 v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
-//   РАЗДЕЛ 1. Расширенный пул квантовых глифов и контроллер перебора при
-//             наведении мыши (triggerLineOrButtonScramble).
+//   РАЗДЕЛ 1. Делегирование фазового перебора общему контроллеру наведения
+//             и клавиатурного фокуса (triggerLineOrButtonScramble).
 //   РАЗДЕЛ 2. Контроллер 60-FPS анимации визитки (FinaleCardDomAnimator):
 //     - Подраздел 2.1. Жизненный цикл RAF (активен в Акте D и в постоянном
-//                      полупрозрачном фоновом режиме после первого цикла).
+//                      полупрозрачном фоновом режиме после первого цикла),
+//                      безопасное смещение визитки после возврата в фазу 01.
 //     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
 //                      индивидуальное вращение каждого знака без рамок) и
 //                      гарантированная 100%-ная фиксация строк 0, 1, 3, 4.
@@ -23,74 +24,20 @@
 import { React } from './Layer2_Metrics';
 import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
 import { smootherstep, universeStore, type UniverseState } from '../store/universeState';
-import { audioSync } from '../utils/audioSync';
+import { getVisualSignals } from '../core/visualSignals';
+import { getRenderableGlyphPool } from '../core/glyphGrammar';
+import { calmGlyphHover } from '../core/glyphHover';
 
 // ============================================================================
-// РАЗДЕЛ 1. КОНСТАНТЫ ГЛИФОВ И КОНТРОЛЛЕР ПЛАВНОГО КВАНТОВОГО ПЕРЕБОРА
+// РАЗДЕЛ 1. ОБЩИЙ КОНТРОЛЛЕР ПЛАВНОГО ФАЗОВОГО ПЕРЕБОРА
 // ============================================================================
-
-const SCRAMBLE_GLYPHS =
-    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡∷';
-
-const activeScrambleTimers = new WeakMap<HTMLElement, number>();
 
 // --- НАЧАЛО ФУНКЦИИ triggerLineOrButtonScramble ---
 /**
- * Запускает плавный квантовый перебор символов на статической строке визитки
- * или кнопке при наведении мыши (шаг 52 мс) с гарантированным возвратом
- * точного канонического текста.
+ * Передаёт строку или кнопку контроллеру без собственного таймера наведения.
  */
 function triggerLineOrButtonScramble(el: HTMLElement, canonicalText: string): void {
-    if (universeStore.getState().reducedMotion) {
-        el.textContent = canonicalText;
-        return;
-    }
-
-    const prevTimer = activeScrambleTimers.get(el);
-    if (prevTimer !== undefined) {
-        window.clearInterval(prevTimer);
-        activeScrambleTimers.delete(el);
-    }
-
-    let step = 0;
-    const totalSteps = 10;
-
-    const timer = window.setInterval(() => {
-        step++;
-        if (step >= totalSteps) {
-            el.textContent = canonicalText;
-            window.clearInterval(timer);
-            activeScrambleTimers.delete(el);
-            return;
-        }
-
-        const lockBoundary = Math.floor((step / totalSteps) * canonicalText.length);
-        el.textContent = canonicalText
-            .split('')
-            .map((ch: string, idx: number): string => {
-                if (
-                    ch === ' ' ||
-                    ch === '[' ||
-                    ch === ']' ||
-                    ch === '·' ||
-                    ch === ':' ||
-                    ch === '(' ||
-                    ch === ')' ||
-                    ch === '↗' ||
-                    ch === '↻' ||
-                    idx < lockBoundary
-                ) {
-                    return ch;
-                }
-                if ((idx + step) % 2 !== 0) {
-                    return ch;
-                }
-                return SCRAMBLE_GLYPHS[(idx * 11 + step * 5) % SCRAMBLE_GLYPHS.length];
-            })
-            .join('');
-    }, 52);
-
-    activeScrambleTimers.set(el, timer);
+    calmGlyphHover.start(el, canonicalText);
 }
 // --- КОНЕЦ ФУНКЦИИ triggerLineOrButtonScramble ---
 
@@ -105,6 +52,10 @@ class FinaleCardDomAnimator {
     private accumulatedAssemblyPhase = 0;
     private lfoClockSec = 0;
     private lastQuantumStep = -1;
+    private ambientRiseElapsedSec = 0;
+    private ambientRiseDistancePx = 0;
+    private ambientLayoutKey = '';
+    private breathHeartbeat = 0.35;
 
     private cardBoxEl: HTMLElement | null = null;
     private line0El: HTMLElement | null = null;
@@ -120,11 +71,19 @@ class FinaleCardDomAnimator {
     // --- НАЧАЛО ФУНКЦИИ bindElements ---
     public bindElements(root: HTMLElement): void {
         this.cardBoxEl = root.querySelector<HTMLElement>('[data-bind="l5-card-box"]');
+        this.ambientLayoutKey = '';
         this.line0El = root.querySelector<HTMLElement>('[data-bind="l5-line-0"]');
         this.line1El = root.querySelector<HTMLElement>('[data-bind="l5-line-1"]');
         this.line2QuantumEl = root.querySelector<HTMLElement>('[data-bind="l5-line-2"]');
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
+        const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
+        staticLines.forEach((el, index) => {
+            calmGlyphHover.setCanonical(el, CANONICAL_FINALE_LINES[index]);
+        });
+        root.querySelectorAll<HTMLElement>('.btn-cipher-action').forEach((el) => {
+            calmGlyphHover.setCanonical(el, el.textContent ?? '');
+        });
     }
     // --- КОНЕЦ ФУНКЦИИ bindElements ---
 
@@ -145,6 +104,42 @@ class FinaleCardDomAnimator {
     }
     // --- КОНЕЦ ФУНКЦИИ stop ---
 
+    // --- НАЧАЛО ФУНКЦИИ getAmbientRiseDistance ---
+    /** Освобождает центр на desktop и ограничивает подъём safe-area областью. */
+    private getAmbientRiseDistance(): number {
+        const card = this.cardBoxEl;
+        const stage = card?.parentElement;
+        if (!card || !stage) return 0;
+
+        const layoutKey = `${stage.clientWidth}:${stage.clientHeight}:${card.offsetHeight}`;
+        if (layoutKey !== this.ambientLayoutKey) {
+            this.ambientLayoutKey = layoutKey;
+            const stageStyle = window.getComputedStyle(stage);
+            const paddingTop = Number.parseFloat(stageStyle.paddingTop) || 0;
+            const paddingBottom = Number.parseFloat(stageStyle.paddingBottom) || 0;
+            const freeSpaceAbove = Math.max(
+                0,
+                (stage.clientHeight - paddingTop - paddingBottom - card.offsetHeight) / 2
+            );
+            const compactLayout = stage.clientWidth <= 920;
+            const centeredCardBottom = paddingTop + freeSpaceAbove + card.offsetHeight;
+            const breathMargin = Math.ceil(2 + card.offsetHeight * 0.0075);
+            // Нижний край desktop-визитки остаётся выше центра с зазором 24 px,
+            // включая максимальную амплитуду её дыхания. На компактных экранах
+            // сохраняется небольшой подъём, чтобы длинная карточка не ушла под HUD.
+            const desiredRise = compactLayout
+                ? Math.max(14, Math.min(28, stage.clientHeight * 0.03))
+                : Math.max(0, centeredCardBottom - stage.clientHeight / 2 + 24 + breathMargin);
+            this.ambientRiseDistancePx = Math.min(
+                desiredRise,
+                Math.max(0, freeSpaceAbove - 8)
+            );
+        }
+
+        return this.ambientRiseDistancePx;
+    }
+    // --- КОНЕЦ ФУНКЦИИ getAmbientRiseDistance ---
+
     // ------------------------------------------------------------------------
     // ПОДРАЗДЕЛ 2.2. АНИМАЦИЯ СБОРКИ И УСКОРЕННОЙ В ~3.5 РАЗА КВАНТОВОЙ СТРОКИ
     // ------------------------------------------------------------------------
@@ -159,13 +154,15 @@ class FinaleCardDomAnimator {
         canonical: string,
         lineIndex: number,
         progress: number,
-        assemblyWheelStep: number
+        assemblyWheelStep: number,
+        glyphPool: readonly string[]
     ): string {
         if (progress >= 0.76) return canonical;
-        const len = canonical.length;
+        const canonicalChars = Array.from(canonical);
+        const len = canonicalChars.length;
         let out = '';
         for (let i = 0; i < len; i++) {
-            const ch = canonical[i];
+            const ch = canonicalChars[i];
             const lockThreshold =
                 0.14 + lineIndex * 0.055 + (i / Math.max(1, len)) * 0.34;
             if (
@@ -179,8 +176,8 @@ class FinaleCardDomAnimator {
                 out += ch;
             } else {
                 const wheelIdx =
-                    (assemblyWheelStep + i * 5 + lineIndex * 9) % SCRAMBLE_GLYPHS.length;
-                out += SCRAMBLE_GLYPHS[wheelIdx];
+                    (assemblyWheelStep + i * 5 + lineIndex * 9) % glyphPool.length;
+                out += glyphPool[wheelIdx];
             }
         }
         return out;
@@ -191,6 +188,8 @@ class FinaleCardDomAnimator {
     private tick = (nowMs: number): void => {
         this.rafId = 0;
         const state = universeStore.getState();
+        const signals = getVisualSignals();
+        const glyphPool = getRenderableGlyphPool(state.currentPhase);
         const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
         const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
         const isPersistentCard = state.finaleReachedOnce;
@@ -216,7 +215,22 @@ class FinaleCardDomAnimator {
                 this.lfoClockSec += dtSec;
             }
 
-            const audioSnap = audioSync.getSnapshot(this.lfoClockSec);
+            if (isSimActive) this.breathHeartbeat = signals.heartbeat;
+
+            // После первого полного цикла подъём занимает 12 секунд активного времени.
+            // RAF объединяет его с дыханием: CSS не переопределяет transform,
+            // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
+            const hasLoopCard = isPersistentCard && state.cycleCount > 1;
+            if (!hasLoopCard) {
+                this.ambientRiseElapsedSec = 0;
+            } else if (state.reducedMotion) {
+                this.ambientRiseElapsedSec = 12;
+            } else if (isSimActive) {
+                this.ambientRiseElapsedSec = Math.min(12, this.ambientRiseElapsedSec + dtSec);
+            }
+            const ambientRise = hasLoopCard
+                ? this.getAmbientRiseDistance() * smootherstep(0, 12, this.ambientRiseElapsedSec)
+                : 0;
 
             // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении
             const emergeScale =
@@ -226,8 +240,8 @@ class FinaleCardDomAnimator {
 
             // Спокойное дыхание зафиксированной визитки в такт низкочастотной огибающей музыки
             const breathEnv =
-                state.reducedMotion || !isSimActive ? 0 : smootherstep(0.48, 0.88, p);
-            const musicPulse = 1.0 + audioSnap.heartbeat * 0.42;
+                state.reducedMotion ? 0 : smootherstep(0.48, 0.88, p);
+            const musicPulse = 1.0 + this.breathHeartbeat * 0.42;
             const heartbeatScale =
                 1.0 +
                 breathEnv *
@@ -236,7 +250,7 @@ class FinaleCardDomAnimator {
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
             const finalScale = emergeScale * heartbeatScale;
-            this.cardBoxEl.style.transform = `translate3d(0, ${floatY.toFixed(
+            this.cardBoxEl.style.transform = `translate3d(0, ${(floatY - ambientRise).toFixed(
                 1
             )}px, 0) scale(${finalScale.toFixed(4)})`;
 
@@ -247,49 +261,53 @@ class FinaleCardDomAnimator {
             const assemblyStep = Math.floor(this.accumulatedAssemblyPhase);
 
             if (p < 0.76 && !state.reducedMotion) {
-                if (this.line0El && !activeScrambleTimers.has(this.line0El)) {
+                if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
                     this.line0El.textContent = this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[0],
                         0,
                         p,
-                        assemblyStep
+                        assemblyStep,
+                        glyphPool
                     );
                 }
-                if (this.line1El && !activeScrambleTimers.has(this.line1El)) {
+                if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
                     this.line1El.textContent = this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[1],
                         1,
                         p,
-                        assemblyStep
+                        assemblyStep,
+                        glyphPool
                     );
                 }
-                if (this.line3El && !activeScrambleTimers.has(this.line3El)) {
+                if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
                     this.line3El.textContent = this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[3],
                         3,
                         p,
-                        assemblyStep
+                        assemblyStep,
+                        glyphPool
                     );
                 }
-                if (this.line4El && !activeScrambleTimers.has(this.line4El)) {
+                if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
                     this.line4El.textContent = this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[4],
                         4,
                         p,
-                        assemblyStep
+                        assemblyStep,
+                        glyphPool
                     );
                 }
             } else {
-                if (this.line0El && !activeScrambleTimers.has(this.line0El)) {
+                if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
                     this.line0El.textContent = CANONICAL_FINALE_LINES[0];
                 }
-                if (this.line1El && !activeScrambleTimers.has(this.line1El)) {
+                if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
                     this.line1El.textContent = CANONICAL_FINALE_LINES[1];
                 }
-                if (this.line3El && !activeScrambleTimers.has(this.line3El)) {
+                if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
                     this.line3El.textContent = CANONICAL_FINALE_LINES[3];
                 }
-                if (this.line4El && !activeScrambleTimers.has(this.line4El)) {
+                if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
                     this.line4El.textContent = CANONICAL_FINALE_LINES[4];
                 }
             }
@@ -304,20 +322,20 @@ class FinaleCardDomAnimator {
                     1.8 * Math.cos(this.lfoClockSec * 1.75);
                 const boundedRateHz = Math.max(
                     18.0,
-                    Math.min(26.0, 21.5 + lfoWave + audioSnap.heartbeat * 2.5)
+                    Math.min(26.0, 21.5 + lfoWave + signals.heartbeat * 2.5)
                 );
                 this.accumulatedQuantumPhase += dtSec * boundedRateHz;
             }
 
             const qStep = Math.floor(this.accumulatedQuantumPhase);
-            if (this.line2QuantumEl && qStep !== this.lastQuantumStep) {
+            if (this.line2QuantumEl && (state.reducedMotion || qStep !== this.lastQuantumStep)) {
                 this.lastQuantumStep = qStep;
                 if (state.reducedMotion) {
                     this.line2QuantumEl.textContent = CANONICAL_FINALE_LINES[2];
                 } else {
                     const baseLine = CANONICAL_FINALE_LINES[2];
-                    const chars = baseLine.split('');
-                    const nGlyphs = SCRAMBLE_GLYPHS.length;
+                    const chars = Array.from(baseLine);
+                    const nGlyphs = glyphPool.length;
                     for (let i = 0; i < chars.length; i++) {
                         if (chars[i] === ' ') continue;
                         // Индивидуальный делитель темпа (1 или 2) для каждого слота,
@@ -326,7 +344,7 @@ class FinaleCardDomAnimator {
                         const charTick = Math.floor((qStep + i * 7) / slotStride);
                         const gIdx =
                             (i * 19 + charTick * 7 + (i % 5) * 13) % nGlyphs;
-                        chars[i] = SCRAMBLE_GLYPHS[gIdx];
+                        chars[i] = glyphPool[gIdx];
                     }
                     this.line2QuantumEl.textContent = chars.join('');
                 }
@@ -391,7 +409,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <h1
                     className="finale-line-author"
                     data-bind="l5-line-0"
-                    onMouseEnter={(e: MouseEvent): void => {
+                    onPointerEnter={(e: PointerEvent): void => {
                         if (e.currentTarget instanceof HTMLElement) {
                             triggerLineOrButtonScramble(
                                 e.currentTarget,
@@ -406,7 +424,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <p
                     className="finale-line-subtitle"
                     data-bind="l5-line-1"
-                    onMouseEnter={(e: MouseEvent): void => {
+                    onPointerEnter={(e: PointerEvent): void => {
                         if (e.currentTarget instanceof HTMLElement) {
                             triggerLineOrButtonScramble(
                                 e.currentTarget,
@@ -429,7 +447,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <p
                     className="finale-line-stack"
                     data-bind="l5-line-3"
-                    onMouseEnter={(e: MouseEvent): void => {
+                    onPointerEnter={(e: PointerEvent): void => {
                         if (e.currentTarget instanceof HTMLElement) {
                             triggerLineOrButtonScramble(
                                 e.currentTarget,
@@ -444,7 +462,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <p
                     className="finale-line-math"
                     data-bind="l5-line-4"
-                    onMouseEnter={(e: MouseEvent): void => {
+                    onPointerEnter={(e: PointerEvent): void => {
                         if (e.currentTarget instanceof HTMLElement) {
                             triggerLineOrButtonScramble(
                                 e.currentTarget,
@@ -459,6 +477,15 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <div
                     className={`finale-counter-actions${actionsVisibleClass}`}
                     data-bind="l5-actions"
+                    onFocusIn={(e: FocusEvent): void => {
+                        const target = e.target;
+                        if (target instanceof HTMLElement && target.matches('.btn-cipher-action')) {
+                            triggerLineOrButtonScramble(
+                                target,
+                                target.dataset.canonicalText ?? target.textContent ?? ''
+                            );
+                        }
+                    }}
                 >
                     <a
                         className="btn-cipher-action"
@@ -467,7 +494,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         target="_blank"
                         rel="noopener noreferrer"
                         tabIndex={isInteractive ? 0 : -1}
-                        onMouseEnter={(e: MouseEvent): void => {
+                        onPointerEnter={(e: PointerEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
                                     e.currentTarget,
@@ -486,7 +513,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         target="_blank"
                         rel="noopener noreferrer"
                         tabIndex={isInteractive ? 0 : -1}
-                        onMouseEnter={(e: MouseEvent): void => {
+                        onPointerEnter={(e: PointerEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
                                     e.currentTarget,
@@ -504,7 +531,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         id="btn-restart-universe"
                         disabled={!isInteractive}
                         tabIndex={isInteractive ? 0 : -1}
-                        onMouseEnter={(e: MouseEvent): void => {
+                        onPointerEnter={(e: PointerEvent): void => {
                             if (e.currentTarget instanceof HTMLElement) {
                                 triggerLineOrButtonScramble(
                                     e.currentTarget,
@@ -594,6 +621,8 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     const unsubscribe = universeStore.subscribe(update);
     return () => {
         finaleCardAnimator.stop();
+        rootEl?.querySelectorAll<HTMLElement>('[data-bind^="l5-line-"], .btn-cipher-action')
+            .forEach((el) => calmGlyphHover.stop(el));
         unsubscribe();
     };
 }

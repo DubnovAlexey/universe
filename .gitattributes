@@ -1,0 +1,38 @@
+# ============================================================================
+# ФАЙЛ: .gitattributes
+# НАЗНАЧЕНИЕ: Единые переводы строк и корректная классификация артефактов Git.
+# РАЗДЕЛЫ: 1. Текстовые исходники LF; 2. Двоичные ресурсы без преобразований.
+# ============================================================================
+
+# НАЧАЛО РАЗДЕЛА 1. ТЕКСТОВЫЕ ИСХОДНИКИ
+* text=auto
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.rs text eol=lf
+*.wgsl text eol=lf
+*.astro text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.svg text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+# КОНЕЦ РАЗДЕЛА 1
+
+# НАЧАЛО РАЗДЕЛА 2. ДВОИЧНЫЕ РЕСУРСЫ
+*.wasm binary
+*.mp3 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+# КОНЕЦ РАЗДЕЛА 2

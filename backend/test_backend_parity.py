@@ -1,19 +1,24 @@
 # noinspection SpellCheckingInspection
 # ============================================================================
 # ФАЙЛ: backend/test_backend_parity.py
-# НАЗНАЧЕНИЕ: Шесть регрессионных тестов PRNG, UNVS, NEXUS, оптики и отчёта.
+# НАЗНАЧЕНИЕ: Регрессионные тесты PRNG, UNVS, NEXUS, оптики и отчёта.
 # ОГЛАВЛЕНИЕ:
 # 1. ИМПОРТЫ И КОНТРАКТЫ.
 # 2. TestUniverseBackendParity.
 # 3. ЗАПУСК UNITTEST.
 # Функции: test_golden_prng_vectors_and_hash, test_state_digest_fnv1a_determinism,
 # test_binary_packer_header_and_nan_sanitization,
+# test_nexus_decimal_rounding_contract,
 # test_cross_language_nexus_6node_fixture_exact_parity,
+# test_cross_language_nexus_24node_shared_fixture,
 # test_breach_lens_and_black_hole_optics_bounds, test_health_report_and_live_binary_step.
 # ============================================================================
 
 # --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 from __future__ import annotations
+import json
+import math
+from pathlib import Path
 import unittest
 
 from backend.api.transport import (
@@ -24,6 +29,7 @@ from backend.core.graph_logic import (
     GraphNodeDTO,
     build_bezier_arc_length_lut,
     compute_nexus_topology,
+    round_decimal,
 )
 from backend.core.prng import (
     DeterministicPRNG,
@@ -97,6 +103,27 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertIsNone(unpack_and_validate_header(packet[:12]))
     # --- КОНЕЦ ФУНКЦИИ test_binary_packer_header_and_nan_sanitization ---
 
+    # --- НАЧАЛО ФУНКЦИИ test_nexus_decimal_rounding_contract ---
+    def test_nexus_decimal_rounding_contract(self) -> None:
+        cases = [(1.125, 1.13), (-1.125, -1.12), (2.625, 2.63), (-2.625, -2.62)]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(round_decimal(value), expected)
+        self.assertEqual(round_decimal(0.0625, 3), 0.063)
+        self.assertEqual(round_decimal(-0.0625, 3), -0.062)
+
+        # Exact binary ties reach the published graph coordinates through the same contract.
+        nodes = [
+            GraphNodeDTO(index=0, node_id=0, x=-1.125, y=2.625, cluster_id=0, energy=0.8),
+            GraphNodeDTO(index=1, node_id=1, x=81.125, y=-2.625, cluster_id=0, energy=0.8),
+            GraphNodeDTO(index=2, node_id=2, x=40.0, y=80.0, cluster_id=1, energy=0.8),
+        ]
+        edges, _, _ = compute_nexus_topology(nodes, 220.0, GOLDEN_SEED, 0.0)
+        first_edge = edges[0]
+        self.assertEqual((first_edge.x1, first_edge.y1), (-1.12, 2.63))
+        self.assertEqual((first_edge.x2, first_edge.y2), (81.13, -2.62))
+    # --- КОНЕЦ ФУНКЦИИ test_nexus_decimal_rounding_contract ---
+
     # --- НАЧАЛО ФУНКЦИИ test_cross_language_nexus_6node_fixture_exact_parity ---
     def test_cross_language_nexus_6node_fixture_exact_parity(self) -> None:
         """
@@ -154,6 +181,69 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertEqual(metrics.avg_path_length, 1.53)
         self.assertEqual(deg_map, {0: 2, 1: 3, 2: 3, 3: 3, 4: 2, 5: 3})
     # --- КОНЕЦ ФУНКЦИИ test_cross_language_nexus_6node_fixture_exact_parity ---
+
+    # --- НАЧАЛО ФУНКЦИИ test_cross_language_nexus_24node_shared_fixture ---
+    def test_cross_language_nexus_24node_shared_fixture(self) -> None:
+        fixture_path = Path(__file__).resolve().parents[1] / "frontend/src/tests/fixtures/nexusParity24.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        inputs = fixture["inputs"]
+        expected = fixture["expected"]
+        self.assertEqual(len(inputs["nodes"]), 24)
+
+        # Transport consumes x, y, z, vx, vy and energy for every node, in this order.
+        rng = DeterministicPRNG(inputs["seed"])
+        generated_nodes = []
+        for index in range(24):
+            x = rng.next_range(-320.0, 320.0)
+            y = rng.next_range(-240.0, 240.0)
+            rng.next_range(0.1, 1.5)
+            rng.next_range(-18.0, 18.0)
+            rng.next_range(-18.0, 18.0)
+            energy = rng.next_range(0.3, 0.95)
+            generated_nodes.append({
+                "index": index, "id": index, "x": x, "y": y,
+                "clusterId": index % 6, "energy": energy,
+            })
+        self.assertEqual(generated_nodes, inputs["nodes"])
+        nodes = [GraphNodeDTO(
+            index=node["index"], node_id=node["id"], x=node["x"], y=node["y"],
+            cluster_id=node["clusterId"], energy=node["energy"],
+        ) for node in inputs["nodes"]]
+        edges, degree_map, metrics = compute_nexus_topology(
+            nodes, inputs["maxConnectDist"], inputs["seed"], inputs["simTimeSec"],
+        )
+        serialized_edges = [{
+            "id": edge.edge_id, "fromIndex": edge.from_index, "toIndex": edge.to_index,
+            "edgeClass": edge.edge_class, "x1": edge.x1, "y1": edge.y1,
+            "x2": edge.x2, "y2": edge.y2, "ctrlX": edge.ctrl_x, "ctrlY": edge.ctrl_y,
+            "arcLength": edge.arc_length, "lengthLUT": list(edge.length_lut),
+            "murrayRadiusPx": edge.murray_radius_px,
+        } for edge in edges]
+        self.assertEqual(serialized_edges, expected["edges"])
+        self.assertEqual([degree_map[node.index] for node in nodes], expected["degreeByIndex"])
+        telemetry = {
+            "trunkCount": metrics.trunk_count, "bridgeCount": metrics.bridge_count,
+            "dendriteCount": metrics.dendrite_count, "avgDegree": metrics.avg_degree,
+            "clusteringCoeff": metrics.clustering_coeff, "diameterHops": metrics.diameter_hops,
+            "avgPathLength": metrics.avg_path_length,
+        }
+        self.assertEqual(telemetry, expected["telemetry"])
+        self.assertTrue(all(edge.length_lut[0] == 0 for edge in edges))
+        self.assertTrue(all(edge.length_lut[-1] == edge.arc_length for edge in edges))
+        self.assertTrue(any(
+            edge.arc_length > math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1) + 0.5
+            for edge in edges
+        ))
+
+        # This 24-node fixture runs BFS from every node; it does not cover sampled BFS.
+        report_metrics = build_health_and_parity_report()["nexusTopology"]
+        self.assertEqual(report_metrics["totalEdges"], len(expected["edges"]))
+        for key, report_key in [("trunkCount", "trunks"), ("bridgeCount", "bridges"),
+                                ("dendriteCount", "dendrites"), ("avgDegree", "avgDegree"),
+                                ("clusteringCoeff", "clusteringCoeff"),
+                                ("diameterHops", "diameterHops"), ("avgPathLength", "avgPathLength")]:
+            self.assertEqual(report_metrics[report_key], telemetry[key])
+    # --- КОНЕЦ ФУНКЦИИ test_cross_language_nexus_24node_shared_fixture ---
 
     # --- НАЧАЛО ФУНКЦИИ test_breach_lens_and_black_hole_optics_bounds ---
     def test_breach_lens_and_black_hole_optics_bounds(self) -> None:

@@ -92,6 +92,9 @@ import {
 import { audioSync, type AudioModulationSnapshot } from '../utils/audioSync';
 import { integrationRegistry } from '../core/integrationRegistry';
 import { resourceLedger } from '../core/resourceLedger';
+import { publishVisualSignals } from '../core/visualSignals';
+import { calmGlyphHover } from '../core/glyphHover';
+import { GLYPH_FONT_STACK } from '../core/glyphGrammar';
 import { DeterministicPRNG } from '../core/prng';
 import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
 import { mountLayer3Topology } from '../layers/Layer3_Topology';
@@ -2000,7 +2003,7 @@ export class UniverseRenderer {
             ctx.translate(c.currentX, c.currentY);
             ctx.scale(1.0, c.verticalScale);
 
-            ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px "JetBrains Mono", "Fira Code", monospace`;
+            ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px ${GLYPH_FONT_STACK}`;
             const breathAlpha = (c.glyphBreathAlpha ?? 0.92) * canvasParticlesFade;
 
             if (!c.isLocked) {
@@ -2189,6 +2192,7 @@ export class UniverseRenderer {
                 });
             }
 
+            publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState());
             this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
             this.consecutiveFrameErrors = 0;
         } catch (err: unknown) {
@@ -2230,50 +2234,16 @@ export function getUniverseRenderer(): UniverseRenderer | null {
 // РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
 // ============================================================================
 
-const CORNER_SCRAMBLE_GLYPHS =
-    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡⊕⊗⊙◊◈';
-const CORNER_COLD_TONES: ReadonlyArray<{ color: string; shadow: string }> = [
-    {
-        color: '#f8fafc',
-        shadow: '0 2px 10px rgba(2, 6, 23, 0.96), 0 0 12px rgba(186, 230, 253, 0.55)',
-    },
-    {
-        color: '#bae6fd',
-        shadow: '0 2px 12px rgba(2, 6, 23, 0.96), 0 0 14px rgba(125, 211, 252, 0.48)',
-    },
-    {
-        color: '#94a3b8',
-        shadow: '0 3px 10px rgba(1, 3, 10, 0.98), 0 0 8px rgba(71, 85, 105, 0.52)',
-    },
-    {
-        color: '#7dd3fc',
-        shadow: '0 2px 12px rgba(2, 6, 23, 0.96), 0 0 14px rgba(56, 189, 248, 0.45)',
-    },
-    {
-        color: '#cbd5e1',
-        shadow: '0 3px 11px rgba(15, 23, 42, 0.95), 0 0 9px rgba(148, 163, 184, 0.4)',
-    },
-];
-
-const activeScrambleTimers = new WeakMap<HTMLElement, number>();
-
 // ----------------------------------------------------------------------------
 // ПОДРАЗДЕЛ 7.1. УПРАВЛЕНИЕ КАНОНИЧЕСКИМ ТЕКСТОМ И ПЕРЕБОРОМ СОСЕДНИХ ЭЛЕМЕНТОВ
 // ----------------------------------------------------------------------------
 
 // --- НАЧАЛО ФУНКЦИИ setCanonicalElementText ---
 /**
- * Сохраняет эталонный текст элемента в data-canonical-text и обновляет textContent,
- * если элемент в данный момент не находится в фазе квантового перебора.
+ * Передаёт канонический текст общему контроллеру с сохранением доступного имени.
  */
 function setCanonicalElementText(el: HTMLElement | null, nextText: string): void {
-    if (!el) return;
-    const prevCanonical = el.dataset.canonicalText;
-    el.dataset.canonicalText = nextText;
-
-    if (el.dataset.scrambling !== '1' || prevCanonical !== nextText) {
-        el.textContent = nextText;
-    }
+    calmGlyphHover.setCanonical(el, nextText);
 }
 // --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
 
@@ -2282,80 +2252,17 @@ function setCanonicalElementText(el: HTMLElement | null, nextText: string): void
  * Мгновенно останавливает квантовый перебор на элементе и возвращает его точный текст.
  */
 function stopElementScramble(el: HTMLElement): void {
-    const existingTimer = activeScrambleTimers.get(el);
-    if (existingTimer !== undefined) {
-        window.clearInterval(existingTimer);
-        activeScrambleTimers.delete(el);
-    }
-    el.dataset.scrambling = '0';
-    el.style.removeProperty('color');
-    el.style.removeProperty('text-shadow');
-    if (el.dataset.canonicalText) {
-        el.textContent = el.dataset.canonicalText;
-    }
+    calmGlyphHover.stop(el);
 }
 // --- КОНЕЦ ФУНКЦИИ stopElementScramble ---
 
 // --- НАЧАЛО ФУНКЦИИ startNeighborElementScramble ---
 /**
- * Запускает замедленный, плавный квантовый перебор на соседнем элементе угловой панели
- * (шаг 88 мс, 10 шагов) с холодной полутоновой подсветкой без мельтешения мелкого шрифта.
+ * Включает спокойный фазовый перебор соседа на общем такте визуальных сигналов.
  */
 function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): void {
-    stopElementScramble(el);
-
-    const canonical = (el.dataset.canonicalText || el.textContent || '').trim();
-    if (!canonical) return;
-    el.dataset.canonicalText = canonical;
-    el.dataset.scrambling = '1';
-
-    let step = 0;
-    const totalSteps = 10;
-
-    const timerId = window.setInterval(() => {
-        const latestCanonical = el.dataset.canonicalText || canonical;
-        const progress = step / totalSteps;
-
-        if (progress >= 1.0) {
-            stopElementScramble(el);
-            return;
-        }
-
-        const lockBoundary = Math.floor(progress * latestCanonical.length);
-        let out = '';
-        for (let i = 0; i < latestCanonical.length; i++) {
-            const ch = latestCanonical[i];
-            if (
-                ch === ' ' ||
-                ch === '.' ||
-                ch === ':' ||
-                ch === '/' ||
-                ch === '(' ||
-                ch === ')' ||
-                ch === '-' ||
-                i < lockBoundary
-            ) {
-                out += ch;
-            } else if ((i + step + siblingIndex) % 3 === 0) {
-                const gIdx =
-                    (i * 7 + step * 3 + siblingIndex * 5) %
-                    CORNER_SCRAMBLE_GLYPHS.length;
-                out += CORNER_SCRAMBLE_GLYPHS[gIdx];
-            } else {
-                out += ch;
-            }
-        }
-
-        const tone =
-            CORNER_COLD_TONES[(step + siblingIndex) % CORNER_COLD_TONES.length];
-        el.style.color = tone.color;
-        el.style.textShadow = tone.shadow;
-        el.textContent = out;
-
-        step++;
-    }, 88);
-
-    activeScrambleTimers.set(el, timerId);
+    const canonical = el.dataset.canonicalText ?? el.textContent ?? '';
+    calmGlyphHover.start(el, canonical, siblingIndex);
 }
 // --- КОНЕЦ ФУНКЦИИ startNeighborElementScramble ---
 
@@ -2368,28 +2275,47 @@ function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): vo
 function bindCornerPanelsNeighborScramble(): void {
     if (typeof document === 'undefined') return;
 
-    const groupsSelectors = [
-        '.brand-card > .phase-codename, .brand-card > .phase-title, .brand-card > .phase-subtitle, .brand-card > .phase-philosophy',
-        '#ui-phase-buttons > button.phase-pill',
-        '.controls-dock > button.btn-cyber, .controls-dock > a.btn-cyber',
+    const groups = [
+        { root: '.brand-card', items: '.phase-codename, .phase-title, .phase-subtitle, .phase-philosophy' },
+        { root: '#ui-phase-buttons', items: 'button.phase-pill' },
+        { root: '.controls-dock', items: 'button.btn-cyber, a.btn-cyber' },
     ];
 
-    groupsSelectors.forEach((selector) => {
-        const items = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    groups.forEach(({ root: rootSelector, items: itemSelector }) => {
+        const group = document.querySelector<HTMLElement>(rootSelector);
+        if (!group) return;
+
+        const items = Array.from(group.querySelectorAll<HTMLElement>(itemSelector));
+        const listeners = new AbortController();
+        const stopGroup = (): void => items.forEach(stopElementScramble);
+        let listenerCount = 0;
+
         items.forEach((el) => {
-            if (!el.dataset.canonicalText) {
-                el.dataset.canonicalText = (el.textContent || '').trim();
-            }
-
-            el.addEventListener('pointerenter', () => {
+            setCanonicalElementText(el, el.dataset.canonicalText ?? el.textContent ?? '');
+            const activateNeighbors = (): void => {
                 stopElementScramble(el);
-
                 items.forEach((sibling, sIdx) => {
-                    if (sibling !== el) {
-                        startNeighborElementScramble(sibling, sIdx);
-                    }
+                    if (sibling !== el) startNeighborElementScramble(sibling, sIdx);
                 });
-            });
+            };
+            el.addEventListener('pointerenter', activateNeighbors, { signal: listeners.signal });
+            el.addEventListener('focusin', activateNeighbors, { signal: listeners.signal });
+            listenerCount += 2;
+        });
+
+        group.addEventListener('pointerleave', stopGroup, { signal: listeners.signal });
+        group.addEventListener('focusout', (event: FocusEvent) => {
+            if (!(event.relatedTarget instanceof Node) || !group.contains(event.relatedTarget)) {
+                stopGroup();
+            }
+        }, { signal: listeners.signal });
+        listenerCount += 2;
+
+        resourceLedger.trackPageLifetimeAllocation('listeners', listenerCount);
+        resourceLedger.registerPageDisposable(() => {
+            listeners.abort();
+            stopGroup();
+            resourceLedger.trackRelease('listeners', listenerCount);
         });
     });
 }
@@ -2640,10 +2566,20 @@ export function bootstrapUniverseV2(): void {
     );
     resourceLedger.trackAllocation('listeners', 1);
 
-    document.addEventListener('visibilitychange', (): void => {
+    // --- НАЧАЛО ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
+    const handleVisibilityChange = (): void => {
+        // Браузер может приостановить RAF до публикации скрытого кадра.
+        if (document.hidden) calmGlyphHover.stopAll();
         universeStore.setTabHidden(document.hidden);
+    };
+    // --- КОНЕЦ ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
+    resourceLedger.registerPageDisposable(() => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        calmGlyphHover.stopAll();
+        resourceLedger.trackRelease('listeners', 1);
     });
-    resourceLedger.trackAllocation('listeners', 1);
 
     window.addEventListener('keydown', (e: KeyboardEvent): void => {
         if (e.key === '1') {

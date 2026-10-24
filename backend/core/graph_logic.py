@@ -7,7 +7,7 @@
 # 2. build_bezier_arc_length_lut.
 # 3. _compute_authentic_invariants.
 # 4. compute_nexus_topology.
-# Функции: build_bezier_arc_length_lut, _make_curve_edge, _compute_authentic_invariants,
+# Функции: round_decimal, build_bezier_arc_length_lut, _make_curve_edge, _compute_authentic_invariants,
 # compute_nexus_topology.
 # ============================================================================
 
@@ -69,6 +69,14 @@ class GraphTopologyMetricsDTO:
 # --- КОНЕЦ РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
 
 # --- НАЧАЛО РАЗДЕЛА 2: build_bezier_arc_length_lut ---
+# --- НАЧАЛО ФУНКЦИИ round_decimal ---
+def round_decimal(value: float, digits: int = 2) -> float:
+    """Округляет по общему контракту floor(value * scale + 0.5) / scale; ties идут к +∞."""
+    scale = 10 ** digits
+    return math.floor(value * scale + 0.5) / scale
+# --- КОНЕЦ ФУНКЦИИ round_decimal ---
+
+
 # --- НАЧАЛО ФУНКЦИИ build_bezier_arc_length_lut ---
 def build_bezier_arc_length_lut(
         x0: float,
@@ -90,11 +98,11 @@ def build_bezier_arc_length_lut(
         px = inv * inv * x0 + 2.0 * inv * t * cx + t * t * x2
         py = inv * inv * y0 + 2.0 * inv * t * cy + t * t * y2
         total_len += math.hypot(px - prev_x, py - prev_y)
-        lut.append(round(total_len, 2))
+        lut.append(round_decimal(total_len))
         prev_x = px
         prev_y = py
 
-    safe_total = max(1.0, round(total_len, 2))
+    safe_total = max(1.0, round_decimal(total_len))
     return safe_total, (lut[0], lut[1], lut[2], lut[3], lut[4])
 # --- КОНЕЦ ФУНКЦИИ build_bezier_arc_length_lut ---
 
@@ -127,12 +135,12 @@ def _make_curve_edge(
         from_index=a.index,
         to_index=b.index,
         edge_class=edge_class,
-        x1=round(a.x, 2),
-        y1=round(a.y, 2),
-        x2=round(b.x, 2),
-        y2=round(b.y, 2),
-        ctrl_x=round(ctrl_x, 2),
-        ctrl_y=round(ctrl_y, 2),
+        x1=round_decimal(a.x),
+        y1=round_decimal(a.y),
+        x2=round_decimal(b.x),
+        y2=round_decimal(b.y),
+        ctrl_x=round_decimal(ctrl_x),
+        ctrl_y=round_decimal(ctrl_y),
         arc_length=arc_length,
         length_lut=lut,
         murray_radius_px=murray_radius_px,
@@ -173,7 +181,7 @@ def _compute_authentic_invariants(
                     closed_triangles += 1
         sum_local_c += (2.0 * closed_triangles) / (k * (k - 1))
 
-    clustering_coeff = round(sum_local_c / eligible_nodes, 3) if eligible_nodes > 0 else 0.0
+    clustering_coeff = round_decimal(sum_local_c / eligible_nodes, 3) if eligible_nodes > 0 else 0.0
 
     sample_stride = max(1, n_total // 28)
     max_hops = 0
@@ -198,7 +206,7 @@ def _compute_authentic_invariants(
                     reachable_pairs += 1
                     queue.append(nb)
 
-    avg_path_length = round(total_path_dist / reachable_pairs, 2) if reachable_pairs > 0 else 0.0
+    avg_path_length = round_decimal(total_path_dist / reachable_pairs) if reachable_pairs > 0 else 0.0
     return clustering_coeff, max_hops, avg_path_length
 # --- КОНЕЦ ФУНКЦИИ _compute_authentic_invariants ---
 
@@ -322,7 +330,7 @@ def compute_nexus_topology(
             murray_r = (
                 1.35
                 if edge_class == "BRIDGE"
-                else round(1.65 * (branch_order ** (-1.0 / 3.0)), 2)
+                else round_decimal(1.65 * (branch_order ** (-1.0 / 3.0)))
             )
             bend_sign = 1 if (a.node_id + b.node_id) % 2 == 0 else -1
 
@@ -347,11 +355,11 @@ def compute_nexus_topology(
         trunk_count=trunks,
         bridge_count=bridges,
         dendrite_count=dendrites,
-        avg_degree=round(avg_deg, 2),
+        avg_degree=round_decimal(avg_deg),
         clustering_coeff=clustering_coeff,
         diameter_hops=diameter_hops,
         avg_path_length=avg_path_length,
-        compute_time_ms=round(dur_ms, 2),
+        compute_time_ms=round_decimal(dur_ms),
         compute_source=source_tag,
     )
 
