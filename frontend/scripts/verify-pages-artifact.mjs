@@ -98,6 +98,13 @@ if (
 ) {
     throw new Error('Published Rust physics artifact must expose raw ABI version 1.');
 }
+if (typeof wasmInstance.exports.evaluate_lens_refraction !== 'function') {
+    throw new Error('Published Rust physics artifact is missing the lens-refraction export.');
+}
+const outsideLensMagnitude = wasmInstance.exports.evaluate_lens_refraction(500, 500, 0, 0, 100, 1);
+if (!Number.isFinite(outsideLensMagnitude) || outsideLensMagnitude !== 0) {
+    throw new Error('Published lens-refraction export must return zero outside the lens.');
+}
 
 console.log(
     `Pages artifact smoke check passed: ${requiredHooks.length} UI hooks, ${bundledAssetRefs.length} Astro bundles, favicon, soundtrack and valid Rust/WASM ABI v1.`

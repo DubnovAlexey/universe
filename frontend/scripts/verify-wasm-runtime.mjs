@@ -1,9 +1,11 @@
 // ============================================================================
 // ФАЙЛ: frontend/scripts/verify-wasm-runtime.mjs
 // НАЗНАЧЕНИЕ: Проверить реальный Rust/WASM ABI и его связь с видимой сценой.
-// РАЗДЕЛЫ: 1. Артефакт и SSR; 2. Паритет/жизненный цикл; 3. Геометрия сцены.
+// РАЗДЕЛЫ: 1. Артефакт и SSR; 2. Паритет/жизненный цикл; 3. Геометрия сцены;
+//          4. Скалярный эталон BREACH при фиксированных stress=0.25/time=0.
 // ФУНКЦИИ: instantiate — отдельный экземпляр WASM; step — общий сценарий шага;
 // compare — сравнение провайдеров; sampleScene — сквозная публикация геометрии.
+// verifyLensRefractionMagnitude — эталон длины смещения; runtime-оптика остаётся TS.
 // ============================================================================
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -24,6 +26,75 @@ async function instantiate() {
 }
 // КОНЕЦ ФУНКЦИИ instantiate
 // КОНЕЦ РАЗДЕЛА 1
+
+// НАЧАЛО ФУНКЦИИ verifyLensRefractionMagnitude: compare only the six-argument scalar ABI.
+function verifyLensRefractionMagnitude(exports, stressStore) {
+    const state = stressStore.getState();
+    const savedState = { ...state };
+    const radii = [0, 7, 7.999, 8, 24, 140, 512];
+    const centers = [[0, 0], [480, 270], [-128.25, 31.5], [1920, 1080]];
+    const angles = [0, Math.PI / 8, Math.PI / 3, Math.PI / 2, Math.PI * 1.25, Math.PI * 2 - 0.001];
+    const normalizedDistances = [0, 0.2, 0.55, 0.7599, 0.76, 0.7601, 0.8, 0.94,
+        1, 1.06, 1.2, 1.2399, 1.24, 1.2401, 1.5, 2];
+    let samples = 0;
+    let nonzeroSamples = 0;
+    let zeroSamples = 0;
+    let maximumError = 0;
+    const integratedTime = exports.get_integrated_time();
+    try {
+        // Normalize all ABI inputs to f32 before both implementations. The raw
+        // export fixes stress/time and returns magnitude, not rim/dispersion.
+        for (const [lensX, lensY] of centers) {
+            for (const radius of radii) {
+                for (const reveal of [0, 0.38, 0.85, 1]) {
+                    Object.assign(state, { lensX: Math.fround(lensX), lensY: Math.fround(lensY),
+                        currentBreachRadius: Math.fround(radius), revealIntensity: Math.fround(reveal),
+                        globalStress: Math.fround(0.25), isBreaching: false });
+                    for (const angle of angles) {
+                        const localRadius = Math.max(8, stressStore.getDeformedLensRadiusAtAngle(angle, 0));
+                        for (const distance of normalizedDistances) {
+                            const x = Math.fround(state.lensX + Math.cos(angle) * localRadius * distance);
+                            const y = Math.fround(state.lensY + Math.sin(angle) * localRadius * distance);
+                            state.isBreaching = false;
+                            const offset = stressStore.getBoundaryRefractionOffset(x, y, 0);
+                            const expected = Math.hypot(offset.dx, offset.dy);
+                            const actual = exports.evaluate_lens_refraction(x, y, state.lensX, state.lensY,
+                                state.currentBreachRadius, state.revealIntensity);
+                            const error = Math.abs(actual - expected);
+                            assert.ok(Number.isFinite(actual) && actual >= 0, 'Finite BREACH magnitude');
+                            // Rust uses f32 throughout the optical kernel; TS
+                            // evaluates normalized inputs with f64 intermediates.
+                            assert.ok(error <= 0.0002,
+                                `BREACH magnitude r=${radius} reveal=${reveal} angle=${angle} d=${distance}: ${actual} vs ${expected}`);
+                            maximumError = Math.max(maximumError, error);
+                            if (expected === 0) {
+                                assert.equal(actual, 0, 'Center/inner/outside samples produce zero displacement');
+                                zeroSamples++;
+                            } else {
+                                nonzeroSamples++;
+                            }
+                            // Breach mode only changes the TS dispersion factor;
+                            // it is deliberately absent from the scalar Rust ABI.
+                            state.isBreaching = true;
+                            const breaching = stressStore.getBoundaryRefractionOffset(x, y, 0);
+                            assert.equal(breaching.dx, offset.dx);
+                            assert.equal(breaching.dy, offset.dy);
+                            assert.ok(Math.abs(offset.dispersionFactor - offset.rimHighlight * 0.35) < 1e-12);
+                            assert.ok(Math.abs(breaching.dispersionFactor - offset.rimHighlight * 0.85) < 1e-12);
+                            samples++;
+                        }
+                    }
+                }
+            }
+        }
+        assert.ok(zeroSamples > 0 && nonzeroSamples > 0, 'Cover zero and nonzero optical samples');
+        assert.equal(exports.get_integrated_time(), integratedTime, 'Optical reference calls do not advance physics');
+        return { samples, maximumError };
+    } finally {
+        Object.assign(state, savedState);
+    }
+}
+// КОНЕЦ ФУНКЦИИ verifyLensRefractionMagnitude
 
 try {
     const { WasmPhysicsBridge, wasmPhysicsBridge } = await server.ssrLoadModule('/src/bridge/wasmBridge.ts');
@@ -99,6 +170,8 @@ try {
     const malformed = new WasmPhysicsBridge(seed);
     assert.equal(malformed.attachWasmExports({ ...exports, get_phases_ptr: () => 3 }), false);
     assert.equal(malformed.attachWasmExports({ ...exports, get_abi_version: () => 2 }), false);
+    assert.equal(malformed.attachWasmExports({ ...exports, evaluate_lens_refraction: undefined }), false,
+        'The required scalar optical export must exist');
     const rejected = new WasmPhysicsBridge(seed);
     assert.ok(rejected.attachWasmExports({ ...await instantiate(), step_verlet_nbody: () => 0 }));
     assert.equal(step(rejected, 0).isWasmNative, false, 'Nonthrowing rejection at dt=0 must not report ACTIVE');
@@ -150,6 +223,12 @@ try {
     console.log('[PASS] Real WASM phases change visible GENESIS geometry; graph and SoA use the same result'); passed++;
     wasmPhysicsBridge.useTypescriptFallback();
     // КОНЕЦ РАЗДЕЛА 3
+
+    // НАЧАЛО РАЗДЕЛА 4. ФИКСИРОВАННЫЙ СКАЛЯРНЫЙ ЭТАЛОН BREACH
+    const { stressStore } = await server.ssrLoadModule('/src/store/stressState.ts');
+    const optical = verifyLensRefractionMagnitude(await instantiate(), stressStore);
+    console.log(`[PASS] Actual WASM BREACH magnitude: ${optical.samples} normalized samples, stress=0.25/time=0, max error ${optical.maximumError.toExponential(2)} px; Canvas vector optics remain TS`); passed++;
+    // КОНЕЦ РАЗДЕЛА 4
     console.log(`WASM runtime verification: ${passed}/${passed} PASSED (${bytes.length} bytes, ABI v1, no imports)`);
 } finally {
     await server.close();

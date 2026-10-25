@@ -247,7 +247,6 @@ class UniverseStore {
     private readonly sceneBuffer: SceneBufferSoA;
     private readonly qualityGovernor: QualityGovernor;
     private readonly emittedEventKeys: Set<string> = new Set();
-    private readonly frameTimeWindow: number[] = [];
     private lastUiNotifyMs = 0;
     private lastTelemetryUpdateMs = 0;
     private watchdogWarned = false;
@@ -766,20 +765,8 @@ class UniverseStore {
         const ft = Math.max(1.0, this.state.telemetry.frameTimeMs);
         this.state.telemetry.fps = Math.min(240, Math.round(1000 / ft));
 
-        this.frameTimeWindow.push(ft);
-        if (this.frameTimeWindow.length > 60) {
-            this.frameTimeWindow.shift();
-        }
-        const sortedFt = [...this.frameTimeWindow].sort((a, b) => a - b);
-        const p95Idx = Math.min(
-            sortedFt.length - 1,
-            Math.floor(sortedFt.length * 0.95)
-        );
-        this.state.telemetry.frameTimeP95Ms = Number(
-            (sortedFt[p95Idx] ?? ft).toFixed(1)
-        );
-
         this.qualityGovernor.feedFrameTime(ft, nowMs);
+        this.state.telemetry.frameTimeP95Ms = this.qualityGovernor.getFrameP95Ms();
 
         const dur = Math.max(1, this.state.phaseMeta.durationSec);
         const rawProgress = Math.max(

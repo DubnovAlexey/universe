@@ -460,8 +460,6 @@ export class VoidPhaseSimulation {
                 ? 0.0
                 : Math.min(0.24, (audioSnap.high - 0.06) * 0.85);
 
-        sceneBuffer.snapshotPreviousPositions(this.particles.length);
-
         const isSingularityCollapse =
             phase === '05_SINGULARITY' &&
             (uState.singularityAct === 'ACT_B_LOGIC' ||

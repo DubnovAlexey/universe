@@ -566,7 +566,8 @@ body {
 }
 
 /* РАЗДЕЛ 5. ФИНАЛЬНАЯ ВИЗИТКА И ДЕЙСТВИЯ */
-.sr-only-manifesto {
+.sr-only-manifesto,
+.glyph-canonical-text {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -599,24 +600,37 @@ body {
     opacity: 1;
 }
 
-/* Локальная глубина визитки: прозрачный ореол и мягкая тень без жёсткой рамки. */
+/* Затухающие тональные слои дают глубину без контура и овального обрезания текста. */
 .finale-manifesto-card {
+    --finale-tonal-light: 0.075;
+    --finale-tonal-depth: 0.34;
+    --finale-core-alpha: 0.68;
+    --finale-mid-alpha: 0.38;
     pointer-events: none;
     width: min(820px, calc(100vw - 1.5rem));
     max-height: calc(100dvh - 5.5rem);
     overflow-y: auto;
     padding: 1.75rem 2.2rem;
-    border-radius: 50%;
-    background: radial-gradient(
-            ellipse at 50% 50%,
-            rgba(3, 8, 22, 0.68) 0%,
-            rgba(2, 5, 15, 0.38) 48%,
-            rgba(2, 3, 8, 0.0) 76%
-    );
+    border-radius: 36px;
+    background:
+            radial-gradient(
+                    ellipse at 50% 32%,
+                    rgba(148, 189, 224, var(--finale-tonal-light)) 0%,
+                    transparent 68%
+            ),
+            radial-gradient(
+                    ellipse at 50% 70%,
+                    rgba(0, 1, 5, var(--finale-tonal-depth)) 0%,
+                    transparent 78%
+            ),
+            radial-gradient(
+                    ellipse at 50% 50%,
+                    rgba(3, 8, 22, var(--finale-core-alpha)) 0%,
+                    rgba(2, 5, 15, var(--finale-mid-alpha)) 48%,
+                    transparent 80%
+            );
     border: none;
-    box-shadow:
-            0 30px 72px -28px rgba(0, 0, 0, 0.66),
-            0 10px 32px -18px rgba(1, 3, 10, 0.56);
+    box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     display: flex;
@@ -629,8 +643,7 @@ body {
     user-select: text;
     transition:
             opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-            background 0.55s ease,
-            box-shadow 0.55s ease;
+            background 0.55s ease;
 }
 
 .finale-stage-container.visible .finale-manifesto-card {
@@ -638,27 +651,20 @@ body {
 }
 
 .finale-manifesto-card.ambient-loop {
+    --finale-tonal-light: 0.055;
+    --finale-tonal-depth: 0.30;
+    --finale-core-alpha: 0.44;
+    --finale-mid-alpha: 0.20;
     opacity: 0.60;
-    background: radial-gradient(
-            ellipse at 50% 50%,
-            rgba(3, 8, 22, 0.44) 0%,
-            rgba(2, 5, 14, 0.20) 45%,
-            transparent 74%
-    );
-    box-shadow:
-            0 28px 68px -28px rgba(0, 0, 0, 0.60),
-            0 8px 28px -18px rgba(1, 3, 10, 0.48);
 }
 
 .finale-manifesto-card.ambient-loop:hover,
 .finale-manifesto-card.ambient-loop:focus-within {
+    --finale-tonal-light: 0.09;
+    --finale-tonal-depth: 0.40;
+    --finale-core-alpha: 0.64;
+    --finale-mid-alpha: 0.38;
     opacity: 0.98;
-    background: radial-gradient(
-            ellipse at 50% 50%,
-            rgba(4, 10, 26, 0.64) 0%,
-            rgba(2, 6, 16, 0.38) 52%,
-            transparent 78%
-    );
 }
 
 .finale-line-author {

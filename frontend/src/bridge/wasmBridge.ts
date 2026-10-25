@@ -38,6 +38,11 @@ export interface RustWasmExports {
     commit_uploaded_state: (baselineEnergy: number, integratedSec: number) => number;
     get_energy_drift: () => number;
     get_kuramoto_r: () => number;
+    // Reference scalar magnitude only: stress=0.25, time=0; Canvas optics stay in TS.
+    evaluate_lens_refraction: (
+        x: number, y: number, lensX: number, lensY: number,
+        lensRadius: number, revealIntensity: number
+    ) => number;
 }
 
 export interface PhysicsStepTelemetry {
@@ -153,6 +158,7 @@ export class WasmPhysicsBridge {
             'get_abi_version', 'get_active_count', 'init_bodies', 'step_verlet_nbody',
             'get_positions_ptr', 'get_velocities_ptr', 'get_phases_ptr', 'get_omegas_ptr',
             'get_integrated_time', 'commit_uploaded_state', 'get_energy_drift', 'get_kuramoto_r',
+            'evaluate_lens_refraction',
         ];
         if (!functions.every((name) => typeof exports[name] === 'function')) return false;
         try { return exports.get_abi_version!() === 1; } catch { return false; }

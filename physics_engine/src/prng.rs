@@ -2,8 +2,8 @@
 // ФАЙЛ: physics_engine/src/prng.rs
 // НАЗНАЧЕНИЕ: Детерминированные Mulberry32, SplitMix32 и FNV-1a State Digest.
 // ОГЛАВЛЕНИЕ:
-// 1. DeterministicPrng: new, next_u32, next_f32, next_f64, next_range_f64,
-//    next_range, hash_u32; verify_golden_vectors и эталонные u32-векторы.
+// 1. DeterministicPrng: new, next_u32, next_f64, next_range_f64 и hash_u32;
+//    verify_golden_vectors и эталонные u32-векторы.
 // 2. quantize_half_up, compute_quantized_state_digest: квантованный дайджест.
 // ============================================================================
 
@@ -39,12 +39,6 @@ impl DeterministicPrng {
     }
     // --- КОНЕЦ ФУНКЦИИ next_u32 ---
 
-    // --- НАЧАЛО ФУНКЦИИ next_f32 ---
-    pub fn next_f32(&mut self) -> f32 {
-        self.next_f64() as f32
-    }
-    // --- КОНЕЦ ФУНКЦИИ next_f32 ---
-
     /// Match JavaScript range arithmetic before writing into f32 arrays.
     // --- НАЧАЛО ФУНКЦИИ next_f64 ---
     pub fn next_f64(&mut self) -> f64 {
@@ -57,12 +51,6 @@ impl DeterministicPrng {
         min_val + self.next_f64() * (max_val - min_val)
     }
     // --- КОНЕЦ ФУНКЦИИ next_range_f64 ---
-
-    // --- НАЧАЛО ФУНКЦИИ next_range ---
-    pub fn next_range(&mut self, min_val: f32, max_val: f32) -> f32 {
-        min_val + self.next_f32() * (max_val - min_val)
-    }
-    // --- КОНЕЦ ФУНКЦИИ next_range ---
 
     // --- НАЧАЛО ФУНКЦИИ hash_u32 ---
     pub fn hash_u32(seed: u32, index: u32) -> u32 {

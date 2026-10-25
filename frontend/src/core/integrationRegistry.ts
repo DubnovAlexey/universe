@@ -6,11 +6,11 @@
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
 //   2. IntegrationRegistryManager: constructor, initDefaultModules, updateModuleStatus, recordModuleStep,
-//      getModule, getAllModules, getHonestRenderLabel, getHonestPhysicsLabel, getHonestPythonLabel.
+//      getModule, getAllModules.
 // ============================================================================
 
 
-import type { ComputeSourceTag, HonestStatusLabel } from './contracts';
+import type { ComputeSourceTag } from './contracts';
 
 export type PolyglotModuleId =
     | 'ts-core'
@@ -248,32 +248,6 @@ class IntegrationRegistryManager {
     }
     // --- КОНЕЦ ФУНКЦИИ getAllModules (IntegrationRegistryManager) ---
 
-    // --- НАЧАЛО ФУНКЦИИ getHonestRenderLabel (IntegrationRegistryManager) ---
-    public getHonestRenderLabel(): HonestStatusLabel {
-        const gpu = this.modules.get('webgpu-render');
-        return gpu && gpu.status === 'ready' && gpu.lastStepMs > 0
-            ? 'WEBGPU ACTIVE'
-            : 'CANVAS2D FALLBACK';
-    }
-    // --- КОНЕЦ ФУНКЦИИ getHonestRenderLabel (IntegrationRegistryManager) ---
-
-    // --- НАЧАЛО ФУНКЦИИ getHonestPhysicsLabel (IntegrationRegistryManager) ---
-    public getHonestPhysicsLabel(): HonestStatusLabel {
-        const wasm = this.modules.get('wasm-physics');
-        return wasm && wasm.status === 'ready' ? 'WASM READY' : 'TS FALLBACK';
-    }
-    // --- КОНЕЦ ФУНКЦИИ getHonestPhysicsLabel (IntegrationRegistryManager) ---
-
-    // --- НАЧАЛО ФУНКЦИИ getHonestPythonLabel (IntegrationRegistryManager) ---
-    public getHonestPythonLabel(): HonestStatusLabel {
-        const server = this.modules.get('server-ws');
-        if (server && server.status === 'ready') return 'SERVER CONNECTED';
-        const pyodide = this.modules.get('pyodide-graph');
-        if (pyodide && pyodide.status === 'loading') return 'PYODIDE LOADING';
-        if (pyodide && pyodide.status === 'ready') return 'PYODIDE READY';
-        return 'CLIENT-ONLY';
-    }
-    // --- КОНЕЦ ФУНКЦИИ getHonestPythonLabel (IntegrationRegistryManager) ---
 }
 
 export const integrationRegistry = new IntegrationRegistryManager();

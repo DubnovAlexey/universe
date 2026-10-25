@@ -43,6 +43,7 @@ import { stressStore, type StressStateData } from '../store/stressState';
 import { VoidPhaseSimulation, type TopologyEdge } from '../phases/01_void';
 import { smoothAudioEnvelope } from '../utils/audioSync';
 import { runVisualSignalChecks } from './visualSignals.test';
+import { runWaterfallLifecycleChecks } from './waterfallLifecycle.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -514,7 +515,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
             (c: OdometerGlyphCellState) =>
                 c.targetX >= 8 &&
                 c.targetX <= w - 8 &&
-                c.primaryChar.length === 1
+                Array.from(c.primaryChar).length === 1
         );
         if (!lockedOk || !noClipping) {
             allWidthsValid = false;
@@ -668,6 +669,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     universeStore.setPhase('01_VOID');
 
     for (const result of runVisualSignalChecks()) check(result.passed, result.description);
+    runWaterfallLifecycleChecks(check);
 
     return {
         passed: passedChecks === totalChecks,

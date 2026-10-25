@@ -153,7 +153,6 @@ export function renderLayer3TopologyView(
 
 export function mountLayer3Topology(container: HTMLElement | null): () => void {
     if (!container) return () => {};
-    waterfallAnimator.ensureRunning();
 
     let rootEl: HTMLElement | null = null;
     let elSource: HTMLElement | null = null;
@@ -171,6 +170,7 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer3TopologyView(state, metrics) as HTMLElement;
             container.replaceChildren(rootEl);
+            waterfallAnimator.bindCascade(3, rootEl);
             elSource = rootEl.querySelector<HTMLElement>('[data-bind="l3-source"]');
             elTrunks = rootEl.querySelector<HTMLElement>('[data-bind="l3-trunks"]');
             elBridges = rootEl.querySelector<HTMLElement>('[data-bind="l3-bridges"]');
@@ -201,7 +201,11 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer3Topology) ---
 
-    return universeStore.subscribe(update);
+    const unsubscribe = universeStore.subscribe(update);
+    return () => {
+        unsubscribe();
+        waterfallAnimator.releaseCascade(3, rootEl);
+    };
 }
 // --- КОНЕЦ ФУНКЦИИ mountLayer3Topology ---
 

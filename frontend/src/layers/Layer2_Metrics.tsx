@@ -9,16 +9,16 @@
 //             (http://www.w3.org/2000/svg) без сторонних runtime-зависимостей.
 //   РАЗДЕЛ 2. Генератор спокойного волнового контура (buildLivingBreachContourPath)
 //             и плавной подзаголовочной волны (buildLivingHorizontalWavePath).
-//   РАЗДЕЛ 3. Контроллер 60-FPS анимации (TelemetryWaterfallAnimator): непрерывное
+//   РАЗДЕЛ 3. Контроллер общего кадра (TelemetryWaterfallAnimator): непрерывное
 //             обновление контуров, падающих буковок и дыхания цифр ([data-breath-slot])
-//             в такт треку cosmic_ambient.mp3 без пересоздания DOM.
+//             в такт музыке, с кешем DOM и отключением при снятии каскадов.
 //   РАЗДЕЛ 4. Представление и mount-once монтировщик верхнего каскада (renderLayer2MetricsView,
 //             mountLayer2Metrics) с честной динамической подписью источника физики
 //             ([rust/gravity.rs] при WASM_ACTIVE или [ts/wasmBridge.ts] при TS_FALLBACK).
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
-import { getVisualSignals } from '../core/visualSignals';
+import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 import { pickGlyph } from '../core/glyphGrammar';
 
 // ============================================================================
@@ -243,19 +243,33 @@ export function buildLivingHorizontalWavePath(
 // --- КОНЕЦ ФУНКЦИИ buildLivingHorizontalWavePath ---
 
 // ============================================================================
-// РАЗДЕЛ 3. КОНТРОЛЛЕР ПЛАВНОЙ 60-FPS АНИМАЦИИ В ТАКТ МУЗЫКЕ (БЕЗ СКАЧКОВ)
+// РАЗДЕЛ 3. КОНТРОЛЛЕР ОБЩЕГО КАДРА И КЕШ DOM ПРИВЯЗОК КАСКАДОВ
 // ============================================================================
 
-class TelemetryWaterfallAnimator {
+type CascadeId = 2 | 3 | 4;
+interface WaterfallCascadeBinding {
+    root: HTMLElement;
+    contours: SVGPathElement[];
+    dividers: { node: SVGPathElement; y: number; amplitude: number }[];
+    streams: HTMLElement[];
+    breaths: { node: HTMLElement; slotKey: string; seed: number }[];
+    drops: { container: HTMLElement; nodes: Map<number, HTMLElement> }[];
+}
+
+export class TelemetryWaterfallAnimator {
     private droplets: StarfallDroplet[] = [];
     private ignitedSlots: Map<string, number> = new Map();
     private nextSpawnSec: Record<2 | 3 | 4, number> = { 2: 0.5, 3: 0.85, 4: 1.2 };
     private dropCounter = 1;
-    private rafId = 0;
-    private lastMs = 0;
+    private unsubscribeSignals: (() => void) | null = null;
+    private cascades = new Map<CascadeId, WaterfallCascadeBinding>();
     private smoothedMusicPulse = 0.22;
     private smoothedMusicLow = 0.2;
     private lastSignalSec = 0;
+
+    // --- НАЧАЛО ФУНКЦИИ constructor (TelemetryWaterfallAnimator) ---
+    public constructor(private readonly subscribeFrame: typeof subscribeVisualSignals = subscribeVisualSignals) {}
+    // --- КОНЕЦ ФУНКЦИИ constructor (TelemetryWaterfallAnimator) ---
 
     // --- НАЧАЛО ФУНКЦИИ getTimeSec (TelemetryWaterfallAnimator) ---
     public getTimeSec(): number {
@@ -265,17 +279,70 @@ class TelemetryWaterfallAnimator {
 
     // --- НАЧАЛО ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
     public ensureRunning(): void {
-        if (this.rafId !== 0 || typeof window === 'undefined') return;
-        this.lastMs = performance.now();
-        this.rafId = window.requestAnimationFrame(this.tick);
+        if (!this.unsubscribeSignals && this.cascades.size) {
+            this.unsubscribeSignals = this.subscribeFrame(this.tick);
+        }
     }
     // --- КОНЕЦ ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
 
+    // --- НАЧАЛО ФУНКЦИИ bindCascade (TelemetryWaterfallAnimator) ---
+    /** Привязки статичных узлов собираются один раз после монтирования каскада. */
+    public bindCascade(id: CascadeId, root: HTMLElement): void {
+        const drops = Array.from(root.querySelectorAll<HTMLElement>('.starfall-drops-layer[data-cascade-drops]'))
+            .map((container) => ({
+                container,
+                nodes: new Map(Array.from(container.querySelectorAll<HTMLElement>('span[data-drop-id]'))
+                    .map((node) => [Number(node.getAttribute('data-drop-id')), node] as const)),
+            }));
+        this.cascades.set(id, {
+            root,
+            contours: Array.from(root.querySelectorAll<SVGPathElement>('path[data-breach-contour]')),
+            dividers: Array.from(root.querySelectorAll<SVGPathElement>('path[data-breach-wave-line]'))
+                .map((node) => ({
+                    node,
+                    y: Number(node.getAttribute('data-wave-y') || '42'),
+                    amplitude: Number(node.getAttribute('data-wave-amp') || '2.6'),
+                })),
+            streams: Array.from(root.querySelectorAll<HTMLElement>('.waterfall-stream-overlay')),
+            breaths: Array.from(root.querySelectorAll<HTMLElement>('[data-breath-slot]'))
+                .map((node) => ({
+                    node,
+                    slotKey: node.getAttribute('data-breath-slot') || 'slot',
+                    seed: Number(node.getAttribute('data-breath-seed') || '0'),
+                })),
+            drops,
+        });
+        this.ensureRunning();
+    }
+    // --- КОНЕЦ ФУНКЦИИ bindCascade (TelemetryWaterfallAnimator) ---
+
+    // --- НАЧАЛО ФУНКЦИИ releaseCascade (TelemetryWaterfallAnimator) ---
+    public releaseCascade(id: CascadeId, root?: HTMLElement | null): void {
+        if (root && this.cascades.get(id)?.root !== root) return;
+        this.cascades.delete(id);
+        this.droplets = this.droplets.filter((drop) => drop.cascadeId !== id);
+        this.ignitedSlots.forEach((_time, key) => {
+            if (key.startsWith(`l${id}_`)) this.ignitedSlots.delete(key);
+        });
+        if (!this.cascades.size) {
+            this.unsubscribeSignals?.();
+            this.unsubscribeSignals = null;
+        }
+    }
+    // --- КОНЕЦ ФУНКЦИИ releaseCascade (TelemetryWaterfallAnimator) ---
+
     // --- НАЧАЛО ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
-    private tick = (nowMs: number): void => {
-        const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastMs) / 1000));
-        this.lastMs = nowMs;
-        const signals = getVisualSignals();
+    private tick = (signals: Readonly<VisualSignalSnapshot>): void => {
+        if (signals.isPaused || signals.reducedMotion) return;
+
+        const visible: [CascadeId, WaterfallCascadeBinding][] = [];
+        this.cascades.forEach((binding, id) => {
+            if (!binding.root.isConnected) this.releaseCascade(id, binding.root);
+            else if (!binding.root.classList.contains('layer-hidden')) visible.push([id, binding]);
+        });
+        if (!visible.length) return;
+
+        const dt = signals.frameDtSec;
         const timeSec = signals.simTimeSec;
         if (timeSec < this.lastSignalSec) {
             this.nextSpawnSec = { 2: timeSec + 0.5, 3: timeSec + 0.85, 4: timeSec + 1.2 };
@@ -284,24 +351,20 @@ class TelemetryWaterfallAnimator {
         }
         this.lastSignalSec = timeSec;
 
-        const uState = universeStore.getState();
-        if (!uState.isTabHidden && !signals.reducedMotion && !signals.isPaused) {
-            this.smoothedMusicPulse = signals.pulse;
-            this.smoothedMusicLow = signals.low;
-
-            if (!uState.isPaused) {
-                this.stepDroplets(dt, timeSec);
-            }
-            this.updateLiveDomElements(timeSec);
-        }
-
-        this.rafId = window.requestAnimationFrame(this.tick);
+        this.smoothedMusicPulse = signals.pulse;
+        this.smoothedMusicLow = signals.low;
+        this.stepDroplets(dt, timeSec, visible.map(([id]) => id), signals);
+        this.updateLiveDomElements(timeSec, visible);
     };
     // --- КОНЕЦ ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
 
     // --- НАЧАЛО ФУНКЦИИ stepDroplets (TelemetryWaterfallAnimator) ---
-    private stepDroplets(dt: number, timeSec: number): void {
-        const cascades: ReadonlyArray<2 | 3 | 4> = [2, 3, 4];
+    private stepDroplets(
+        dt: number,
+        timeSec: number,
+        cascades: readonly CascadeId[],
+        signals: Readonly<VisualSignalSnapshot>
+    ): void {
         const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
             2: ['l2_fps', 'l2_drift', 'l2_kuramoto', 'l2_nodes', 'l2_core', 'l2_audio'],
             3: ['l3_trunks', 'l3_bridges', 'l3_dendrites', 'l3_deg', 'l3_diam', 'l3_pulses'],
@@ -319,7 +382,6 @@ class TelemetryWaterfallAnimator {
                 const slotKey = pool[(this.dropCounter * 3 + cId) % pool.length];
                 this.ignitedSlots.set(slotKey, timeSec);
 
-                const signals = getVisualSignals();
                 const glyph = pickGlyph(signals.phase, this.dropCounter, Math.floor(timeSec * 3), signals.seed);
 
                 this.droplets.push({
@@ -342,6 +404,10 @@ class TelemetryWaterfallAnimator {
         const active: StarfallDroplet[] = [];
         for (let i = 0; i < this.droplets.length; i++) {
             const d = this.droplets[i];
+            if (!cascades.includes(d.cascadeId)) {
+                active.push(d);
+                continue;
+            }
             const nextLife = d.life + dt;
             if (nextLife >= d.maxLife) continue;
             const prog = nextLife / d.maxLife;
@@ -402,101 +468,58 @@ class TelemetryWaterfallAnimator {
     // --- КОНЕЦ ФУНКЦИИ computeSlotBreathCss (TelemetryWaterfallAnimator) ---
 
     // --- НАЧАЛО ФУНКЦИИ updateLiveDomElements (TelemetryWaterfallAnimator) ---
-    private updateLiveDomElements(timeSec: number): void {
-        if (typeof document === 'undefined') return;
-
-        const contourPaths = document.querySelectorAll<SVGPathElement>(
-            'path[data-breach-contour]'
-        );
-        contourPaths.forEach((pathEl: SVGPathElement) => {
-            const cId = Number(pathEl.getAttribute('data-breach-contour') || '2');
-            const offset = (cId - 2) * 1.25;
-            pathEl.setAttribute(
-                'd',
-                buildLivingBreachContourPath(
-                    418,
-                    280,
-                    timeSec,
-                    offset,
-                    this.smoothedMusicLow
-                )
-            );
-        });
-
-        const dividerPaths = document.querySelectorAll<SVGPathElement>(
-            'path[data-breach-wave-line]'
-        );
-        dividerPaths.forEach((lineEl: SVGPathElement) => {
-            const cId = Number(lineEl.getAttribute('data-breach-wave-line') || '2');
-            const yPos = Number(lineEl.getAttribute('data-wave-y') || '42');
-            const amp =
-                Number(lineEl.getAttribute('data-wave-amp') || '2.6') *
-                (1.0 + this.smoothedMusicPulse * 0.25);
-            const offset = (cId - 2) * 1.3;
-            lineEl.setAttribute(
-                'd',
-                buildLivingHorizontalWavePath(418, yPos, timeSec, offset, amp)
-            );
-        });
-
-        const streamOverlays = document.querySelectorAll<HTMLElement>(
-            '.waterfall-stream-overlay'
-        );
-        streamOverlays.forEach((el: HTMLElement, idx: number) => {
-            const yPos = (timeSec * (11.0 + idx * 1.4)) % 120;
-            el.style.backgroundPosition = `0px ${yPos.toFixed(1)}px`;
-        });
-
-        const breathNodes = document.querySelectorAll<HTMLElement>('[data-breath-slot]');
-        breathNodes.forEach((el: HTMLElement) => {
-            const slotKey = el.getAttribute('data-breath-slot') || 'slot';
-            const seed = Number(el.getAttribute('data-breath-seed') || '0');
-            const css = this.computeSlotBreathCss(slotKey, seed, timeSec);
-            el.style.transform = css.transform;
-            el.style.color = css.color;
-            el.style.textShadow = css.textShadow;
-        });
-
-        const dropContainers = document.querySelectorAll<HTMLElement>(
-            '.starfall-drops-layer[data-cascade-drops]'
-        );
-        dropContainers.forEach((container: HTMLElement) => {
-            const cId = Number(
-                container.getAttribute('data-cascade-drops') || '2'
-            ) as 2 | 3 | 4;
-            const drops = this.getDropletsForCascade(cId);
-            const existingMap = new Map<number, HTMLElement>();
-
-            const children = container.querySelectorAll<HTMLElement>('span[data-drop-id]');
-            children.forEach((child: HTMLElement) => {
-                const id = Number(child.getAttribute('data-drop-id'));
-                existingMap.set(id, child);
+    private updateLiveDomElements(
+        timeSec: number,
+        visible: readonly [CascadeId, WaterfallCascadeBinding][]
+    ): void {
+        visible.forEach(([id, binding]) => {
+            binding.contours.forEach((path) => {
+                path.setAttribute('d', buildLivingBreachContourPath(
+                    418, 280, timeSec, (id - 2) * 1.25, this.smoothedMusicLow
+                ));
+            });
+            binding.dividers.forEach(({ node, y, amplitude }) => {
+                node.setAttribute('d', buildLivingHorizontalWavePath(
+                    418, y, timeSec, (id - 2) * 1.3,
+                    amplitude * (1 + this.smoothedMusicPulse * 0.25)
+                ));
+            });
+            binding.streams.forEach((node) => {
+                const y = (timeSec * (11 + (id - 2) * 1.4)) % 120;
+                node.style.backgroundPosition = `0px ${y.toFixed(1)}px`;
+            });
+            binding.breaths.forEach(({ node, slotKey, seed }) => {
+                const css = this.computeSlotBreathCss(slotKey, seed, timeSec);
+                node.style.transform = css.transform;
+                node.style.color = css.color;
+                node.style.textShadow = css.textShadow;
             });
 
-            const activeIds = new Set<number>();
-            for (let i = 0; i < drops.length; i++) {
-                const d = drops[i];
-                activeIds.add(d.id);
-                let span = existingMap.get(d.id);
-                if (!span) {
-                    span = document.createElement('span');
-                    span.className = 'starfall-glyph';
-                    span.setAttribute('data-drop-id', String(d.id));
-                    span.textContent = d.glyph;
-                    span.style.left = `${d.xPercent}%`;
-                    span.style.top = `${d.startYPercent}%`;
-                    container.appendChild(span);
-                }
-                span.style.opacity = d.opacity.toFixed(3);
-                span.style.transform = `translate3d(${d.xDriftPx.toFixed(
-                    1
-                )}px, ${d.yOffsetPx.toFixed(1)}px, 0) scale(${d.scale.toFixed(2)})`;
-            }
-
-            existingMap.forEach((node: HTMLElement, id: number) => {
-                if (!activeIds.has(id)) {
-                    node.remove();
-                }
+            binding.drops.forEach(({ container, nodes }) => {
+                const drops = this.getDropletsForCascade(id);
+                const activeIds = new Set<number>();
+                drops.forEach((drop) => {
+                    activeIds.add(drop.id);
+                    let span = nodes.get(drop.id);
+                    if (!span) {
+                        span = container.ownerDocument.createElement('span');
+                        span.className = 'starfall-glyph';
+                        span.setAttribute('data-drop-id', String(drop.id));
+                        span.textContent = drop.glyph;
+                        span.style.left = `${drop.xPercent}%`;
+                        span.style.top = `${drop.startYPercent}%`;
+                        container.appendChild(span);
+                        nodes.set(drop.id, span);
+                    }
+                    span.style.opacity = drop.opacity.toFixed(3);
+                    span.style.transform = `translate3d(${drop.xDriftPx.toFixed(1)}px, ${drop.yOffsetPx.toFixed(1)}px, 0) scale(${drop.scale.toFixed(2)})`;
+                });
+                nodes.forEach((node, dropId) => {
+                    if (!activeIds.has(dropId)) {
+                        node.remove();
+                        nodes.delete(dropId);
+                    }
+                });
             });
         });
     }
@@ -756,7 +779,6 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
 // --- НАЧАЛО ФУНКЦИИ mountLayer2Metrics ---
 export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     if (!container) return () => {};
-    waterfallAnimator.ensureRunning();
 
     let rootEl: HTMLElement | null = null;
     let elDigest: HTMLElement | null = null;
@@ -775,6 +797,7 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer2MetricsView(state) as HTMLElement;
             container.replaceChildren(rootEl);
+            waterfallAnimator.bindCascade(2, rootEl);
             elDigest = rootEl.querySelector<HTMLElement>('[data-bind="l2-digest"]');
             elFps = rootEl.querySelector<HTMLElement>('[data-bind="l2-fps"]');
             elFrameTime = rootEl.querySelector<HTMLElement>('[data-bind="l2-frametime"]');
@@ -818,7 +841,11 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer2Metrics) ---
 
-    return universeStore.subscribe(update);
+    const unsubscribe = universeStore.subscribe(update);
+    return () => {
+        unsubscribe();
+        waterfallAnimator.releaseCascade(2, rootEl);
+    };
 }
 // --- КОНЕЦ ФУНКЦИИ mountLayer2Metrics ---
 

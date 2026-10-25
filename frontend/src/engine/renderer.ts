@@ -243,7 +243,6 @@ export class UniverseRenderer {
     // ------------------------------------------------------------------------
     // ПОДРАЗДЕЛ 2.1. ПОЛЯ КЛАССА И КОНСТРУКТОР UniverseRenderer
     // ------------------------------------------------------------------------
-    private readonly canvas: HTMLCanvasElement;
     private readonly pipeline: RenderPipeline;
     private readonly simulation: VoidPhaseSimulation;
 
@@ -265,7 +264,6 @@ export class UniverseRenderer {
 
     // --- НАЧАЛО ФУНКЦИИ constructor (UniverseRenderer) ---
     constructor(canvas: HTMLCanvasElement) {
-        this.canvas = canvas;
         this.pipeline = new RenderPipeline(canvas);
         const caps = this.pipeline.getCapabilities();
         this.width = caps.viewportWidth;

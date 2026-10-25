@@ -4,7 +4,7 @@
 // ОГЛАВЛЕНИЕ:
 // 1. Константы, заголовок и массивы f32 физического provider.
 // 2. new: TS-совместимая инициализация фаз, частот и орбит.
-// 3. sanitize_finite, has_finite_uploaded_state, commit_uploaded_state: валидация.
+// 3. has_finite_uploaded_state, commit_uploaded_state: строгая валидация.
 // 4. refresh_metrics, recompute_state_digest: метрики и контрольный дайджест.
 // ============================================================================
 
@@ -103,17 +103,6 @@ impl SceneStateSoA {
     // --- КОНЕЦ РАЗДЕЛА 2: ИНИЦИАЛИЗАЦИЯ ---
 
     // --- НАЧАЛО РАЗДЕЛА 3: ВАЛИДАЦИЯ И ИМПОРТ ---
-
-    #[inline]
-    // --- НАЧАЛО ФУНКЦИИ sanitize_finite ---
-    pub fn sanitize_finite(val: f32, fallback: f32) -> f32 {
-        if val.is_finite() {
-            val
-        } else {
-            fallback
-        }
-    }
-    // --- КОНЕЦ ФУНКЦИИ sanitize_finite ---
 
     // --- НАЧАЛО ФУНКЦИИ has_finite_uploaded_state ---
     pub fn has_finite_uploaded_state(&self) -> bool {

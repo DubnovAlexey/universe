@@ -32,6 +32,10 @@ const profiles: Readonly<Record<PhaseId, GlyphProfile>> = Object.freeze({
     '04_COLLAPSE': { pool: pool(GLYPH_FAMILIES.connectivity, GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.historical), density: 0.34, rollMs: 160, dwellMs: 300 },
     '05_SINGULARITY': { pool: pool(GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.basic.slice(0, 16), GLYPH_FAMILIES.historical), density: 0.18, rollMs: 180, dwellMs: 320 },
 });
+const protectedGlyphs = new Set([
+    ...GLYPH_FAMILIES.geometry, ...GLYPH_FAMILIES.mathematics,
+    ...GLYPH_FAMILIES.connectivity, ...GLYPH_FAMILIES.historical,
+]);
 // НАЧАЛО ФУНКЦИИ getGlyphProfile
 export function getGlyphProfile(phase: PhaseId): GlyphProfile { return profiles[phase]; }
 // КОНЕЦ ФУНКЦИИ getGlyphProfile
@@ -120,7 +124,11 @@ export function scrambleCanonicalText(canonical: string, phase: PhaseId, step: n
     const lock = Math.floor(Math.max(0, progress) * characters.length);
     const stride = Math.max(3, Math.round(1 / profiles[phase].density));
     return characters.map((character, index) => {
-        if (index < lock || !/^[A-Za-z0-9]$/u.test(character) || (index + offset) % stride !== 0) return character;
+        // Египетские письмена входят в Unicode Letter, но остаются частью канона.
+        // Знаки грамматики и цифры emoji-keycap также нельзя разрывать заменой.
+        const isProtected = protectedGlyphs.has(character) || /\p{Script=Egyptian_Hieroglyphs}/u.test(character) ||
+            characters[index + 1] === '\uFE0F' || characters[index + 1] === '\u20E3';
+        if (index < lock || isProtected || !/^[\p{L}\p{N}]$/u.test(character) || (index + offset) % stride !== 0) return character;
         return pickGlyph(phase, index + offset, step);
     }).join('');
 }

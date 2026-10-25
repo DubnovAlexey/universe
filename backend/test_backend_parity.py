@@ -11,7 +11,8 @@
 # test_nexus_decimal_rounding_contract,
 # test_cross_language_nexus_6node_fixture_exact_parity,
 # test_cross_language_nexus_24node_shared_fixture,
-# test_breach_lens_and_black_hole_optics_bounds, test_health_report_and_live_binary_step.
+# test_breach_lens_and_black_hole_optics_bounds,
+# test_endless_cipher_stream_golden_samples_and_buckets, test_health_report_and_live_binary_step.
 # ============================================================================
 
 # --- НАЧАЛО РАЗДЕЛА 1: ИМПОРТЫ И КОНТРАКТЫ ---
@@ -38,7 +39,12 @@ from backend.core.prng import (
     compute_state_digest_fnv1a,
     verify_golden_prng_parity,
 )
-from backend.core.singularity import evaluate_black_hole_optics
+from backend.core.singularity import (
+    CIPHER_STREAM_ALPHABET,
+    CIPHER_STREAM_PALETTE,
+    evaluate_black_hole_optics,
+    sample_endless_cipher_stream,
+)
 from backend.core.stress_solver import evaluate_breach_lens_refraction
 from backend.utils.binary_packer import (
     SCENE_BUFFER_MAGIC,
@@ -276,6 +282,40 @@ class TestUniverseBackendParity(unittest.TestCase):
         self.assertGreater(bh.einstein_deflection_alpha, 0.0)
         self.assertGreater(bh.photon_ring_intensity, 0.0)
     # --- КОНЕЦ ФУНКЦИИ test_breach_lens_and_black_hole_optics_bounds ---
+
+    # --- НАЧАЛО ФУНКЦИИ test_endless_cipher_stream_golden_samples_and_buckets ---
+    def test_endless_cipher_stream_golden_samples_and_buckets(self) -> None:
+        # Golden samples фиксируют зависимость от seed, строки, колонки и времени.
+        samples = (
+            ((104729, 0, 0, 0.0), ("V", "#F59E0B")),
+            ((104729, 2, 7, 0.0), ("F", "#38BDF8")),
+            ((104729, 2, 7, 1.0), ("6", "#7DD3FC")),
+            ((104729, 2, 7, 12.3), ("⊢", "#F8FAFC")),
+            ((42, 4, 9, 108.0), ("Φ", "#F8FAFC")),
+        )
+        for arguments, expected in samples:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(sample_endless_cipher_stream(*arguments), expected)
+                self.assertEqual(sample_endless_cipher_stream(*arguments), expected)
+
+        seen = set()
+        for row in range(4):
+            for col in range(8):
+                initial = sample_endless_cipher_stream(GOLDEN_SEED, row, col, 0.0)
+                # До первого временного тика символ и цвет не должны дрожать.
+                self.assertEqual(
+                    initial, sample_endless_cipher_stream(GOLDEN_SEED, row, col, 0.001)
+                )
+                for time_sec in (0.0, 0.1, 1.0, 108.0):
+                    glyph, color = sample_endless_cipher_stream(
+                        GOLDEN_SEED, row, col, time_sec
+                    )
+                    self.assertEqual(len(glyph), 1)
+                    self.assertIn(glyph, CIPHER_STREAM_ALPHABET)
+                    self.assertIn(color, CIPHER_STREAM_PALETTE)
+                    seen.add((glyph, color))
+        self.assertGreater(len(seen), 16)
+    # --- КОНЕЦ ФУНКЦИИ test_endless_cipher_stream_golden_samples_and_buckets ---
 
     # --- НАЧАЛО ФУНКЦИИ test_health_report_and_live_binary_step ---
     def test_health_report_and_live_binary_step(self) -> None:

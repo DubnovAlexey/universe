@@ -137,7 +137,6 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
 
 export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     if (!container) return () => {};
-    waterfallAnimator.ensureRunning();
 
     let rootEl: HTMLElement | null = null;
     let elDigest: HTMLElement | null = null;
@@ -153,6 +152,7 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
         if (!rootEl || !container.contains(rootEl)) {
             rootEl = renderLayer4TerminalView(state) as HTMLElement;
             container.replaceChildren(rootEl);
+            waterfallAnimator.bindCascade(4, rootEl);
             elDigest = rootEl.querySelector<HTMLElement>('[data-bind="l4-digest"]');
             elLedger = rootEl.querySelector<HTMLElement>('[data-bind="l4-ledger"]');
             statusEls.length = 0;
@@ -211,7 +211,11 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer4Terminal) ---
 
-    return universeStore.subscribe(update);
+    const unsubscribe = universeStore.subscribe(update);
+    return () => {
+        unsubscribe();
+        waterfallAnimator.releaseCascade(4, rootEl);
+    };
 }
 // --- КОНЕЦ ФУНКЦИИ mountLayer4Terminal ---
 

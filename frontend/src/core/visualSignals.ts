@@ -13,6 +13,7 @@ import type { StressStateData } from '../store/stressState';
 export interface VisualSignalSnapshot {
     readonly tick: number;
     readonly simTimeSec: number;
+    readonly frameDtSec: number;
     readonly phase: PhaseId;
     readonly phaseProgress: number;
     readonly isPaused: boolean;
@@ -27,7 +28,7 @@ export interface VisualSignalSnapshot {
     readonly globalStress: number;
 }
 let latest: Readonly<VisualSignalSnapshot> = Object.freeze({
-    tick: 0, simTimeSec: 0, phase: '01_VOID', phaseProgress: 0,
+    tick: 0, simTimeSec: 0, frameDtSec: 0, phase: '01_VOID', phaseProgress: 0,
     isPaused: false, reducedMotion: false, seed: 104729,
     low: 0, mid: 0, high: 0, pulse: 0, heartbeat: 0, kuramotoR: 0, globalStress: 0,
 });
@@ -47,11 +48,14 @@ export function createVisualSignals(
     stress: Readonly<StressStateData>
 ): Readonly<VisualSignalSnapshot> {
     const channel = (value: number): number => audio.isPlaying ? unit(value) : 0;
+    const isPaused = state.isPaused || state.isTabHidden;
+    const frameTimeMs = state.telemetry.frameTimeMs;
     return Object.freeze({
         tick: state.telemetry.tick,
         simTimeSec: Number.isFinite(state.telemetry.simulationTimeSec) ? state.telemetry.simulationTimeSec : 0,
+        frameDtSec: isPaused || !Number.isFinite(frameTimeMs) ? 0 : Math.max(0, Math.min(0.05, frameTimeMs / 1000)),
         phase: state.currentPhase, phaseProgress: unit(state.telemetry.phaseProgress),
-        isPaused: state.isPaused || state.isTabHidden, reducedMotion: state.reducedMotion,
+        isPaused, reducedMotion: state.reducedMotion,
         seed: state.seed >>> 0, low: channel(audio.low), mid: channel(audio.mid),
         high: channel(audio.high), pulse: channel(audio.pulse), heartbeat: channel(audio.heartbeat),
         kuramotoR: unit(state.telemetry.kuramotoOrderR), globalStress: unit(stress.globalStress),

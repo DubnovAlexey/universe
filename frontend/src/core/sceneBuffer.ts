@@ -4,16 +4,15 @@
 // НАЗНАЧЕНИЕ: Единый буфер состояния SceneBuffer (Structure of Arrays — SoA, MASTER 00B)
 // ЗАДАЧИ ФАЙЛА:
 // 1. Хранить 24-байтный бинарный заголовок 'UNVS' (little-endian) и массивы сущностей SoA.
-// 2. Поддерживать двойную буферизацию координат (prevPos / pos) для гладкой интерполяции
-//    рендера при фиксированном шаге физики (accumulator).
+// 2. Публиковать актуальные координаты и скорости после общего шага симуляции.
 // 3. Проверять границы массивов и защищать буфер от NaN / Infinity (NaN/Inf-guard)
 //    по всем 8 числовым полям сущности с точным подсчётом срабатываний.
 // 4. Вычислять и обновлять единый State Digest для оптик ILLUSION, NEXUS и X-RAY.
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. SceneBufferSoA: constructor, readHeader, writeHeader, snapshotPreviousPositions,
-//      computeInterpolatedPositions, syncEntityFromParticle, commitTickAndComputeDigest, getDigestHex,
+//   2. SceneBufferSoA: constructor, readHeader, writeHeader,
+//      syncEntityFromParticle, commitTickAndComputeDigest, getDigestHex,
 //      getNanGuardTriggers, resetNanGuardTriggers, reset.
 // ============================================================================
 
@@ -50,8 +49,6 @@ export class SceneBufferSoA {
     public readonly id: Uint32Array;
     public readonly kind: Uint8Array;
     public readonly pos: Float32Array;       // [x, y, z] * capacity
-    public readonly prevPos: Float32Array;   // [prevX, prevY, prevZ] * capacity
-    public readonly interpPos: Float32Array; // Выходной буфер интерполированных координат
     public readonly vel: Float32Array;       // [vx, vy, vz] * capacity
     public readonly depthZ: Float32Array;
     public readonly energy: Float32Array;
@@ -68,8 +65,6 @@ export class SceneBufferSoA {
         this.id = new Uint32Array(capacity);
         this.kind = new Uint8Array(capacity);
         this.pos = new Float32Array(capacity * 3);
-        this.prevPos = new Float32Array(capacity * 3);
-        this.interpPos = new Float32Array(capacity * 3);
         this.vel = new Float32Array(capacity * 3);
         this.depthZ = new Float32Array(capacity);
         this.energy = new Float32Array(capacity);
@@ -114,28 +109,6 @@ export class SceneBufferSoA {
         this.headerView.setUint32(20, header.digest >>> 0, true);
     }
     // --- КОНЕЦ ФУНКЦИИ writeHeader (SceneBufferSoA) ---
-
-    // Сохранение текущих позиций в prevPos перед выполнением очередного шага физики
-    // --- НАЧАЛО ФУНКЦИИ snapshotPreviousPositions (SceneBufferSoA) ---
-    public snapshotPreviousPositions(activeCount: number): void {
-        const limit = Math.min(this.capacity, activeCount) * 3;
-        for (let i = 0; i < limit; i++) {
-            this.prevPos[i] = this.pos[i];
-        }
-    }
-    // --- КОНЕЦ ФУНКЦИИ snapshotPreviousPositions (SceneBufferSoA) ---
-
-    // Вычисление интерполированных позиций между prevPos и pos с коэффициентом alpha ∈ [0, 1]
-    // --- НАЧАЛО ФУНКЦИИ computeInterpolatedPositions (SceneBufferSoA) ---
-    public computeInterpolatedPositions(activeCount: number, alpha: number): void {
-        const t = Math.max(0, Math.min(1, alpha));
-        const invT = 1.0 - t;
-        const limit = Math.min(this.capacity, activeCount) * 3;
-        for (let i = 0; i < limit; i++) {
-            this.interpPos[i] = this.prevPos[i] * invT + this.pos[i] * t;
-        }
-    }
-    // --- КОНЕЦ ФУНКЦИИ computeInterpolatedPositions (SceneBufferSoA) ---
 
     // Запись сущности с автоматической защитой от NaN / Infinity по всем 8 числовым полям
     // --- НАЧАЛО ФУНКЦИИ syncEntityFromParticle (SceneBufferSoA) ---
@@ -243,8 +216,6 @@ export class SceneBufferSoA {
         this.id.fill(0);
         this.kind.fill(0);
         this.pos.fill(0);
-        this.prevPos.fill(0);
-        this.interpPos.fill(0);
         this.vel.fill(0);
         this.depthZ.fill(0);
         this.energy.fill(0);

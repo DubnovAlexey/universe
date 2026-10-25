@@ -4,9 +4,9 @@
 * **Часть I (Русское издание):** Полное научно-популярное и инженерно-математическое руководство (Разделы 0–11)
 * **Part II (English Edition):** Complete Mathematical, Biophysical & Astrophysical Specification (Sections 0–11)
 
-**Граница реализации / Runtime scope (24.10.2026):** текущая статическая сборка асинхронно подключает реальный raw Rust/WASM ABI v1 без imports; `?wasm=0` выбирает TS. Общая модель содержит фазы Курамото активных частиц для дыхания и геометрии позднего GENESIS и отдельные 64 контрольные орбиты `REF64` для энергии. Художественные цели сохранены; полной N-body динамики всей сцены нет. NEXUS исполняется синхронно в TS, Python остаётся офлайн/CI reference, WGSL — спецификациями. Текущий набор содержит 48 модульных проверок (27 TS, 8 Python, 13 Rust) и 5 интеграций реального WASM; финальный локальный QA/V1 pipeline, Astro build и Pages artifact прошли без warning/error, `npm audit` — 0; выборочный desktop/mobile smoke и границы отмечены в `../QA_STATUS.md`; выборочный production smoke не заменяет полное браузерное покрытие.
+**Граница реализации / Runtime scope (25.10.2026):** текущая статическая сборка асинхронно подключает реальный raw Rust/WASM ABI v1 без imports; `?wasm=0` выбирает TS. Общая модель содержит фазы Курамото активных частиц для дыхания и геометрии позднего GENESIS и отдельные 64 контрольные орбиты `REF64` для энергии. Художественные цели сохранены; полной N-body динамики всей сцены нет. NEXUS исполняется синхронно в TS, Python остаётся офлайн/CI reference, WGSL — спецификациями. Изменения 25.10 включают общий шаг кадра, кириллический hover, очистку холостого состояния и шестую скалярную WASM BREACH-интеграцию; текущий набор — 61 модульная проверка (39 TS, 9 Python, 13 Rust) и 6 WASM-интеграций; финальный production pipeline под Node 22.23.4 прошёл, audit — 0; выборочный desktop/mobile smoke и его границы — `../QA_STATUS.md`. Исторический smoke 24.10 не заменяет просмотр новой сборки.
 
-The current static build loads raw Rust/WASM ABI v1 asynchronously; `?wasm=0` forces TS. Both providers advance active-particle Kuramoto phases and a separate 64-orbit conservative energy reference. Phase output affects breathing and late-GENESIS geometry before final coordinates reach Canvas, graph quantization and SoA. The artwork remains choreographed rather than a full N-body simulation. Python runs offline/in CI, NEXUS synchronously in TS, and WGSL remains specifications. V1 publishes one immutable phase/audio/stress snapshot per existing frame and uses code-point-safe phase glyphs with a system-font filter/ASCII fallback. Calm hover preserves canonical text and accessible names; the autonomous odometer keeps 18–26 Hz. The current suite contains 48 unit checks (27 TS, 8 Python, 13 Rust) plus 5 real-WASM integration checks; the final local pipeline, Astro/Pages build and selective desktop/mobile smoke passed. `../QA_STATUS.md` records browser limits and the separate remote CI status.
+The current static build loads raw Rust/WASM ABI v1 asynchronously; `?wasm=0` forces TS. Both providers advance active-particle Kuramoto phases and a separate 64-orbit conservative energy reference. Phase output affects breathing and late-GENESIS geometry before final coordinates reach Canvas, graph quantization and SoA. The artwork remains choreographed rather than a full N-body simulation. Python runs offline/in CI, NEXUS synchronously in TS, and WGSL remains specifications. V1 publishes one immutable phase/audio/stress snapshot per existing frame and uses code-point-safe phase glyphs with a system-font filter/ASCII fallback. Calm hover preserves canonical text and accessible names; the autonomous odometer keeps 18–26 Hz. The 25 October changes add normalized shared frame time, Cyrillic hover, DOM lifecycle cleanup and a sixth scalar WASM BREACH integration. `../QA_STATUS.md` records the current 61 unit checks (39 TS, 9 Python, 13 Rust), 6 WASM integrations, the successful final production-mode verification, selective desktop/mobile smoke and browser limits and the already successful published CI #45 on `b60c995`.
 
 ---
 
@@ -63,6 +63,8 @@ The current static build loads raw Rust/WASM ABI v1 asynchronously; `?wasm=0` fo
    $$h_0 = \text{seed} \oplus (\text{index} \cdot \text{0x9E3779B9} \bmod 2^{32})$$
    $$h_1 = (h_0 \oplus (h_0 \gg 16)) \cdot \text{0x85EBCA6B} \bmod 2^{32}$$
    $$h_2 = (h_1 \oplus (h_1 \gg 13)) \cdot \text{0xC2B2AE35} \bmod 2^{32}, \qquad \text{hashU32} = h_2 \oplus (h_2 \gg 16)$$
+
+В существующий Rust-тест добавлены четыре независимых golden hash-вектора Python для `hash_u32`. Это усиливает межъязыковую проверку индексного хеша, не меняя алгоритм или общее число 13 native-тестов.
 
 ### 1.3. Контрольная сумма `FNV-1a State Digest` (Цифровой отпечаток Вселенной)
 * **Что это простыми словами:** короткий код (например, `0x6AB09A72`) помогает обнаружить изменения выбранных полей состояния. В проекте проверяется каждая четвёртая частица после квантования; малые изменения могут остаться незаметными, а коллизии 32-битного хеша возможны. Поэтому совпадение кода не доказывает полного совпадения двух сцен.
@@ -256,6 +258,12 @@ $$S_5''(u) = 120u^3 - 180u^2 + 60u = 60u(u - 1)(2u - 1) \implies S_5''(0) = S_5'
 
 ---
 
+### 6.4. Граница скалярного WASM reference
+Существующий `evaluate_lens_refraction(px,py,lensX,lensY,radius,reveal)` возвращает только $\sqrt{dx^2+dy^2}$ при фиксированных $\sigma=0.25$ и $t=0$. Входы обеих реализаций нормализуются в f32; шестая реальная WASM-интеграция перебирает 10 752 образца, включая центр, внутреннюю область, кольцо и внешнюю границу, несколько центров/радиусов/reveal. Максимальная ошибка длины смещения составила $1.32\cdot10^{-5}$ px при допуске $2\cdot10^{-4}$ px.
+
+Проверка не сравнивает полный вектор, rim/dispersion или произвольные stress/time. `isBreaching` меняет TS dispersion, а не dx/dy; скалярный ABI этот режим не содержит. Сам ABI v1 не расширялся, а векторное преломление Canvas остаётся TypeScript. Оптический reference не продвигает время физической симуляции.
+
+
 ## 7. Фаза 05 (`05_SINGULARITY`, 79–108 с): «Кошачий глаз» `NGC 6543`, оптика Чёрной дыры и Одометр
 
 ### 7.1. Туманность «Кошачий глаз» (`NGC 6543`) и сброс звёздных оболочек
@@ -284,9 +292,11 @@ $$\text{radiusEnvelope}(p_{\text{ActB}}) = \left(1.0 - S_5(0.05, \; 0.98, \; p_{
   $$\Phi(t + \Delta t) = \Phi(t) + \Delta t \cdot f_{\text{rate}}(t)$$
 
 ### 7.4. Общие сигналы, Unicode и движение фоновой карточки (V1)
-`visualSignals.ts` публикует неизменяемый снимок фазы, времени, музыкальных огибающих, Курамото и stress на существующий кадр. `glyphGrammar.ts` выбирает глифы из пяти профилей по полным code point, фильтрует отсутствующие начертания в браузере и использует ASCII fallback. Supplementary математические и египетские символы не разрываются на UTF-16 code units; составные графемы отдельно не сегментируются.
+`visualSignals.ts` публикует неизменяемый снимок фазы, времени, музыкальных огибающих, Курамото и stress на существующий кадр. Шаг $\Delta t_\mathrm{frame}=\mathrm{clamp}(\mathrm{frameTimeMs}/1000,0,0.05)$ равен нулю при pause/hidden; hover накапливает его независимо от скачков абсолютного таймлайна. `glyphGrammar.ts` выбирает глифы из пяти профилей по полным code point, фильтрует отсутствующие начертания в браузере и использует ASCII fallback. Кириллица и Unicode Letters/Numbers перебираются; египетские символы и знаки грамматики защищены. Generic p/span сохраняют доступный канон отдельно от `aria-hidden` визуального span. Supplementary математические и египетские символы не разрываются на UTF-16 code units; составные графемы отдельно не сегментируются.
 
-Hover использует три roll-шага `160–180 мс` и canonical dwell `280–320 мс`; завершение, pointerleave/blur, pause/reduced motion возвращают точный текст и устойчивые доступные названия. Это отдельный профиль от автономного одометра `18–26 Гц`. После первого полного круга фоновая карточка поднимается по $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ на $0\le u\le1$, а $D$ ограничено свободным местом (с учётом высоты карточки, viewport и более сдержанного подъёма на узком экране). Пауза сохраняет $t$, reduced motion выбирает статичное положение. Мягкая тень и прозрачная радиальная подложка при opacity `0.60` поддерживают читаемость; её качество требует браузерного просмотра.
+Водопад и визитка подписаны на общий кадр, без собственных RAF; DOM кешируется и неизменные paused/hidden/reduced состояния не записываются повторно. P95 frame time читается из единственного окна QualityGovernor на 45 измерений; это runtime-показатель, не benchmark. Неиспользуемые предыдущие/интерполированные SoA-координаты удалены без изменения публикации актуальных координат и ABI.
+
+Hover использует три roll-шага `160–180 мс` и canonical dwell `280–320 мс`; завершение, pointerleave/blur, pause/reduced motion возвращают точный текст и устойчивые доступные названия. Это отдельный профиль от автономного одометра `18–26 Гц`. После первого полного круга фоновая карточка поднимается по $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ на $0\le u\le1$, а $D$ ограничено свободным местом (с учётом высоты карточки, viewport и положения заголовка на узком экране). Пауза сохраняет $t$, reduced motion выбирает статичное положение. Мягкая тональная подложка без внешнего box-shadow и глубокие тени текста при opacity `0.60` поддерживают читаемость; контейнер имеет радиус 36 px без внешнего box-shadow; выборочный desktop/mobile smoke подтвердил видимость действий и отсутствие обрезки. Компактная геометрия учитывает заголовок через ResizeObserver; универсальное покрытие всех viewport/ОС не заявляется.
 
 ---
 
@@ -350,7 +360,7 @@ True relative mechanical energy drift is reported directly without artificial cl
 
 $$\frac{\Delta E}{E_0}(t) = \frac{|E(t) - E_0|}{|E_0|}$$
 
-Drift starts at zero; a later zero-duration step preserves the existing drift. The native 60-second reference test bounds it below `0.001`. Raw ABI v1 returns status `1`/`0` from `step_verlet_nbody`, uses `f64` time/metrics and `f32` arrays, adopts the latest TS state on late loading, and maintains complete TS mirrors for fallback. Five real-WASM integration checks include 600 mixed steps against TS and native-phase influence on visible coordinates, graph quantization and SoA.
+Drift starts at zero; a later zero-duration step preserves the existing drift. The native 60-second reference test bounds it below `0.001`. Raw ABI v1 returns status `1`/`0` from `step_verlet_nbody`, uses `f64` time/metrics and `f32` arrays, adopts the latest TS state on late loading, and maintains complete TS mirrors for fallback. Six real-WASM integration checks include 600 mixed steps against TS and native-phase influence on visible coordinates, graph quantization and SoA.
 
 ---
 
@@ -366,3 +376,9 @@ Drift starts at zero; a later zero-duration step preserves the existing drift. T
 3. **$C^1$-Continuous `BREACH LENS` Bell & Analytical Black Hole Optics:**
    * The quartic bell $g(u) = (1 - u^2)^2$ for $u = |d - 1|/0.24 < 1$ satisfies $g(1) = 0$ and $g'(1) = 0$, providing a seamless $C^1$ boundary transition.
    * In Phase 05, analytical gravitational deflection $\alpha(b) = \min(2.0, \; 2R_s/b)$, a Gaussian photon ring at $b = 1.48 R_s$, and relativistic Doppler beaming $D^{2.2}$ are paired with bounded delta-time odometer integration (`18.0–26.0 Hz`).
+
+
+Python `sample_endless_cipher_stream` остаётся независимым офлайн reference: отдельный golden/bucket regression проверяет детерминированные glyph/color, принадлежность словарю/палитре и смену дискретных временных bucket. Это не изменение браузерного диапазона одометра 18–26 Гц.
+
+
+Выборочный итог 25.10 также включает узкий `320×568` без обрезки действий и принудительный TS fallback. На низком экране карточка может частично перекрывать центр: приоритет — полностью видимое и доступное содержимое. Непрерывные 108 секунд, слышимость звука, Safari/iOS, системный reduced motion и p50/p95 benchmark отдельно не подтверждены; опубликованный CI #45 относится к `b60c995`, новые изменения требуют нового коммита и запуска.

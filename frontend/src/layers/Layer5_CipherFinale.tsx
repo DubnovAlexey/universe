@@ -8,8 +8,8 @@
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
 //   РАЗДЕЛ 1. Делегирование фазового перебора общему контроллеру наведения
 //             и клавиатурного фокуса (triggerLineOrButtonScramble).
-//   РАЗДЕЛ 2. Контроллер 60-FPS анимации визитки (FinaleCardDomAnimator):
-//     - Подраздел 2.1. Жизненный цикл RAF (активен в Акте D и в постоянном
+//   РАЗДЕЛ 2. Контроллер анимации на общем такте кадра (FinaleCardDomAnimator):
+//     - Подраздел 2.1. Подписка общего кадра (активна в Акте D и в постоянном
 //                      полупрозрачном фоновом режиме после первого цикла),
 //                      безопасное смещение визитки после возврата в фазу 01.
 //     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
@@ -24,7 +24,7 @@
 import { React } from './Layer2_Metrics';
 import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
 import { smootherstep, universeStore, type UniverseState } from '../store/universeState';
-import { getVisualSignals } from '../core/visualSignals';
+import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 import { getRenderableGlyphPool } from '../core/glyphGrammar';
 import { calmGlyphHover } from '../core/glyphHover';
 
@@ -42,12 +42,14 @@ function triggerLineOrButtonScramble(el: HTMLElement, canonicalText: string): vo
 // --- КОНЕЦ ФУНКЦИИ triggerLineOrButtonScramble ---
 
 // ============================================================================
-// РАЗДЕЛ 2. КОНТРОЛЛЕР 60-FPS ВЫХОДА ИЗ ТОЧКИ, ОДОМЕТРА И ДЫХАНИЯ ВИЗИТКИ
+// РАЗДЕЛ 2. ОБЩИЙ ТАКТ ВЫХОДА ИЗ ТОЧКИ, ОДОМЕТРА И ДЫХАНИЯ ВИЗИТКИ
 // ============================================================================
 
 class FinaleCardDomAnimator {
-    private rafId = 0;
-    private lastFrameMs = 0;
+    private unsubscribeSignals: (() => void) | null = null;
+    private resizeObserver: ResizeObserver | null = null;
+    private layoutDirty = true;
+    private lastStaticStateKey = '';
     private accumulatedQuantumPhase = 0;
     private accumulatedAssemblyPhase = 0;
     private lfoClockSec = 0;
@@ -58,6 +60,7 @@ class FinaleCardDomAnimator {
     private breathHeartbeat = 0.35;
 
     private cardBoxEl: HTMLElement | null = null;
+    private headerEl: HTMLElement | null = null;
     private line0El: HTMLElement | null = null;
     private line1El: HTMLElement | null = null;
     private line2QuantumEl: HTMLElement | null = null;
@@ -65,13 +68,17 @@ class FinaleCardDomAnimator {
     private line4El: HTMLElement | null = null;
 
     // ------------------------------------------------------------------------
-    // ПОДРАЗДЕЛ 2.1. ПРИВЯЗКА DOM-УЗЛОВ И УПРАВЛЕНИЕ ЖИЗНЕННЫМ ЦИКЛОМ RAF
+    // ПОДРАЗДЕЛ 2.1. ПРИВЯЗКА DOM-УЗЛОВ И ЖИЗНЕННЫЙ ЦИКЛ ПОДПИСКИ КАДРА
     // ------------------------------------------------------------------------
 
     // --- НАЧАЛО ФУНКЦИИ bindElements ---
     public bindElements(root: HTMLElement): void {
+        this.stop();
         this.cardBoxEl = root.querySelector<HTMLElement>('[data-bind="l5-card-box"]');
+        this.headerEl = root.ownerDocument.querySelector<HTMLElement>('.brand-card');
         this.ambientLayoutKey = '';
+        this.layoutDirty = true;
+        this.lastStaticStateKey = '';
         this.line0El = root.querySelector<HTMLElement>('[data-bind="l5-line-0"]');
         this.line1El = root.querySelector<HTMLElement>('[data-bind="l5-line-1"]');
         this.line2QuantumEl = root.querySelector<HTMLElement>('[data-bind="l5-line-2"]');
@@ -89,29 +96,41 @@ class FinaleCardDomAnimator {
 
     // --- НАЧАЛО ФУНКЦИИ startIfNeeded ---
     public startIfNeeded(): void {
-        if (this.rafId !== 0 || typeof window === 'undefined') return;
-        this.lastFrameMs = performance.now();
-        this.rafId = window.requestAnimationFrame(this.tick);
+        if (this.unsubscribeSignals || typeof window === 'undefined') return;
+        if (!this.resizeObserver && typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => { this.layoutDirty = true; });
+        }
+        if (this.cardBoxEl) {
+            this.resizeObserver?.observe(this.cardBoxEl);
+            if (this.cardBoxEl.parentElement) {
+                this.resizeObserver?.observe(this.cardBoxEl.parentElement);
+            }
+        }
+        if (this.headerEl) this.resizeObserver?.observe(this.headerEl);
+        this.layoutDirty = true;
+        this.unsubscribeSignals = subscribeVisualSignals(this.tick);
     }
     // --- КОНЕЦ ФУНКЦИИ startIfNeeded ---
 
     // --- НАЧАЛО ФУНКЦИИ stop ---
     public stop(): void {
-        if (this.rafId !== 0 && typeof window !== 'undefined') {
-            window.cancelAnimationFrame(this.rafId);
-            this.rafId = 0;
-        }
+        this.unsubscribeSignals?.();
+        this.unsubscribeSignals = null;
+        this.resizeObserver?.disconnect();
     }
     // --- КОНЕЦ ФУНКЦИИ stop ---
 
     // --- НАЧАЛО ФУНКЦИИ getAmbientRiseDistance ---
-    /** Освобождает центр на desktop и ограничивает подъём safe-area областью. */
+    /** Освобождает центр и ограничивает подъём областью ниже верхнего HUD. */
     private getAmbientRiseDistance(): number {
         const card = this.cardBoxEl;
         const stage = card?.parentElement;
         if (!card || !stage) return 0;
+        if (!this.layoutDirty && this.ambientLayoutKey) return this.ambientRiseDistancePx;
 
-        const layoutKey = `${stage.clientWidth}:${stage.clientHeight}:${card.offsetHeight}`;
+        const compactLayout = stage.clientWidth <= 920;
+        const headerBottom = compactLayout ? this.headerEl?.getBoundingClientRect().bottom ?? 44 : 0;
+        const layoutKey = `${stage.clientWidth}:${stage.clientHeight}:${card.offsetHeight}:${headerBottom}`;
         if (layoutKey !== this.ambientLayoutKey) {
             this.ambientLayoutKey = layoutKey;
             const stageStyle = window.getComputedStyle(stage);
@@ -121,18 +140,25 @@ class FinaleCardDomAnimator {
                 0,
                 (stage.clientHeight - paddingTop - paddingBottom - card.offsetHeight) / 2
             );
-            const compactLayout = stage.clientWidth <= 920;
+            const centeredCardTop = paddingTop + freeSpaceAbove;
             const centeredCardBottom = paddingTop + freeSpaceAbove + card.offsetHeight;
             const breathMargin = Math.ceil(2 + card.offsetHeight * 0.0075);
-            // Нижний край desktop-визитки остаётся выше центра с зазором 24 px,
-            // включая максимальную амплитуду её дыхания. На компактных экранах
-            // сохраняется небольшой подъём, чтобы длинная карточка не ушла под HUD.
-            const desiredRise = compactLayout
-                ? Math.max(14, Math.min(28, stage.clientHeight * 0.03))
-                : Math.max(0, centeredCardBottom - stage.clientHeight / 2 + 24 + breathMargin);
+            // Нижний край desktop-визитки остаётся выше центра с зазором 62 px,
+            // на компактных экранах — 24 px. Геометрия HUD читается только при
+            // смене размеров, а максимальный подъём сохраняет всю карточку видимой.
+            const desiredRise = Math.max(
+                0,
+                centeredCardBottom - stage.clientHeight / 2 +
+                    (compactLayout ? 24 : 62) + breathMargin
+            );
+            let maximumRise = Math.max(0, freeSpaceAbove - 8);
+            if (compactLayout) {
+                const topClearance = Math.max(48, paddingTop - 8, headerBottom + 4);
+                maximumRise = Math.max(0, centeredCardTop - topClearance - breathMargin);
+            }
             this.ambientRiseDistancePx = Math.min(
                 desiredRise,
-                Math.max(0, freeSpaceAbove - 8)
+                maximumRise
             );
         }
 
@@ -185,40 +211,39 @@ class FinaleCardDomAnimator {
     // --- КОНЕЦ ФУНКЦИИ formatOdometerLineForProgress ---
 
     // --- НАЧАЛО ФУНКЦИИ tick ---
-    private tick = (nowMs: number): void => {
-        this.rafId = 0;
+    private tick = (signals: Readonly<VisualSignalSnapshot>): void => {
         const state = universeStore.getState();
-        const signals = getVisualSignals();
-        const glyphPool = getRenderableGlyphPool(state.currentPhase);
         const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
         const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
         const isPersistentCard = state.finaleReachedOnce;
 
-        // Если визитка ещё ни разу не открывалась и сейчас не Акт D — останавливаем RAF
+        // До первого появления визитка не подписана на общий кадр.
         if (!isActD && !isCollapsing && !isPersistentCard) {
+            this.stop();
             return;
         }
 
-        const dtSec = Math.max(
-            0.0,
-            Math.min(0.05, (nowMs - this.lastFrameMs) * 0.001)
-        );
-        this.lastFrameMs = nowMs;
+        const isSimActive = !signals.isPaused && !state.isPaused && !state.isTabHidden;
+        const staticStateKey = `${state.currentPhase}:${state.cycleCount}:${state.githubCardAssemblyProgress}:${state.singularityAct}:${state.reducedMotion}`;
+        if ((!isSimActive || state.reducedMotion) && !this.layoutDirty && staticStateKey === this.lastStaticStateKey) {
+            return;
+        }
+        this.lastStaticStateKey = staticStateKey;
+        const dtSec = isSimActive ? signals.frameDtSec : 0;
+        const glyphPool = getRenderableGlyphPool(state.currentPhase);
 
         if (this.cardBoxEl) {
             const p = isPersistentCard && state.cycleCount > 1
                 ? 1.0
                 : Math.max(0, Math.min(1, state.githubCardAssemblyProgress));
-            const isSimActive = !state.isPaused && !state.isTabHidden;
-
-            if (isSimActive) {
+            if (isSimActive && !state.reducedMotion) {
                 this.lfoClockSec += dtSec;
             }
 
             if (isSimActive) this.breathHeartbeat = signals.heartbeat;
 
             // После первого полного цикла подъём занимает 12 секунд активного времени.
-            // RAF объединяет его с дыханием: CSS не переопределяет transform,
+            // Общий кадр объединяет его с дыханием: CSS не переопределяет transform,
             // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
             const hasLoopCard = isPersistentCard && state.cycleCount > 1;
             if (!hasLoopCard) {
@@ -262,53 +287,53 @@ class FinaleCardDomAnimator {
 
             if (p < 0.76 && !state.reducedMotion) {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    this.line0El.textContent = this.formatOdometerLineForProgress(
+                    calmGlyphHover.setVisualText(this.line0El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[0],
                         0,
                         p,
                         assemblyStep,
                         glyphPool
-                    );
+                    ));
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    this.line1El.textContent = this.formatOdometerLineForProgress(
+                    calmGlyphHover.setVisualText(this.line1El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[1],
                         1,
                         p,
                         assemblyStep,
                         glyphPool
-                    );
+                    ));
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    this.line3El.textContent = this.formatOdometerLineForProgress(
+                    calmGlyphHover.setVisualText(this.line3El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[3],
                         3,
                         p,
                         assemblyStep,
                         glyphPool
-                    );
+                    ));
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    this.line4El.textContent = this.formatOdometerLineForProgress(
+                    calmGlyphHover.setVisualText(this.line4El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[4],
                         4,
                         p,
                         assemblyStep,
                         glyphPool
-                    );
+                    ));
                 }
             } else {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    this.line0El.textContent = CANONICAL_FINALE_LINES[0];
+                    calmGlyphHover.setVisualText(this.line0El, CANONICAL_FINALE_LINES[0]);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    this.line1El.textContent = CANONICAL_FINALE_LINES[1];
+                    calmGlyphHover.setVisualText(this.line1El, CANONICAL_FINALE_LINES[1]);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    this.line3El.textContent = CANONICAL_FINALE_LINES[3];
+                    calmGlyphHover.setVisualText(this.line3El, CANONICAL_FINALE_LINES[3]);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    this.line4El.textContent = CANONICAL_FINALE_LINES[4];
+                    calmGlyphHover.setVisualText(this.line4El, CANONICAL_FINALE_LINES[4]);
                 }
             }
 
@@ -351,7 +376,7 @@ class FinaleCardDomAnimator {
             }
         }
 
-        this.rafId = window.requestAnimationFrame(this.tick);
+        this.layoutDirty = false;
     };
     // --- КОНЕЦ ФУНКЦИИ tick ---
 }

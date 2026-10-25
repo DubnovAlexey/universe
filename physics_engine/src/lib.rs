@@ -177,6 +177,8 @@ pub extern "C" fn get_kuramoto_r() -> f64 {
 // --- КОНЕЦ РАЗДЕЛА 2: ABI ФИЗИЧЕСКОГО PROVIDER ---
 
 // --- НАЧАЛО РАЗДЕЛА 3: BREACH ABI ---
+/// Scalar reference magnitude, not a rendered offset vector: global stress is
+/// fixed at 0.25 and simulation time at 0. The Canvas renderer uses TS optics.
 #[no_mangle]
 // --- НАЧАЛО ФУНКЦИИ evaluate_lens_refraction ---
 pub extern "C" fn evaluate_lens_refraction(
@@ -209,6 +211,19 @@ mod tests {
     // --- НАЧАЛО ФУНКЦИИ test_golden_prng_vectors_parity ---
     fn test_golden_prng_vectors_parity() {
         assert!(verify_golden_vectors());
+        // Independent Python reference outputs cover ordinary keys, seed zero,
+        // and multiplication/wrapping at both uint32 boundaries.
+        for (seed, index, expected) in [
+            (GOLDEN_SEED, 42, 1_767_988_650),
+            (GOLDEN_SEED, 0, 3_329_588_566),
+            (0, 42, 2_800_543_238),
+            (u32::MAX, u32::MAX, 920_564_995),
+        ] {
+            assert_eq!(
+                crate::prng::DeterministicPrng::hash_u32(seed, index),
+                expected
+            );
+        }
     }
     // --- КОНЕЦ ФУНКЦИИ test_golden_prng_vectors_parity ---
 
@@ -297,9 +312,6 @@ mod tests {
         assert_eq!(get_active_count(), MAX_CAPACITY as u32);
         assert_eq!(get_integrated_time(), 0.0);
         assert_eq!(get_energy_drift(), 0.0);
-
-        assert_eq!(SceneStateSoA::sanitize_finite(f32::NAN, 0.0), 0.0);
-        assert_eq!(SceneStateSoA::sanitize_finite(f32::INFINITY, 0.0), 0.0);
     }
     // --- КОНЕЦ ФУНКЦИИ test_c_abi_exports_and_nan_guard ---
 
