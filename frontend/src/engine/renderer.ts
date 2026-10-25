@@ -59,9 +59,8 @@
 //                    точкой продвижения часов и защитой от остановки RAF.
 //
 // РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
-//   - Подраздел 7.1. Функции управления каноническим текстом и плавным перебором
-//                    соседних элементов (setCanonicalElementText, stopElementScramble,
-//                    startNeighborElementScramble, bindCornerPanelsNeighborScramble).
+//   - Подраздел 7.1. Канонические надписи и измеренная безопасная область дока
+//                    (setCanonicalElementText, bindHudDockLayout).
 //   - Подраздел 7.2. Синхронизация элементов HUD с состоянием хранилища (syncHudDomWithState).
 //   - Подраздел 7.3. Главная функция клиентской инициализации (bootstrapUniverseV2).
 // ============================================================================
@@ -95,7 +94,7 @@ import { resourceLedger } from '../core/resourceLedger';
 import { publishVisualSignals } from '../core/visualSignals';
 import { calmGlyphHover } from '../core/glyphHover';
 import { GLYPH_FONT_STACK } from '../core/glyphGrammar';
-import { getSingularityPhotonRadii, PHOTON_BRIGHT_STOP } from '../core/finaleComposition';
+import { getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP } from '../core/finaleComposition';
 import { buttonMotionController } from '../core/buttonMotion';
 import { DeterministicPRNG } from '../core/prng';
 import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
@@ -1854,7 +1853,7 @@ export class UniverseRenderer {
             RenderPipeline.hexToRgba('#f8fafc', 0.94 * opacityEnvelope)
         );
         photonGrad.addColorStop(
-            0.68,
+            PHOTON_HALO_STOP,
             RenderPipeline.hexToRgba('#7dd3fc', 0.52 * opacityEnvelope)
         );
         photonGrad.addColorStop(
@@ -2231,11 +2230,11 @@ export function getUniverseRenderer(): UniverseRenderer | null {
 // --- КОНЕЦ ФУНКЦИИ getUniverseRenderer ---
 
 // ============================================================================
-// РАЗДЕЛ 7. ИНВЕРСНЫЙ КВАНТОВЫЙ ПЕРЕБОР УГЛОВЫХ ПАНЕЛЕЙ И ОРКЕСТРАТОР DOM
+// РАЗДЕЛ 7. ОБЪЁМНЫЕ ЭЛЕМЕНТЫ УГЛОВЫХ МЕНЮ И ОРКЕСТРАТОР DOM
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// ПОДРАЗДЕЛ 7.1. УПРАВЛЕНИЕ КАНОНИЧЕСКИМ ТЕКСТОМ И ПЕРЕБОРОМ СОСЕДНИХ ЭЛЕМЕНТОВ
+// ПОДРАЗДЕЛ 7.1. КАНОНИЧЕСКИЕ НАДПИСИ И БЕЗОПАСНАЯ ОБЛАСТЬ НИЖНЕГО ДОКА
 // ----------------------------------------------------------------------------
 
 // --- НАЧАЛО ФУНКЦИИ setCanonicalElementText ---
@@ -2247,79 +2246,42 @@ function setCanonicalElementText(el: HTMLElement | null, nextText: string): void
 }
 // --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
 
-// --- НАЧАЛО ФУНКЦИИ stopElementScramble ---
-/**
- * Мгновенно останавливает квантовый перебор на элементе и возвращает его точный текст.
- */
-function stopElementScramble(el: HTMLElement): void {
-    calmGlyphHover.stop(el);
-}
-// --- КОНЕЦ ФУНКЦИИ stopElementScramble ---
-
-// --- НАЧАЛО ФУНКЦИИ startNeighborElementScramble ---
-/**
- * Включает спокойный фазовый перебор соседа на общем такте визуальных сигналов.
- */
-function startNeighborElementScramble(el: HTMLElement, siblingIndex: number): void {
-    const canonical = el.dataset.canonicalText ?? el.textContent ?? '';
-    calmGlyphHover.start(el, canonical, siblingIndex);
-}
-// --- КОНЕЦ ФУНКЦИИ startNeighborElementScramble ---
-
-// --- НАЧАЛО ФУНКЦИИ bindCornerPanelsNeighborScramble ---
-/**
- * Привязывает ко всем угловым панелям (.brand-card, #ui-phase-buttons, .controls-dock)
- * инверсный отклик: элемент под курсором мыши мгновенно фиксируется и стоит на месте,
- * а соседние элементы в его группе мягко перебираются.
- */
-function bindCornerPanelsNeighborScramble(): void {
-    if (typeof document === 'undefined') return;
-
-    const groups = [
-        { root: '.brand-card', items: '.phase-codename, .phase-title, .phase-subtitle, .phase-philosophy' },
-        { root: '#ui-phase-buttons', items: 'button.phase-pill' },
-        { root: '.controls-dock', items: 'button.btn-cyber, a.btn-cyber' },
-    ];
-
-    groups.forEach(({ root: rootSelector, items: itemSelector }) => {
-        const group = document.querySelector<HTMLElement>(rootSelector);
-        if (!group) return;
-
-        const items = Array.from(group.querySelectorAll<HTMLElement>(itemSelector));
-        const listeners = new AbortController();
-        const stopGroup = (): void => items.forEach(stopElementScramble);
-        let listenerCount = 0;
-
-        items.forEach((el) => {
-            setCanonicalElementText(el, el.dataset.canonicalText ?? el.textContent ?? '');
-            const activateNeighbors = (): void => {
-                stopElementScramble(el);
-                items.forEach((sibling, sIdx) => {
-                    if (sibling !== el) startNeighborElementScramble(sibling, sIdx);
-                });
-            };
-            el.addEventListener('pointerenter', activateNeighbors, { signal: listeners.signal });
-            el.addEventListener('focusin', activateNeighbors, { signal: listeners.signal });
-            listenerCount += 2;
-        });
-
-        group.addEventListener('pointerleave', stopGroup, { signal: listeners.signal });
-        group.addEventListener('focusout', (event: FocusEvent) => {
-            if (!(event.relatedTarget instanceof Node) || !group.contains(event.relatedTarget)) {
-                stopGroup();
-            }
-        }, { signal: listeners.signal });
-        listenerCount += 2;
-
-        resourceLedger.trackPageLifetimeAllocation('listeners', listenerCount);
-        resourceLedger.registerPageDisposable(() => {
-            listeners.abort();
-            stopGroup();
-            resourceLedger.trackRelease('listeners', listenerCount);
-        });
+// --- НАЧАЛО ФУНКЦИИ bindHudDockLayout ---
+/** Резервирует реальные размеры верхнего меню и дока при переносе кнопок. */
+function bindHudDockLayout(): void {
+    const dock = document.querySelector<HTMLElement>('.hud-bottom-bar');
+    if (!dock) return;
+    const root = document.documentElement;
+    const header = document.querySelector<HTMLElement>('.brand-card');
+    const previousInset = root.style.getPropertyValue('--hud-bottom-inset');
+    const previousTopInset = root.style.getPropertyValue('--hud-top-inset');
+    let lastInset = '';
+    let lastTopInset = '';
+    // --- НАЧАЛО ФУНКЦИИ updateDockInset ---
+    const updateDockInset = (): void => {
+        const inset = `${Math.ceil(window.innerHeight - dock.getBoundingClientRect().top + 12)}px`;
+        if (inset !== lastInset) root.style.setProperty('--hud-bottom-inset', inset);
+        lastInset = inset;
+        if (header) {
+            const topInset = `${Math.ceil(header.getBoundingClientRect().bottom + 12)}px`;
+            if (topInset !== lastTopInset) root.style.setProperty('--hud-top-inset', topInset);
+            lastTopInset = topInset;
+        }
+    };
+    // --- КОНЕЦ ФУНКЦИИ updateDockInset ---
+    updateDockInset();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateDockInset);
+    observer?.observe(dock);
+    if (header) observer?.observe(header);
+    resourceLedger.registerPageDisposable(() => {
+        observer?.disconnect();
+        if (previousInset) root.style.setProperty('--hud-bottom-inset', previousInset);
+        else root.style.removeProperty('--hud-bottom-inset');
+        if (previousTopInset) root.style.setProperty('--hud-top-inset', previousTopInset);
+        else root.style.removeProperty('--hud-top-inset');
     });
 }
-// --- КОНЕЦ ФУНКЦИИ bindCornerPanelsNeighborScramble ---
+// --- КОНЕЦ ФУНКЦИИ bindHudDockLayout ---
 
 // ----------------------------------------------------------------------------
 // ПОДРАЗДЕЛ 7.2. СИНХРОНИЗАЦИЯ ЭЛЕМЕНТОВ HUD С СОСТОЯНИЕМ ХРАНИЛИЩА
@@ -2432,7 +2394,7 @@ function syncHudDomWithState(state: Readonly<UniverseState>): void {
 /**
  * Точка входа клиентской графической подсистемы: инициализирует холст #universe-canvas,
  * монтирует реактивные острова телеметрии Layer 2–5, привязывает кнопки управления,
- * активирует инверсный перебор соседних элементов в угловых панелях и запускает цикл симуляции.
+ * связывает объёмные кнопки с общей сценой и запускает цикл симуляции.
  * Подписки UI регистрируются как страничные (registerPageDisposable), чтобы оставаться
  * активными после любого числа перезапусков Restart Universe.
  */
@@ -2449,6 +2411,7 @@ export function bootstrapUniverseV2(): void {
 
     const renderer = new UniverseRenderer(canvas);
     activeRenderer = renderer;
+    bindHudDockLayout();
 
     // 1. Монтируем штатные панели телеметрии (Layers 2, 3, 4) и финал (Layer 5)
     const unsubL2 = mountLayer2Metrics(document.getElementById('layer2-metrics-root'));
@@ -2473,9 +2436,9 @@ export function bootstrapUniverseV2(): void {
         ledgerWithPage.registerPageDisposable(unsubHud);
     }
 
-    // 3. Подключаем инверсный квантовый перебор соседей при наведении на угловые панели
-    bindCornerPanelsNeighborScramble();
+    // 3. Вращаем цельные элементы меню, сохраняя надписи и семантику каждого узла.
     const buttonMotion = buttonMotionController.mount(Array.from(document.querySelectorAll<HTMLElement>(
+        '.brand-card .phase-codename, .brand-card .phase-title, .brand-card .phase-subtitle, .brand-card .phase-philosophy, ' +
         '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber'
     )));
     resourceLedger.trackPageLifetimeAllocation('listeners', buttonMotion.listenerCount);

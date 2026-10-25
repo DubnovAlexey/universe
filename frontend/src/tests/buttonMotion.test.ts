@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/buttonMotion.test.ts
 // НАЗНАЧЕНИЕ: Проверить индивидуальное движение кнопок, фокус и общий такт.
 // РАЗДЕЛЫ: 1. Минимальный DOM/кадр; 2. Движение; 3. Пауза и освобождение.
-// ФУНКЦИИ: makeHarness, angle, runButtonMotionChecks.
+// ФУНКЦИИ: makeHarness, value, angle, isFront, styleValues, runButtonMotionChecks.
 // ============================================================================
 import { ButtonMotionController } from '../core/buttonMotion';
 import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
@@ -12,16 +12,24 @@ class MotionButton extends EventTarget {
     public dataset: Record<string, string> = {};
     public textContent = 'CANONICAL BUTTON';
     public values = new Map<string, string>();
+    public priorities = new Map<string, string>();
     public writes = 0;
     public style = {
         // НАЧАЛО ФУНКЦИИ getPropertyValue
         getPropertyValue: (name: string): string => this.values.get(name) ?? '',
         // КОНЕЦ ФУНКЦИИ getPropertyValue
+        // НАЧАЛО ФУНКЦИИ getPropertyPriority
+        getPropertyPriority: (name: string): string => this.priorities.get(name) ?? '',
+        // КОНЕЦ ФУНКЦИИ getPropertyPriority
         // НАЧАЛО ФУНКЦИИ setProperty
-        setProperty: (name: string, value: string): void => { this.writes++; this.values.set(name, value); },
+        setProperty: (name: string, value: string, priority = ''): void => {
+            this.writes++; this.values.set(name, value);
+            if (priority) this.priorities.set(name, priority);
+            else this.priorities.delete(name);
+        },
         // КОНЕЦ ФУНКЦИИ setProperty
         // НАЧАЛО ФУНКЦИИ removeProperty
-        removeProperty: (name: string): void => { this.writes++; this.values.delete(name); },
+        removeProperty: (name: string): void => { this.writes++; this.values.delete(name); this.priorities.delete(name); },
         // КОНЕЦ ФУНКЦИИ removeProperty
     };
 }
@@ -38,12 +46,17 @@ function makeHarness(count = 3) {
     const buttons = Array.from({ length: count }, () => new MotionButton());
     if (buttons[2]) {
         buttons[2].values.set('--button-rotate-x', '2deg');
+        buttons[2].values.set('--button-rotate-z', '3deg');
+        buttons[2].priorities.set('--button-rotate-z', 'important');
+        buttons[2].values.set('--button-depth', '1px');
+        buttons[2].values.set('--button-light-y', '31%');
         buttons[2].dataset.buttonMotion = 'previous';
     }
     const binding = controller.mount(buttons as unknown as HTMLElement[]);
     const frame: Readonly<VisualSignalSnapshot> = {
         ...getVisualSignals(), frameDtSec: 0.05, isPaused: false, reducedMotion: false,
         phase: '03_EVOLUTION', low: 0, mid: 0,
+        phaseProgress: 0.25, kuramotoR: 0.5, globalStress: 0.2, pulse: 0,
     };
     // НАЧАЛО ФУНКЦИИ step
     const step = (count: number, changes: Partial<VisualSignalSnapshot> = {}): void => {
@@ -54,11 +67,31 @@ function makeHarness(count = 3) {
 }
 // КОНЕЦ ФУНКЦИИ makeHarness
 
+// НАЧАЛО ФУНКЦИИ value
+function value(button: MotionButton, property: string): number {
+    return Number.parseFloat(button.values.get(property) ?? '0');
+}
+// КОНЕЦ ФУНКЦИИ value
 // НАЧАЛО ФУНКЦИИ angle
-function angle(button: MotionButton, axis: 'x' | 'y'): number {
-    return Number.parseFloat(button.values.get(`--button-rotate-${axis}`) ?? '0');
+function angle(button: MotionButton, axis: 'x' | 'y' | 'z'): number {
+    return value(button, `--button-rotate-${axis}`);
 }
 // КОНЕЦ ФУНКЦИИ angle
+// НАЧАЛО ФУНКЦИИ isFront
+function isFront(button: MotionButton): boolean {
+    return angle(button, 'x') === 0 && angle(button, 'y') === 0 && angle(button, 'z') === 0 &&
+        value(button, '--button-depth') === 0 && value(button, '--button-light-x') === 50 &&
+        value(button, '--button-light-y') === 28 && value(button, '--button-shadow-x') === 0 &&
+        value(button, '--button-shadow-y') === 4 && value(button, '--button-shade') === 0.18;
+}
+// КОНЕЦ ФУНКЦИИ isFront
+const LIGHTING_PROPERTIES = ['--button-light-x', '--button-light-y', '--button-shadow-x', '--button-shadow-y', '--button-shade'];
+const POSITION_PROPERTIES = ['--button-rotate-x', '--button-rotate-y', '--button-rotate-z', '--button-depth'];
+// НАЧАЛО ФУНКЦИИ styleValues
+function styleValues(button: MotionButton, properties: readonly string[]): string {
+    return properties.map((property) => button.values.get(property)).join('|');
+}
+// КОНЕЦ ФУНКЦИИ styleValues
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО ФУНКЦИИ runButtonMotionChecks
@@ -67,17 +100,76 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     h.step(24);
     check(h.shared.subscriptions === 1 && h.binding.listenerCount === 12 &&
         h.buttons.every((button) => button.dataset.buttonMotion === '1' &&
-            Math.abs(angle(button, 'y')) <= 24 && Math.abs(angle(button, 'x')) <= 7 &&
+            Math.abs(angle(button, 'y')) <= 29 && Math.abs(angle(button, 'x')) <= 26 &&
+            Math.abs(angle(button, 'z')) <= 5 && Math.abs(value(button, '--button-depth')) <= 7 &&
             button.textContent === 'CANONICAL BUTTON') &&
-        Math.abs(angle(h.buttons[0], 'y')) > 1 && angle(h.buttons[0], 'y') !== angle(h.buttons[1], 'y'),
-        'Corner buttons rotate individually within readable 3D angles on one shared frame without replacing labels');
+        Math.abs(angle(h.buttons[0], 'y')) > 10 && h.buttons.some((button) => Math.abs(angle(button, 'x')) > 20) &&
+        angle(h.buttons[0], 'y') !== angle(h.buttons[1], 'y') &&
+        angle(h.buttons[0], 'z') !== angle(h.buttons[1], 'z') &&
+        value(h.buttons[0], '--button-depth') !== value(h.buttons[1], '--button-depth') &&
+        value(h.buttons[0], '--button-light-x') !== value(h.buttons[1], '--button-light-x'),
+        'Whole corner controls have pronounced independent pitch/yaw/roll/depth and directional lighting on one shared frame without replacing labels');
+
+    const orbital = makeHarness(4);
+    const low = Array.from({ length: 4 }, () => [Infinity, Infinity, Infinity, Infinity]);
+    const high = Array.from({ length: 4 }, () => [-Infinity, -Infinity, -Infinity, -Infinity]);
+    let boundedMotion = true;
+    for (let frame = 0; frame < 480; frame++) {
+        orbital.step(1);
+        orbital.buttons.forEach((button, index) => {
+            const axes = [angle(button, 'x'), angle(button, 'y'), angle(button, 'z'), value(button, '--button-depth')];
+            axes.forEach((axis, component) => {
+                low[index][component] = Math.min(low[index][component], axis);
+                high[index][component] = Math.max(high[index][component], axis);
+            });
+            boundedMotion &&= Math.abs(axes[0]) <= 26 && Math.abs(axes[1]) <= 29 && Math.abs(axes[2]) <= 5 &&
+                Math.abs(axes[3]) <= 7 && value(button, '--button-shade') >= 0.18 && value(button, '--button-shade') < 0.7;
+        });
+    }
+    check(boundedMotion && low.every((axes, index) => axes.every((minimum, component) =>
+        high[index][component] - minimum > [40, 40, 4, 5][component])),
+        'Slow independent orbital rates emphasize horizontal-axis pitch, expose opposite corners and keep all four axes readable without flipping text');
+    orbital.binding.dispose();
+
+    const sampledLighting = makeHarness(2);
+    sampledLighting.step(20);
+    const initialLighting = sampledLighting.buttons.map((button) => styleValues(button, LIGHTING_PROPERTIES));
+    let priorPosition = styleValues(sampledLighting.buttons[0], POSITION_PROPERTIES);
+    let continuouslyMoving = true;
+    let heldLighting = true;
+    for (let frame = 0; frame < 6; frame++) {
+        sampledLighting.step(1, { frameDtSec: 0.01 });
+        const nextPosition = styleValues(sampledLighting.buttons[0], POSITION_PROPERTIES);
+        continuouslyMoving &&= nextPosition !== priorPosition;
+        priorPosition = nextPosition;
+        heldLighting &&= sampledLighting.buttons.every((button, index) => styleValues(button, LIGHTING_PROPERTIES) === initialLighting[index]);
+    }
+    sampledLighting.step(1, { frameDtSec: 0.01 });
+    const staggeredLighting = styleValues(sampledLighting.buttons[0], LIGHTING_PROPERTIES) === initialLighting[0] &&
+        styleValues(sampledLighting.buttons[1], LIGHTING_PROPERTIES) !== initialLighting[1];
+    sampledLighting.step(4, { frameDtSec: 0.01 });
+    check(continuouslyMoving && heldLighting && staggeredLighting &&
+        styleValues(sampledLighting.buttons[0], LIGHTING_PROPERTIES) !== initialLighting[0],
+        'Whole-control transforms advance every shared frame while expensive light/shadow variables hold between 10Hz samples staggered across controls');
+    sampledLighting.binding.dispose();
+
+    const frontLighting = makeHarness(1);
+    frontLighting.step(20);
+    frontLighting.buttons[0].dispatchEvent(new Event('pointerenter'));
+    frontLighting.step(27, { frameDtSec: 0.01 });
+    const lightingBeforeFront = styleValues(frontLighting.buttons[0], LIGHTING_PROPERTIES);
+    frontLighting.step(1, { frameDtSec: 0.01 });
+    check(isFront(frontLighting.buttons[0]) &&
+        styleValues(frontLighting.buttons[0], LIGHTING_PROPERTIES) !== lightingBeforeFront,
+        'Hover reaches neutral lighting immediately with its final front-facing transform without waiting for the next lighting sample');
+    frontLighting.binding.dispose();
 
     h.buttons[0].dispatchEvent(new Event('pointerenter'));
     h.step(7);
     const otherY = angle(h.buttons[2], 'y');
     const heldWrites = h.buttons[0].writes;
     h.step(6);
-    check(angle(h.buttons[0], 'x') === 0 && angle(h.buttons[0], 'y') === 0 &&
+    check(isFront(h.buttons[0]) &&
         h.buttons[0].writes === heldWrites && angle(h.buttons[2], 'y') !== otherY,
         'Hover eases only its button to the front and freezes it while other buttons continue moving');
 
@@ -86,7 +178,7 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     h.buttons[1].dispatchEvent(new Event('pointerenter'));
     h.buttons[1].dispatchEvent(new Event('pointerleave'));
     h.step(4);
-    check(angle(h.buttons[1], 'x') === 0 && angle(h.buttons[1], 'y') === 0,
+    check(isFront(h.buttons[1]),
         'Keyboard focus keeps a button front-facing even after the pointer leaves');
 
     h.buttons[0].dispatchEvent(new Event('pointerleave'));
@@ -111,12 +203,12 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     pausedInteraction.step(1, { isPaused: true });
     pausedInteraction.buttons[0].dispatchEvent(new Event('pointerenter'));
     pausedInteraction.buttons[1].dispatchEvent(new Event('focus'));
-    let stayedFront = pausedInteraction.buttons.every((button) => angle(button, 'x') === 0 && angle(button, 'y') === 0);
+    let stayedFront = pausedInteraction.buttons.every(isFront);
     const frontWrites = pausedInteraction.buttons.map((button) => button.writes);
     for (let i = 0; i < 8; i++) {
         pausedInteraction.step(1);
         stayedFront &&= pausedInteraction.buttons.every((button, index) =>
-            angle(button, 'x') === 0 && angle(button, 'y') === 0 && button.writes === frontWrites[index]);
+            isFront(button) && button.writes === frontWrites[index]);
     }
     check(wereTilted && stayedFront,
         'Hover or focus during pause keeps the button front-facing on every resumed frame without restoring its old tilt');
@@ -125,7 +217,7 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     h.step(1, { reducedMotion: true });
     const reducedWrites = h.buttons.map((button) => button.writes);
     h.step(12, { reducedMotion: true });
-    check(h.buttons.every((button, index) => angle(button, 'x') === 0 && angle(button, 'y') === 0 &&
+    check(h.buttons.every((button, index) => isFront(button) &&
         button.writes === reducedWrites[index]),
         'Reduced motion selects a neutral static pose once without continuous DOM writes');
 
@@ -145,6 +237,22 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     sameTime.binding.dispose();
     jumpedTime.binding.dispose();
 
+    const quietScene = makeHarness(2);
+    const tenseScene = makeHarness(2);
+    quietScene.step(60, { phaseProgress: 0.05, kuramotoR: 0, globalStress: 0, low: 0, mid: 0 });
+    tenseScene.step(60, { phaseProgress: 0.95, kuramotoR: 1, globalStress: 1, low: 0, mid: 0 });
+    const beforeSceneChange = ['x', 'y', 'z'].map((axis) => angle(tenseScene.buttons[0], axis as 'x' | 'y' | 'z'));
+    const visiblySceneDependent = quietScene.buttons.every((button, index) =>
+        Math.abs(angle(button, 'x') - angle(tenseScene.buttons[index], 'x')) > 1 &&
+        Math.abs(angle(button, 'y') - angle(tenseScene.buttons[index], 'y')) > 1 &&
+        value(button, '--button-shadow-x') !== value(tenseScene.buttons[index], '--button-shadow-x'));
+    tenseScene.step(1, { phase: '01_VOID', phaseProgress: 0, kuramotoR: 0, globalStress: 0, low: 0, mid: 0 });
+    check(visiblySceneDependent && ['x', 'y', 'z'].every((axis, index) =>
+        Math.abs(angle(tenseScene.buttons[0], axis as 'x' | 'y' | 'z') - beforeSceneChange[index]) < 2),
+        'At the same clock and with muted audio, visible scene progress, coherence and stress change whole-control orientation through a smooth response');
+    quietScene.binding.dispose();
+    tenseScene.binding.dispose();
+
     h.binding.dispose();
     const disposedWrites = h.buttons.map((button) => button.writes);
     h.binding.dispose();
@@ -152,7 +260,10 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     h.buttons[1].dispatchEvent(new Event('blur'));
     check(h.shared.releases === 1 && h.shared.listener === null &&
         h.buttons[0].dataset.buttonMotion === undefined && h.buttons[0].values.size === 0 &&
-        h.buttons[2].dataset.buttonMotion === 'previous' && h.buttons[2].values.get('--button-rotate-x') === '2deg' &&
+        h.buttons[2].dataset.buttonMotion === 'previous' && h.buttons[2].values.size === 4 &&
+        h.buttons[2].values.get('--button-rotate-x') === '2deg' && h.buttons[2].values.get('--button-rotate-z') === '3deg' &&
+        h.buttons[2].priorities.get('--button-rotate-z') === 'important' && h.buttons[2].values.get('--button-depth') === '1px' &&
+        h.buttons[2].values.get('--button-light-y') === '31%' &&
         h.buttons.every((button, index) => button.writes === disposedWrites[index]),
         'Disposal unsubscribes once, removes interaction handlers and restores the previous button styles');
 }

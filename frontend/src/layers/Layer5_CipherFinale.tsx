@@ -181,12 +181,12 @@ class FinaleCardDomAnimator {
 
         const compactLayout = stage.clientWidth <= 920;
         const headerBottom = compactLayout ? this.headerEl?.getBoundingClientRect().bottom ?? 44 : 0;
-        const layoutKey = `${stage.clientWidth}:${stage.clientHeight}:${card.offsetHeight}:${headerBottom}`;
+        const stageStyle = window.getComputedStyle(stage);
+        const paddingTop = Number.parseFloat(stageStyle.paddingTop) || 0;
+        const paddingBottom = Number.parseFloat(stageStyle.paddingBottom) || 0;
+        const layoutKey = `${stage.clientWidth}:${stage.clientHeight}:${card.offsetHeight}:${headerBottom}:${paddingTop}:${paddingBottom}`;
         if (layoutKey !== this.ambientLayoutKey) {
             this.ambientLayoutKey = layoutKey;
-            const stageStyle = window.getComputedStyle(stage);
-            const paddingTop = Number.parseFloat(stageStyle.paddingTop) || 0;
-            const paddingBottom = Number.parseFloat(stageStyle.paddingBottom) || 0;
             // Пиковая геометрия не зависит от текущего акта: после сжатия кольца
             // карточка остаётся в верхней свободной области вместо обратного спуска.
             this.ambientRiseDistancePx = getFinaleCardPlacement({

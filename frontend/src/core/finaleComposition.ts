@@ -8,15 +8,17 @@
 
 // НАЧАЛО РАЗДЕЛА 1. ГЕОМЕТРИЯ ФОТОННОГО КОЛЬЦА
 export const PHOTON_BRIGHT_STOP = 0.48;
+export const PHOTON_HALO_STOP = 0.68;
 export interface SingularityPhotonRadii {
     readonly shadowRadius: number;
     readonly innerRadius: number;
     readonly outerRadius: number;
     readonly brightRadius: number;
+    readonly haloRadius: number;
 }
 
 // НАЧАЛО ФУНКЦИИ getSingularityPhotonRadii
-/** Радиус белой полосы совпадает с интерполированным кругом stop градиента. */
+/** Белая полоса и яркий голубой ореол совпадают с кругами stops градиента. */
 export function getSingularityPhotonRadii(scale: number, volumeEnvelope = 1): SingularityPhotonRadii {
     const safeScale = Number.isFinite(scale) ? Math.max(0, scale) : 0;
     const volume = Number.isFinite(volumeEnvelope) ? Math.max(0, Math.min(1, volumeEnvelope)) : 0;
@@ -26,6 +28,7 @@ export function getSingularityPhotonRadii(scale: number, volumeEnvelope = 1): Si
     return {
         shadowRadius, innerRadius, outerRadius,
         brightRadius: innerRadius + (outerRadius - innerRadius) * PHOTON_BRIGHT_STOP,
+        haloRadius: innerRadius + (outerRadius - innerRadius) * PHOTON_HALO_STOP,
     };
 }
 // КОНЕЦ ФУНКЦИИ getSingularityPhotonRadii
@@ -52,7 +55,7 @@ export interface FinaleCardPlacement {
 
 // НАЧАЛО ФУНКЦИИ getFinaleCardPlacement
 /**
- * Резервирует полное яркое кольцо, а не текущую сжавшуюся Точку Нуля.
+ * Резервирует яркий голубой ореол с мягким краем и дополнительным зазором.
  * Поэтому визитка не опускается вслед за сжатием кольца и сменой фазы.
  * На низком экране верхняя безопасная граница сохраняет доступность карточки.
  */
@@ -63,16 +66,17 @@ export function getFinaleCardPlacement(layout: FinaleCardLayout): FinaleCardPlac
     const minSide = Math.min(w, h);
     const ring = getSingularityPhotonRadii(minSide * Math.max(0, layout.peakZoom));
     const feather = Math.max(4, Math.min(8, minSide * 0.006));
-    const protectedTopPx = h / 2 - Math.abs(layout.cameraDriftYAmplitude) - ring.brightRadius - feather;
+    const protectedTopPx = h / 2 - Math.abs(layout.cameraDriftYAmplitude) - ring.haloRadius - feather;
     const compact = w <= 920;
-    const breathMargin = Math.ceil(2 + cardHeight * 0.0075);
+    // Верхняя огибающая текущего дыхания: float ±2px и scale с heartbeat ≤1.
+    const breathMargin = 2 + cardHeight * 0.5 * (0.008 * (1 + 0.42) + 0.003);
     const centerY = (layout.paddingTop + h - layout.paddingBottom) / 2;
     const centeredTop = centerY - cardHeight / 2;
     const centeredBottom = centerY + cardHeight / 2;
     const topClearance = compact
         ? Math.max(48, layout.paddingTop - 8, layout.headerBottom + 4)
-        : layout.paddingTop + 8;
-    const desiredBottom = protectedTopPx - (compact ? 10 : 12);
+        : 8;
+    const desiredBottom = protectedTopPx - (compact ? 10 : 28);
     const desiredRise = Math.max(0, centeredBottom + breathMargin - desiredBottom);
     const maximumRise = Math.max(0, centeredTop - topClearance - breathMargin);
     const risePx = Math.min(desiredRise, maximumRise);

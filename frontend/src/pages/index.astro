@@ -94,9 +94,10 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 								type="button"
 								class={`phase-pill ${idx === 0 ? 'active' : ''}`}
 								data-phase-id={phaseKey}
+								aria-label={`0${idx + 1}.${phaseKey.split('_')[1]}`}
 								title={UNIVERSE_PHASES[phaseKey].subtitleRu}
 							>
-								0{idx + 1}.{phaseKey.split('_')[1]}
+								<span class="phase-number">0{idx + 1}.</span><span class="phase-name">{phaseKey.split('_')[1]}</span>
 							</button>
 						))
 					}
