@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sourceDirectories = [
     'frontend/src/', 'frontend/scripts/', 'backend/', 'physics_engine/src/', '.github/',
-    'shared/', 'tests/fixtures/', 'fixtures/',
+    'shared/', 'tests/fixtures/', 'fixtures/', 'frontend/public/fonts/',
 ];
 
 // НАЧАЛО ФУНКЦИИ readGitPaths

@@ -35,4 +35,7 @@
 *.jpg binary
 *.jpeg binary
 *.webp binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
 # КОНЕЦ РАЗДЕЛА 2

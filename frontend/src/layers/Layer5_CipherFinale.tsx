@@ -6,6 +6,8 @@
 //             постоянного полупрозрачного режима на фоне цикла (MASTER 05 v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   РАЗДЕЛ 0. Постоянная Unicode-сетка (bindFinaleQuantumCells,
+//             updateFinaleQuantumCells) без скачков высоты при смене знаков.
 //   РАЗДЕЛ 1. Делегирование фазового перебора общему контроллеру наведения
 //             и клавиатурного фокуса (triggerLineOrButtonScramble).
 //   РАЗДЕЛ 2. Контроллер анимации на общем такте кадра (FinaleCardDomAnimator):
@@ -13,7 +15,7 @@
 //                      полупрозрачном фоновом режиме после первого цикла),
 //                      безопасное смещение визитки после возврата в фазу 01.
 //     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
-//                      индивидуальное вращение каждого знака без рамок) и
+//                      постоянные ячейки без скачков метрик шрифта) и
 //                      гарантированная 100%-ная фиксация строк 0, 1, 3, 4.
 //   РАЗДЕЛ 3. Семантический компонент визитки (renderLayer5CipherFinaleView)
 //             с поддержкой полупрозрачного режима .ambient-loop и защитой
@@ -23,10 +25,58 @@
 
 import { React } from './Layer2_Metrics';
 import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
-import { smootherstep, universeStore, type UniverseState } from '../store/universeState';
+import {
+    CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES,
+    smootherstep, universeStore, type UniverseState,
+} from '../store/universeState';
 import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 import { getRenderableGlyphPool } from '../core/glyphGrammar';
 import { calmGlyphHover } from '../core/glyphHover';
+import { getFinaleCardPlacement } from '../core/finaleComposition';
+
+const FINALE_PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
+
+// НАЧАЛО РАЗДЕЛА 0. ПОСТОЯННЫЕ ЯЧЕЙКИ КВАНТОВОЙ СТРОКИ
+interface FinaleQuantumCell {
+    readonly node: HTMLElement;
+    readonly sourceIndex: number;
+    readonly canonical: string;
+}
+
+// --- НАЧАЛО ФУНКЦИИ bindFinaleQuantumCells ---
+/** Создаёт по одной постоянной ячейке на знак; размеры строк задаёт CSS Grid. */
+export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = CANONICAL_FINALE_LINES[2]): readonly FinaleQuantumCell[] {
+    if (!line) return [];
+    const cells: FinaleQuantumCell[] = [];
+    Array.from(canonical).forEach((character, sourceIndex) => {
+        if (/\s/u.test(character)) return;
+        const node = line.ownerDocument.createElement('span');
+        node.className = 'finale-quantum-cell';
+        node.dataset.quantumIndex = String(sourceIndex);
+        node.textContent = character;
+        cells.push({ node, sourceIndex, canonical: character });
+    });
+    line.style.setProperty('--quantum-columns', String(cells.length));
+    line.style.setProperty('--quantum-compact-columns', String(Math.ceil(cells.length / 2)));
+    line.replaceChildren(...cells.map((cell) => cell.node));
+    return cells;
+}
+// --- КОНЕЦ ФУНКЦИИ bindFinaleQuantumCells ---
+
+// --- НАЧАЛО ФУНКЦИИ updateFinaleQuantumCells ---
+/** Меняет только содержимое кешированных ячеек, сохраняя сетку и индивидуальный темп. */
+export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], glyphPool: readonly string[], step: number, reducedMotion: boolean): void {
+    for (const cell of cells) {
+        const index = cell.sourceIndex;
+        const slotStride = index % 3 === 0 ? 1 : 2;
+        const charTick = Math.floor((step + index * 7) / slotStride);
+        const glyphIndex = (index * 19 + charTick * 7 + (index % 5) * 13) % glyphPool.length;
+        const glyph = reducedMotion || !glyphPool.length ? cell.canonical : glyphPool[glyphIndex];
+        if (cell.node.textContent !== glyph) cell.node.textContent = glyph;
+    }
+}
+// --- КОНЕЦ ФУНКЦИИ updateFinaleQuantumCells ---
+// КОНЕЦ РАЗДЕЛА 0
 
 // ============================================================================
 // РАЗДЕЛ 1. ОБЩИЙ КОНТРОЛЛЕР ПЛАВНОГО ФАЗОВОГО ПЕРЕБОРА
@@ -63,7 +113,7 @@ class FinaleCardDomAnimator {
     private headerEl: HTMLElement | null = null;
     private line0El: HTMLElement | null = null;
     private line1El: HTMLElement | null = null;
-    private line2QuantumEl: HTMLElement | null = null;
+    private quantumCells: readonly FinaleQuantumCell[] = [];
     private line3El: HTMLElement | null = null;
     private line4El: HTMLElement | null = null;
 
@@ -81,7 +131,8 @@ class FinaleCardDomAnimator {
         this.lastStaticStateKey = '';
         this.line0El = root.querySelector<HTMLElement>('[data-bind="l5-line-0"]');
         this.line1El = root.querySelector<HTMLElement>('[data-bind="l5-line-1"]');
-        this.line2QuantumEl = root.querySelector<HTMLElement>('[data-bind="l5-line-2"]');
+        this.quantumCells = bindFinaleQuantumCells(root.querySelector<HTMLElement>('[data-bind="l5-line-2"]'));
+        this.lastQuantumStep = -1;
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
@@ -121,7 +172,7 @@ class FinaleCardDomAnimator {
     // --- КОНЕЦ ФУНКЦИИ stop ---
 
     // --- НАЧАЛО ФУНКЦИИ getAmbientRiseDistance ---
-    /** Освобождает центр и ограничивает подъём областью ниже верхнего HUD. */
+    /** Резервирует полное яркое кольцо и ограничивает подъём безопасной областью. */
     private getAmbientRiseDistance(): number {
         const card = this.cardBoxEl;
         const stage = card?.parentElement;
@@ -136,30 +187,14 @@ class FinaleCardDomAnimator {
             const stageStyle = window.getComputedStyle(stage);
             const paddingTop = Number.parseFloat(stageStyle.paddingTop) || 0;
             const paddingBottom = Number.parseFloat(stageStyle.paddingBottom) || 0;
-            const freeSpaceAbove = Math.max(
-                0,
-                (stage.clientHeight - paddingTop - paddingBottom - card.offsetHeight) / 2
-            );
-            const centeredCardTop = paddingTop + freeSpaceAbove;
-            const centeredCardBottom = paddingTop + freeSpaceAbove + card.offsetHeight;
-            const breathMargin = Math.ceil(2 + card.offsetHeight * 0.0075);
-            // Нижний край desktop-визитки остаётся выше центра с зазором 62 px,
-            // на компактных экранах — 24 px. Геометрия HUD читается только при
-            // смене размеров, а максимальный подъём сохраняет всю карточку видимой.
-            const desiredRise = Math.max(
-                0,
-                centeredCardBottom - stage.clientHeight / 2 +
-                    (compactLayout ? 24 : 62) + breathMargin
-            );
-            let maximumRise = Math.max(0, freeSpaceAbove - 8);
-            if (compactLayout) {
-                const topClearance = Math.max(48, paddingTop - 8, headerBottom + 4);
-                maximumRise = Math.max(0, centeredCardTop - topClearance - breathMargin);
-            }
-            this.ambientRiseDistancePx = Math.min(
-                desiredRise,
-                maximumRise
-            );
+            // Пиковая геометрия не зависит от текущего акта: после сжатия кольца
+            // карточка остаётся в верхней свободной области вместо обратного спуска.
+            this.ambientRiseDistancePx = getFinaleCardPlacement({
+                viewportWidth: stage.clientWidth, viewportHeight: stage.clientHeight,
+                cardHeight: card.offsetHeight, paddingTop, paddingBottom, headerBottom,
+                peakZoom: FINALE_PEAK_ZOOM,
+                cameraDriftYAmplitude: CAMERA_DRIFT_Y_AMPLITUDE,
+            }).risePx;
         }
 
         return this.ambientRiseDistancePx;
@@ -353,26 +388,9 @@ class FinaleCardDomAnimator {
             }
 
             const qStep = Math.floor(this.accumulatedQuantumPhase);
-            if (this.line2QuantumEl && (state.reducedMotion || qStep !== this.lastQuantumStep)) {
+            if (this.quantumCells.length && (state.reducedMotion || qStep !== this.lastQuantumStep)) {
                 this.lastQuantumStep = qStep;
-                if (state.reducedMotion) {
-                    this.line2QuantumEl.textContent = CANONICAL_FINALE_LINES[2];
-                } else {
-                    const baseLine = CANONICAL_FINALE_LINES[2];
-                    const chars = Array.from(baseLine);
-                    const nGlyphs = glyphPool.length;
-                    for (let i = 0; i < chars.length; i++) {
-                        if (chars[i] === ' ') continue;
-                        // Индивидуальный делитель темпа (1 или 2) для каждого слота,
-                        // чтобы все знаки строки активно и разнообразно перебирались в воздухе
-                        const slotStride = (i % 3 === 0) ? 1 : 2;
-                        const charTick = Math.floor((qStep + i * 7) / slotStride);
-                        const gIdx =
-                            (i * 19 + charTick * 7 + (i % 5) * 13) % nGlyphs;
-                        chars[i] = glyphPool[gIdx];
-                    }
-                    this.line2QuantumEl.textContent = chars.join('');
-                }
+                updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion);
             }
         }
 

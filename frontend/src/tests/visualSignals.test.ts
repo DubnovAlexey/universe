@@ -8,7 +8,7 @@ import { universeStore } from '../store/universeState';
 import { stressStore } from '../store/stressState';
 import { audioSync } from '../utils/audioSync';
 import { createVisualSignals, publishVisualSignals } from '../core/visualSignals';
-import { GLYPH_FAMILIES, filterGlyphPool, getGlyphProfile, scrambleCanonicalText } from '../core/glyphGrammar';
+import { GLYPH_FAMILIES, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile, invalidateGlyphFontCache, scrambleCanonicalText } from '../core/glyphGrammar';
 import { calmGlyphHover } from '../core/glyphHover';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
@@ -60,6 +60,15 @@ class HoverElement extends EventTarget {
     // КОНЕЦ ФУНКЦИИ getAttribute
 }
 // КОНЕЦ РАЗДЕЛА 1
+
+// НАЧАЛО ФУНКЦИИ descendants
+function descendants(element: HoverElement, className: string): HoverElement[] {
+    return element.children.flatMap((child) => [
+        ...(child.className === className ? [child] : []),
+        ...descendants(child, className),
+    ]);
+}
+// КОНЕЦ ФУНКЦИИ descendants
 
 // НАЧАЛО РАЗДЕЛА 2. ПРОВЕРКИ CORE
 // НАЧАЛО ФУНКЦИИ runVisualSignalChecks
@@ -113,14 +122,70 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const phases = ['01_VOID', '02_GENESIS', '03_EVOLUTION', '04_COLLAPSE', '05_SINGULARITY'] as const;
     checks.push({ passed: phases.every((phase) => {
         const profile = getGlyphProfile(phase);
-        return profile.pool.length > 0 && profile.rollMs >= 150 && profile.rollMs <= 180 && profile.dwellMs >= 240 && profile.dwellMs <= 320;
+        return profile.pool.length > 0 && profile.rollMs >= 260 && profile.rollMs <= 300 && profile.dwellMs >= 380 && profile.dwellMs <= 440;
     }) && filterGlyphPool(GLYPH_FAMILIES.historical, () => false) === GLYPH_FAMILIES.basic &&
         scrambleCanonicalText(canonical, '02_GENESIS', 2, 0.1) === scrambleCanonicalText(canonical, '02_GENESIS', 2, 0.1),
-        description: 'Five phase profiles keep calm timing, deterministic selection and a safe unsupported-font fallback' });
+        description: 'Five phase profiles keep deliberate 260–300ms turns, deterministic selection and a safe unsupported-font fallback' });
+
+    const previousFontEpoch = getGlyphFontEpoch();
+    invalidateGlyphFontCache();
+    checks.push({ passed: GLYPH_FAMILIES.mayanNumerals.length === 20 &&
+        GLYPH_FAMILIES.mayanNumerals.every((glyph, value) => glyph.codePointAt(0) === 0x1D2E0 + value) &&
+        GLYPH_FAMILIES.runic.includes('ᚠ') && GLYPH_FAMILIES.runic.includes('ᛟ') &&
+        GLYPH_FAMILIES.mathematics.includes('ℏ') && GLYPH_FAMILIES.mathematics.includes('∮') &&
+        GLYPH_FAMILIES.alchemical.includes('🜁') && getGlyphFontEpoch() === previousFontEpoch + 1,
+        description: 'Curated runes, Egyptian signs, all 20 Mayan numerals and physical operators stay code-point safe; font arrival invalidates cached fallback' });
 
     publishVisualSignals(state, audio, stress);
     const mock = new HoverElement();
     const element = mock as unknown as HTMLElement;
+    calmGlyphHover.start(element, '01.VOID');
+    const shortCells = descendants(mock, 'glyph-reel-cell');
+    const firstTrack = descendants(mock, 'glyph-reel-track')[0];
+    const firstMeasure = descendants(mock, 'glyph-reel-measure')[0];
+    const canonicalMeasure = firstMeasure.textContent;
+    publishVisualSignals(state, audio, stress);
+    const motionAt50 = firstTrack.styleValues.get('transform') ?? '';
+    publishVisualSignals(state, audio, stress);
+    const motionAt100 = firstTrack.styleValues.get('transform') ?? '';
+    const positiveMotion = /-([0-9.]+)%/.exec(motionAt50);
+    const furtherMotion = /-([0-9.]+)%/.exec(motionAt100);
+    checks.push({ passed: shortCells.length >= 2 && shortCells.length <= 5 &&
+        shortCells.every((cell, index) => !index || Number(cell.dataset.glyphReel) - Number(shortCells[index - 1].dataset.glyphReel) >= 2) &&
+        !!positiveMotion && !!furtherMotion && Number(positiveMotion[1]) > 0 &&
+        Number(furtherMotion[1]) > Number(positiveMotion[1]) && Number(furtherMotion[1]) < 100 &&
+        firstMeasure.textContent === canonicalMeasure && firstMeasure.styleValues.size === 0 &&
+        shortCells.every((cell) => cell.styleValues.size === 0) && mock.getAttribute('aria-label') === '01.VOID',
+        description: 'Short controls contain multiple nonadjacent real reel windows; strips move continuously while canonical glyph measurements and accessible names stay fixed' });
+    const trackBeforeRestart = descendants(mock, 'glyph-reel-track')[0];
+    calmGlyphHover.start(element, '01.VOID', 999);
+    publishVisualSignals(state, audio, stress);
+    checks.push({ passed: descendants(mock, 'glyph-reel-track')[0] === trackBeforeRestart &&
+        firstTrack.styleValues.get('transform') !== motionAt100,
+        description: 'Repeated neighbor activation preserves the existing reel nodes and elapsed motion instead of restarting jitter' });
+    calmGlyphHover.stop(element);
+
+    calmGlyphHover.start(element, 'SLOW SYMBOLS');
+    const holdTrack = descendants(mock, 'glyph-reel-track')[0];
+    for (let frame = 0; frame < 6; frame++) publishVisualSignals(state, audio, stress);
+    const heldPosition = holdTrack.styleValues.get('transform');
+    const heldSymbols = holdTrack.textContent;
+    publishVisualSignals(state, audio, stress);
+    const holdsReadableGlyph = heldPosition === 'translate3d(0, -100.000%, 0)' &&
+        holdTrack.styleValues.get('transform') === heldPosition && holdTrack.textContent === heldSymbols;
+    calmGlyphHover.stop(element);
+    const delayedMock = new HoverElement();
+    const delayedElement = delayedMock as unknown as HTMLElement;
+    calmGlyphHover.start(element, 'VISIBLE NEIGHBOR');
+    calmGlyphHover.start(delayedElement, 'DELAYED NEIGHBOR', 4);
+    publishVisualSignals(state, audio, stress);
+    checks.push({ passed: holdsReadableGlyph &&
+        descendants(mock, 'glyph-reel-track')[0].styleValues.get('transform') !== 'translate3d(0, 0.000%, 0)' &&
+        descendants(delayedMock, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0, 0.000%, 0)',
+        description: 'Each slow glyph turn has a readable stationary hold, and neighboring labels enter as a staggered wave' });
+    calmGlyphHover.stop(element);
+    calmGlyphHover.stop(delayedElement);
+
     calmGlyphHover.start(element, 'CALM HOVER BUTTON 𓂀');
     publishVisualSignals({ ...state, telemetry: { ...state.telemetry, simulationTimeSec: 0.05 } }, audio, stress);
     const stableName = mock.getAttribute('aria-label') === 'CALM HOVER BUTTON 𓂀';
@@ -130,11 +195,11 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
 
     publishVisualSignals(state, audio, stress);
     calmGlyphHover.start(element, 'LATEST CANONICAL');
-    for (let frame = 1; frame <= 12; frame++) {
+    for (let frame = 1; frame <= 32; frame++) {
         publishVisualSignals({ ...state, telemetry: { ...state.telemetry, simulationTimeSec: frame * 0.05 } }, audio, stress);
     }
-    const canonicalDwell = mock.textContent === 'LATEST CANONICAL' && calmGlyphHover.isActive(element);
-    publishVisualSignals({ ...state, isPaused: true, telemetry: { ...state.telemetry, simulationTimeSec: 0.6 } }, audio, stress);
+    const canonicalDwell = calmGlyphHover.getVisualText(element) === 'LATEST CANONICAL' && calmGlyphHover.isActive(element);
+    publishVisualSignals({ ...state, isPaused: true, telemetry: { ...state.telemetry, simulationTimeSec: 1.6 } }, audio, stress);
     const pausedRestored = !calmGlyphHover.isActive(element) && mock.textContent === 'LATEST CANONICAL';
     publishVisualSignals({ ...state, reducedMotion: true }, audio, stress);
     calmGlyphHover.start(element, 'REDUCED MOTION');
@@ -167,7 +232,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         const target = node as unknown as HTMLElement;
         calmGlyphHover.start(target, 'ПЛАВНЫЙ ПЕРЕБОР ТЕКСТА');
         const frames: string[] = [];
-        for (let frame = 1; frame <= 48; frame++) {
+        for (let frame = 1; frame <= 120; frame++) {
             const phase = frame < 8 ? '03_EVOLUTION' : frame < 16 ? '05_SINGULARITY' : frame < 24 ? '01_VOID' : '03_EVOLUTION';
             publishVisualSignals({ ...state, currentPhase: phase, telemetry: { ...state.telemetry, frameTimeMs: 20,
                 simulationTimeSec: jumpTime ? (frame % 2 ? 1000 + frame : -1000 - frame) : frame * 0.02 } }, audio, stress);
@@ -180,7 +245,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const continuousFrames = recordHoverAcrossPhaseChanges(false);
     const jumpedFrames = recordHoverAcrossPhaseChanges(true);
     checks.push({ passed: continuousFrames.every((frame, index) => frame === jumpedFrames[index]) &&
-        continuousFrames[10].endsWith('|true') && continuousFrames[47].endsWith('|false'),
+        continuousFrames[10].endsWith('|true') && continuousFrames[119].endsWith('|false'),
         description: 'Hover timing and canonical dwell follow active frame time across forward/backward phase-clock jumps' });
 
     publishVisualSignals(state, audio, stress);
@@ -213,7 +278,8 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         paragraph.children.length === 2 && paragraph.children[0] === canonicalNode && paragraph.children[1] === visualNode &&
         canonicalNode.className === 'glyph-canonical-text' && canonicalNode.textContent === 'ОБНОВЛЁННЫЙ КАНОН' &&
         calmGlyphHover.getVisualText(paragraphElement) === 'ДЕКОРАТИВНАЯ СБОРКА' &&
-        genericSpanStable && heading.getAttribute('aria-label') === 'AUTHOR HEADER' && heading.children.length === 0,
+        genericSpanStable && heading.getAttribute('aria-label') === 'AUTHOR HEADER' && heading.children.length === 1 &&
+        heading.children[0].getAttribute('aria-hidden') === 'true',
         description: 'Paragraph/span canon stays accessible beside aria-hidden decorative text; wrappers are reused and native heading semantics remain intact' });
     calmGlyphHover.stop(element);
     publishVisualSignals(original, audioSync.getSnapshot(0), stressStore.getState());

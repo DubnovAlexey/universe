@@ -43,6 +43,8 @@ import { stressStore, type StressStateData } from '../store/stressState';
 import { VoidPhaseSimulation, type TopologyEdge } from '../phases/01_void';
 import { smoothAudioEnvelope } from '../utils/audioSync';
 import { runVisualSignalChecks } from './visualSignals.test';
+import { runFinaleCompositionChecks } from './finaleComposition.test';
+import { runButtonMotionChecks } from './buttonMotion.test';
 import { runWaterfallLifecycleChecks } from './waterfallLifecycle.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
@@ -670,6 +672,8 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
 
     for (const result of runVisualSignalChecks()) check(result.passed, result.description);
     runWaterfallLifecycleChecks(check);
+    runFinaleCompositionChecks(check);
+    runButtonMotionChecks(check);
 
     return {
         passed: passedChecks === totalChecks,

@@ -1,12 +1,12 @@
 # 📐 Математические, биофизические и астрофизические модели UNIVERSE (v2.5)
 # 📐 Mathematical, Biophysical, and Astrophysical Models of UNIVERSE (v2.5)
 
-* **Часть I (Русское издание):** Полное научно-популярное и инженерно-математическое руководство (Разделы 0–11)
-* **Part II (English Edition):** Complete Mathematical, Biophysical & Astrophysical Specification (Sections 0–11)
+* **Часть I:** русское научно-популярное и математическое руководство.
+* **Part II:** English mathematical specification.
 
-**Граница реализации / Runtime scope (25.10.2026):** текущая статическая сборка асинхронно подключает реальный raw Rust/WASM ABI v1 без imports; `?wasm=0` выбирает TS. Общая модель содержит фазы Курамото активных частиц для дыхания и геометрии позднего GENESIS и отдельные 64 контрольные орбиты `REF64` для энергии. Художественные цели сохранены; полной N-body динамики всей сцены нет. NEXUS исполняется синхронно в TS, Python остаётся офлайн/CI reference, WGSL — спецификациями. Изменения 25.10 включают общий шаг кадра, кириллический hover, очистку холостого состояния и шестую скалярную WASM BREACH-интеграцию; текущий набор — 61 модульная проверка (39 TS, 9 Python, 13 Rust) и 6 WASM-интеграций; финальный production pipeline под Node 22.23.4 прошёл, audit — 0; выборочный desktop/mobile smoke и его границы — `../QA_STATUS.md`. Исторический smoke 24.10 не заменяет просмотр новой сборки.
+**Область применения:** Rust/WASM и TS рассчитывают общие фазы Курамото и отдельный контрольный ансамбль REF64. Художественная композиция остаётся хореографией; она не является полной N-body симуляцией. NEXUS исполняется в TypeScript, Python предоставляет независимые эталоны, WGSL содержит спецификации графических проходов. [Архитектурные контракты](../ARCHITECTURE.md).
 
-The current static build loads raw Rust/WASM ABI v1 asynchronously; `?wasm=0` forces TS. Both providers advance active-particle Kuramoto phases and a separate 64-orbit conservative energy reference. Phase output affects breathing and late-GENESIS geometry before final coordinates reach Canvas, graph quantization and SoA. The artwork remains choreographed rather than a full N-body simulation. Python runs offline/in CI, NEXUS synchronously in TS, and WGSL remains specifications. V1 publishes one immutable phase/audio/stress snapshot per existing frame and uses code-point-safe phase glyphs with a system-font filter/ASCII fallback. Calm hover preserves canonical text and accessible names; the autonomous odometer keeps 18–26 Hz. The 25 October changes add normalized shared frame time, Cyrillic hover, DOM lifecycle cleanup and a sixth scalar WASM BREACH integration. `../QA_STATUS.md` records the current 61 unit checks (39 TS, 9 Python, 13 Rust), 6 WASM integrations, the successful final production-mode verification, selective desktop/mobile smoke and browser limits and the already successful published CI #45 on `b60c995`.
+The static application uses Rust/WASM with a TypeScript fallback, a synchronous TS graph engine and Canvas 2D. Python provides independent numerical references. Kuramoto phases affect artistic targets; energy telemetry belongs to the separate REF64 reference ensemble.
 
 ---
 
@@ -64,7 +64,6 @@ The current static build loads raw Rust/WASM ABI v1 asynchronously; `?wasm=0` fo
    $$h_1 = (h_0 \oplus (h_0 \gg 16)) \cdot \text{0x85EBCA6B} \bmod 2^{32}$$
    $$h_2 = (h_1 \oplus (h_1 \gg 13)) \cdot \text{0xC2B2AE35} \bmod 2^{32}, \qquad \text{hashU32} = h_2 \oplus (h_2 \gg 16)$$
 
-В существующий Rust-тест добавлены четыре независимых golden hash-вектора Python для `hash_u32`. Это усиливает межъязыковую проверку индексного хеша, не меняя алгоритм или общее число 13 native-тестов.
 
 ### 1.3. Контрольная сумма `FNV-1a State Digest` (Цифровой отпечаток Вселенной)
 * **Что это простыми словами:** короткий код (например, `0x6AB09A72`) помогает обнаружить изменения выбранных полей состояния. В проекте проверяется каждая четвёртая частица после квантования; малые изменения могут остаться незаметными, а коллизии 32-битного хеша возможны. Поэтому совпадение кода не доказывает полного совпадения двух сцен.
@@ -136,7 +135,7 @@ $$R_k(\theta, t) = r_k(t) \cdot \left[ 1 + \underbrace{\sum_{m \in \{2,3,5\}} a_
 
 Оба алгоритма исполняются в общем TS/Rust-контракте, но имеют разных потребителей. Kuramoto рассчитывает фазы активных видимых частиц для дыхания и геометрии позднего GENESIS. Velocity Verlet интегрирует **отдельные 64 контрольные орбиты** в статическом потенциале Пламмера (`GM = 4900`, `ε² = 64`); их энергия подписана `REF64`. Эти орбиты не заменяют координаты всей художественной сцены и не рассчитывают взаимодействие всех видимых частиц друг с другом.
 
-Raw ABI v1 использует `f64` для шага, накопленного времени и метрик; фазы/частоты и контрольные позиции/скорости хранятся в `f32`. `step_verlet_nbody` возвращает статус `1`/`0`. Позднее подключение WASM принимает актуальные TS-фазы, частоты, орбиты, baseline и время; успешные native-шаги обновляют TS-зеркала, от которых продолжается fallback при trap. Численный паритет проверен 600 смешанными шагами для 96 осцилляторов и 64 орбит; отдельная интеграция проверяет влияние Rust-фазы на видимые координаты, граф и SoA.
+Raw ABI v1 использует `f64` для шага, накопленного времени и метрик; фазы/частоты и контрольные позиции/скорости хранятся в `f32`. `step_verlet_nbody` возвращает статус `1`/`0`. Позднее подключение WASM принимает актуальные TS-фазы, частоты, орбиты, baseline и время; успешные native-шаги обновляют TS-зеркала, от которых продолжается fallback при trap. Численный паритет проверяется шагами разной длительности; отдельная интеграция проверяет влияние Rust-фазы на видимые координаты, граф и SoA.
 
 ### 4.1. Что такое симплектический интегратор Верле простыми словами
 Представь, что мы программируем вращение Земли вокруг Солнца. Самый наивный способ (явный метод Эйлера) выглядит так: каждый кадр мы прибавляем к координатам текущую скорость, а к скорости — текущее ускорение. Если запустить такой код, то уже через несколько десятков оборотов Земля сама собой разгонится и улетит в открытый космос! Причина в том, что метод Эйлера на каждом шаге чуть-чуть промахивается мимо кривой орбиты наружу, и в системе из ниоткуда возникает лишняя энергия.
@@ -254,15 +253,13 @@ $$S_5(u) = 6u^5 - 15u^4 + 10u^3, \qquad u = \text{clamp}\left(\frac{t - t_0}{t_1
 Его первая и вторая производные:
 $$S_5'(u) = 30u^4 - 60u^3 + 30u^2 = 30u^2(u - 1)^2 \implies S_5'(0) = S_5'(1) = 0$$
 $$S_5''(u) = 120u^3 - 180u^2 + 60u = 60u(u - 1)(2u - 1) \implies S_5''(0) = S_5''(1) = 0$$
-Равенство нулю обеих производных на концах отрезка гарантирует полное отсутствие рывков при смене фаз.
+Нулевые значения обеих производных на концах отрезка обеспечивают гладкое сопряжение огибающей перехода.
 
 ---
 
-### 6.4. Граница скалярного WASM reference
-Существующий `evaluate_lens_refraction(px,py,lensX,lensY,radius,reveal)` возвращает только $\sqrt{dx^2+dy^2}$ при фиксированных $\sigma=0.25$ и $t=0$. Входы обеих реализаций нормализуются в f32; шестая реальная WASM-интеграция перебирает 10 752 образца, включая центр, внутреннюю область, кольцо и внешнюю границу, несколько центров/радиусов/reveal. Максимальная ошибка длины смещения составила $1.32\cdot10^{-5}$ px при допуске $2\cdot10^{-4}$ px.
+### 6.4. Скалярный оптический reference
 
-Проверка не сравнивает полный вектор, rim/dispersion или произвольные stress/time. `isBreaching` меняет TS dispersion, а не dx/dy; скалярный ABI этот режим не содержит. Сам ABI v1 не расширялся, а векторное преломление Canvas остаётся TypeScript. Оптический reference не продвигает время физической симуляции.
-
+`evaluate_lens_refraction(px,py,lensX,lensY,radius,reveal)` возвращает $\sqrt{dx^2+dy^2}$ при фиксированных $\sigma=0.25$ и $t=0$. Для межъязыкового сравнения входы нормализуются в f32. Скалярный контракт не содержит полного вектора, rim/dispersion или произвольных stress/time; векторное преломление Canvas рассчитывается TypeScript. Оптический reference не продвигает время физической симуляции.
 
 ## 7. Фаза 05 (`05_SINGULARITY`, 79–108 с): «Кошачий глаз» `NGC 6543`, оптика Чёрной дыры и Одометр
 
@@ -291,12 +288,15 @@ $$\text{radiusEnvelope}(p_{\text{ActB}}) = \left(1.0 - S_5(0.05, \; 0.98, \; p_{
   $$f_{\text{rate}}(t) = \text{clamp}\left( 21.5 + 3.2\sin(0.85 t) + 1.8\cos(1.75 t) + 2.5 H_{\text{audio}}, \; 18.0, \; 26.0 \right)\text{ Гц}$$
   $$\Phi(t + \Delta t) = \Phi(t) + \Delta t \cdot f_{\text{rate}}(t)$$
 
-### 7.4. Общие сигналы, Unicode и движение фоновой карточки (V1)
-`visualSignals.ts` публикует неизменяемый снимок фазы, времени, музыкальных огибающих, Курамото и stress на существующий кадр. Шаг $\Delta t_\mathrm{frame}=\mathrm{clamp}(\mathrm{frameTimeMs}/1000,0,0.05)$ равен нулю при pause/hidden; hover накапливает его независимо от скачков абсолютного таймлайна. `glyphGrammar.ts` выбирает глифы из пяти профилей по полным code point, фильтрует отсутствующие начертания в браузере и использует ASCII fallback. Кириллица и Unicode Letters/Numbers перебираются; египетские символы и знаки грамматики защищены. Generic p/span сохраняют доступный канон отдельно от `aria-hidden` визуального span. Supplementary математические и египетские символы не разрываются на UTF-16 code units; составные графемы отдельно не сегментируются.
+### 7.4. Общие сигналы, Unicode и движение визитки
 
-Водопад и визитка подписаны на общий кадр, без собственных RAF; DOM кешируется и неизменные paused/hidden/reduced состояния не записываются повторно. P95 frame time читается из единственного окна QualityGovernor на 45 измерений; это runtime-показатель, не benchmark. Неиспользуемые предыдущие/интерполированные SoA-координаты удалены без изменения публикации актуальных координат и ABI.
+`visualSignals.ts` публикует неизменяемый снимок фазы, времени, музыкальных огибающих, Курамото и stress. Нормализованный шаг $\Delta t_\mathrm{frame}=\mathrm{clamp}(\mathrm{frameTimeMs}/1000,0,0.05)$ равен нулю при pause/hidden. Декоративные потребители накапливают его независимо от скачков абсолютного таймлайна.
 
-Hover использует три roll-шага `160–180 мс` и canonical dwell `280–320 мс`; завершение, pointerleave/blur, pause/reduced motion возвращают точный текст и устойчивые доступные названия. Это отдельный профиль от автономного одометра `18–26 Гц`. После первого полного круга фоновая карточка поднимается по $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ на $0\le u\le1$, а $D$ ограничено свободным местом (с учётом высоты карточки, viewport и положения заголовка на узком экране). Пауза сохраняет $t$, reduced motion выбирает статичное положение. Мягкая тональная подложка без внешнего box-shadow и глубокие тени текста при opacity `0.60` поддерживают читаемость; контейнер имеет радиус 36 px без внешнего box-shadow; выборочный desktop/mobile smoke подтвердил видимость действий и отсутствие обрезки. Компактная геометрия учитывает заголовок через ResizeObserver; универсальное покрытие всех viewport/ОС не заявляется.
+Словарь хранит полные Unicode code point и фазовые профили, отбраковывает отсутствующие начертания и использует базовый fallback. Кириллический текст, исторические письмена и математические знаки не разрываются на отдельные UTF-16 code units. Доступный канон отделён от декоративного представления.
+
+Прокрутка знаков в фиксированных ячейках имеет собственные плавные огибающие и удержания, сохраняя размеры строки. Автономный одометр остаётся отдельным потребителем с частотой $18–26$ Гц.
+
+Подъём фоновой визитки задаётся $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ для $0\le u\le1$. Величина $D$ определяется геометрией карточки, защищённой центральной светящейся областью, HUD и доступным местом сверху. Пауза сохраняет $t$, reduced motion выбирает статичное положение. Радиальная тональная подложка и тени текста поддерживают читаемость без жёсткой рамки.
 
 ---
 
@@ -324,7 +324,7 @@ Hover использует три roll-шага `160–180 мс` и canonical dw
 
 **UNIVERSE (Neuroverse)** explores a profound structural parallel in nature: *why does the large-scale cosmic web of galaxies and filaments mirror the synaptic architecture of the human brain?* Both systems evolve under physical optimization laws to route energy and information across space.
 
-Across a continuous **108-second cycle**, a single deterministic memory buffer (`SceneBufferSoA`) is read simultaneously through three optical lenses (`ILLUSION`, `NEXUS`, and `X-RAY`):
+Across a continuous **108-second cycle**, shared final particle geometry supplies three optical views (`ILLUSION`, `NEXUS`, and `X-RAY`), with a separate `SceneBufferSoA` publication:
 1. **`01. VOID` (`0–17s`):** A quantum fluctuation at the Zero Point emits 7 deforming light-echo rings inspired by the supergiant Cepheid variable **`RS Puppis`**, sweeping across dark interstellar dust with a gravitational chirp frequency ramp.
 2. **`02. GENESIS` (`17–39s`):** Gravity condenses matter into a tilted 4-arm logarithmic spiral galaxy inspired by **`M31 (Andromeda)`** and **`NGC 3169`**, while **Kuramoto phase coupling** synchronizes individual stellar oscillators into collective coherence.
 3. **`03. EVOLUTION` (`39–64s`):** Spiral arms morph via $C^2$-continuous Perlin `smootherstep` envelopes into two bilateral cortical hemispheres around 5 counter-rotating Keplerian rings, wired by **Prim's MST**, **Gabriel Graph bridges**, and **Murray's cube law** dendrites.
@@ -336,13 +336,13 @@ Across a continuous **108-second cycle**, a single deterministic memory buffer (
 ## 1. Deterministic PRNG (`Mulberry32` + `SplitMix32`) & Quantized `FNV-1a` State Digest
 
 ### 1.1. Plain-Language Meaning & Mathematical Formulation
-Standard `Math.random()` produces different sequences on every run and across languages. By combining a stateful 32-bit **Mulberry32** stream generator (`nextU32`) with a stateless **SplitMix32** indexed scrambler (`hashU32`) seeded at `GOLDEN_SEED = 104729`, TypeScript, Rust, and Python generate bit-for-bit identical worlds (`GOLDEN_U32_VECTORS = [325253669, 3481002091, 881690241, 2630884050]`):
+Standard `Math.random()` produces different sequences on every run and across languages. By combining a stateful 32-bit **Mulberry32** stream generator (`nextU32`) with a stateless **SplitMix32** indexed scrambler (`hashU32`) seeded at `GOLDEN_SEED = 104729`, TypeScript, Rust, and Python generate matching reference integer streams (`GOLDEN_U32_VECTORS = [325253669, 3481002091, 881690241, 2630884050]`):
 
 $$S_{k+1} = (S_k + \text{0x6D2B79F5}) \bmod 2^{32}, \qquad z_1 = \left(S_{k+1} \oplus (S_{k+1} \gg 15)\right) \cdot (S_{k+1} \mid 1) \bmod 2^{32}$$
 $$z_2 = \left(z_1 \oplus \left(z_1 + ((z_1 \oplus (z_1 \gg 7)) \cdot (z_1 \mid 61))\right)\right) \bmod 2^{32}, \qquad \text{nextU32}() = z_2 \oplus (z_2 \gg 14)$$
 
 ### 1.2. Quantized `FNV-1a` State Digest
-Every 4th entity's position, velocity, and energy are quantized via `quantizeHalfUp(v) = floor(v + 0.5)` and folded into a 32-bit Fowler-Noll-Vo hash (`0x811C9DC5`, prime `0x01000193`), proving at runtime that `StateDigest(ILLUSION) == StateDigest(NEXUS) == StateDigest(X-RAY)`.
+Every 4th entity's position, velocity, and energy are quantized via `quantizeHalfUp(v) = floor(v + 0.5)` and folded into a 32-bit Fowler-Noll-Vo hash (`0x811C9DC5`, prime `0x01000193`). This sampled diagnostic can reveal state changes; it does not prove equality of complete states or screen transforms.
 
 ---
 
@@ -360,7 +360,7 @@ True relative mechanical energy drift is reported directly without artificial cl
 
 $$\frac{\Delta E}{E_0}(t) = \frac{|E(t) - E_0|}{|E_0|}$$
 
-Drift starts at zero; a later zero-duration step preserves the existing drift. The native 60-second reference test bounds it below `0.001`. Raw ABI v1 returns status `1`/`0` from `step_verlet_nbody`, uses `f64` time/metrics and `f32` arrays, adopts the latest TS state on late loading, and maintains complete TS mirrors for fallback. Six real-WASM integration checks include 600 mixed steps against TS and native-phase influence on visible coordinates, graph quantization and SoA.
+Drift starts at zero; a later zero-duration step preserves the existing drift. The native 60-second reference test bounds it below `0.001`. Raw ABI v1 returns status `1`/`0` from `step_verlet_nbody`, uses `f64` time/metrics and `f32` arrays, adopts the latest TS state on late loading, and maintains complete TS mirrors for fallback. Real-WASM integration checks exercise mixed steps against TS and native-phase influence on visible coordinates, graph quantization and SoA.
 
 ---
 
@@ -378,7 +378,4 @@ Drift starts at zero; a later zero-duration step preserves the existing drift. T
    * In Phase 05, analytical gravitational deflection $\alpha(b) = \min(2.0, \; 2R_s/b)$, a Gaussian photon ring at $b = 1.48 R_s$, and relativistic Doppler beaming $D^{2.2}$ are paired with bounded delta-time odometer integration (`18.0–26.0 Hz`).
 
 
-Python `sample_endless_cipher_stream` остаётся независимым офлайн reference: отдельный golden/bucket regression проверяет детерминированные glyph/color, принадлежность словарю/палитре и смену дискретных временных bucket. Это не изменение браузерного диапазона одометра 18–26 Гц.
-
-
-Выборочный итог 25.10 также включает узкий `320×568` без обрезки действий и принудительный TS fallback. На низком экране карточка может частично перекрывать центр: приоритет — полностью видимое и доступное содержимое. Непрерывные 108 секунд, слышимость звука, Safari/iOS, системный reduced motion и p50/p95 benchmark отдельно не подтверждены; опубликованный CI #45 относится к `b60c995`, новые изменения требуют нового коммита и запуска.
+Python `sample_endless_cipher_stream` is an independent offline reference for deterministic glyph/color selection and discrete time buckets. The browser odometer uses its own 18–26 Hz rhythm.

@@ -153,6 +153,10 @@ export const PHASE_ORDER: readonly PhaseId[] = [
     '05_SINGULARITY',
 ];
 
+// Проекционные огибающие камеры используются и для безопасной композиции DOM.
+export const CAMERA_ZOOM_SWAY = 0.008;
+export const CAMERA_DRIFT_Y_AMPLITUDE = 7.8;
+
 export const UNIVERSE_PHASES: Record<PhaseId, PhaseMetadata> = {
     '01_VOID': {
         id: '01_VOID',
@@ -779,10 +783,10 @@ class UniverseStore {
         const smoothPhaseAlpha = smootherstep(0.0, 0.35, rawProgress);
         const targetZoom =
             this.state.phaseMeta.targetZoom +
-            Math.sin(simSec * 0.42) * 0.008 * smoothPhaseAlpha;
+            Math.sin(simSec * 0.42) * CAMERA_ZOOM_SWAY * smoothPhaseAlpha;
         this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.014;
         this.state.camera.driftX = Math.sin(simSec * 0.14) * 10.5;
-        this.state.camera.driftY = Math.cos(simSec * 0.11) * 7.8;
+        this.state.camera.driftY = Math.cos(simSec * 0.11) * CAMERA_DRIFT_Y_AMPLITUDE;
 
         if (this.state.singularityAct === 'RESTART_COLLAPSE') {
             this.state.restartElapsedSec += dtSec > 0 ? dtSec : 0.016;

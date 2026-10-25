@@ -3,18 +3,23 @@
 // НАЗНАЧЕНИЕ: Фазовый словарь Unicode code points и точное восстановление текста.
 // РАЗДЕЛЫ: 1. Семейства/профили; 2. Проверка шрифтов; 3. Детерминированный выбор.
 // ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, getRenderableGlyphPool,
-// pickGlyph, scrambleCanonicalText. Все пулы — массивы полных code points.
+// pickGlyph, isMutableGlyph, scrambleCanonicalText, prepareGlyphFonts,
+// invalidateGlyphFontCache, getGlyphFontEpoch. Все пулы — полные code points.
 // ============================================================================
 import type { PhaseId } from './contracts';
 
 // НАЧАЛО РАЗДЕЛА 1. СЕМЕЙСТВА И ПРОФИЛИ
-export const GLYPH_FONT_STACK = '"JetBrains Mono", "Fira Code", Consolas, "Segoe UI Historic", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Symbol", monospace';
+export const GLYPH_FONT_STACK = '"Universe Glyphs", "JetBrains Mono", "Fira Code", Consolas, "Segoe UI Historic", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Symbol", monospace';
 export const GLYPH_FAMILIES = Object.freeze({
     basic: Object.freeze(Array.from('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')),
     geometry: Object.freeze(Array.from('·∘○◌◈◇⋄⌁∷')),
-    mathematics: Object.freeze(Array.from('∑∆ΩΨΦΛΠΞΘ∇∂∫≈≠≡𝛁𝛑𝚫')),
+    mathematics: Object.freeze(Array.from('∑∆ΩΨΦΛΠΞΘ∇∂∫∮∯∰ℏℓℵℶ∀∃∄∅∈∉⊂⊃⊆⊇⊢⊨⨂⨁ℝℂℚℤ⊗∝≜≅≃≈≠≡⟂⦿𝛁𝛑𝚫')),
     connectivity: Object.freeze(Array.from('⊕⊗⊙⊥⊢⊣⟨⟩⟦⟧◊◈✶✴⟡')),
-    historical: Object.freeze(Array.from('𓀀𓂀𓆣𓇳𓋹𓏏')),
+    historical: Object.freeze(Array.from('𓀀𓁹𓂀𓆣𓇳𓋹𓏏𓆓𓊽𓎛𓂻𓈖𓅓𓃭𓊹𓐍')),
+    runic: Object.freeze(Array.from('ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛋᛏᛒᛖᛗᛚᛜᛞᛟ')),
+    mayanNumerals: Object.freeze(Array.from({ length: 20 }, (_, value) => String.fromCodePoint(0x1D2E0 + value))),
+    alchemical: Object.freeze(Array.from('🜁🜂🜃🜄🜍🜎🜏🜔🜕🜚🜛🜞')),
+    astral: Object.freeze(Array.from('⌬⌭⏣⏥⍟⎔⌘⍜⍝⍞⍠⍡⍢⋈⋉⋊⋋⋌⟐⟢⟣⧆⧈⧉⨀⨂⨷')),
 });
 export interface GlyphProfile {
     readonly pool: readonly string[];
@@ -26,15 +31,17 @@ export interface GlyphProfile {
 const pool = (...families: (readonly string[])[]): readonly string[] => Object.freeze([...new Set(families.flat())]);
 // КОНЕЦ ФУНКЦИИ pool
 const profiles: Readonly<Record<PhaseId, GlyphProfile>> = Object.freeze({
-    '01_VOID': { pool: pool(GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.basic.slice(0, 10), GLYPH_FAMILIES.historical), density: 0.22, rollMs: 180, dwellMs: 300 },
-    '02_GENESIS': { pool: pool(GLYPH_FAMILIES.basic, GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.historical), density: 0.27, rollMs: 170, dwellMs: 280 },
-    '03_EVOLUTION': { pool: pool(GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.basic, GLYPH_FAMILIES.historical), density: 0.30, rollMs: 160, dwellMs: 280 },
-    '04_COLLAPSE': { pool: pool(GLYPH_FAMILIES.connectivity, GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.historical), density: 0.34, rollMs: 160, dwellMs: 300 },
-    '05_SINGULARITY': { pool: pool(GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.basic.slice(0, 16), GLYPH_FAMILIES.historical), density: 0.18, rollMs: 180, dwellMs: 320 },
+    '01_VOID': { pool: pool(GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.historical, GLYPH_FAMILIES.runic, GLYPH_FAMILIES.mayanNumerals), density: 0.22, rollMs: 300, dwellMs: 420 },
+    '02_GENESIS': { pool: pool(GLYPH_FAMILIES.basic, GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.historical, GLYPH_FAMILIES.alchemical, GLYPH_FAMILIES.mayanNumerals), density: 0.27, rollMs: 280, dwellMs: 400 },
+    '03_EVOLUTION': { pool: pool(GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.astral, GLYPH_FAMILIES.historical, GLYPH_FAMILIES.runic), density: 0.30, rollMs: 270, dwellMs: 400 },
+    '04_COLLAPSE': { pool: pool(GLYPH_FAMILIES.connectivity, GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.astral, GLYPH_FAMILIES.alchemical, GLYPH_FAMILIES.runic), density: 0.34, rollMs: 260, dwellMs: 380 },
+    '05_SINGULARITY': { pool: pool(GLYPH_FAMILIES.mathematics, GLYPH_FAMILIES.geometry, GLYPH_FAMILIES.historical, GLYPH_FAMILIES.mayanNumerals), density: 0.18, rollMs: 300, dwellMs: 440 },
 });
 const protectedGlyphs = new Set([
     ...GLYPH_FAMILIES.geometry, ...GLYPH_FAMILIES.mathematics,
     ...GLYPH_FAMILIES.connectivity, ...GLYPH_FAMILIES.historical,
+    ...GLYPH_FAMILIES.runic, ...GLYPH_FAMILIES.mayanNumerals,
+    ...GLYPH_FAMILIES.alchemical, ...GLYPH_FAMILIES.astral,
 ]);
 // НАЧАЛО ФУНКЦИИ getGlyphProfile
 export function getGlyphProfile(phase: PhaseId): GlyphProfile { return profiles[phase]; }
@@ -46,6 +53,28 @@ const renderablePools = new Map<PhaseId, readonly string[]>();
 const glyphSupport = new Map<string, boolean>();
 let probe: CanvasRenderingContext2D | null | undefined;
 let missingInk: Uint8ClampedArray[] = [];
+let fontEpoch = 0;
+let fontLoadRequested = false;
+
+// НАЧАЛО ФУНКЦИИ invalidateGlyphFontCache
+export function invalidateGlyphFontCache(): void {
+    renderablePools.clear(); glyphSupport.clear();
+    probe = undefined; missingInk = []; fontEpoch++;
+}
+// КОНЕЦ ФУНКЦИИ invalidateGlyphFontCache
+// НАЧАЛО ФУНКЦИИ getGlyphFontEpoch
+export function getGlyphFontEpoch(): number { return fontEpoch; }
+// КОНЕЦ ФУНКЦИИ getGlyphFontEpoch
+// НАЧАЛО ФУНКЦИИ prepareGlyphFonts
+/** Начальный кадр не ждёт шрифты; после загрузки проверяется настоящее начертание. */
+export function prepareGlyphFonts(): void {
+    if (fontLoadRequested || typeof document === 'undefined' || !document.fonts) return;
+    fontLoadRequested = true;
+    const sample = 'ᚠ' + String.fromCodePoint(0x1D2E0) + '∮𓂀🜁⌬';
+    void document.fonts.load('18px "Universe Glyphs"', sample)
+        .then(invalidateGlyphFontCache, invalidateGlyphFontCache);
+}
+// КОНЕЦ ФУНКЦИИ prepareGlyphFonts
 
 // НАЧАЛО ФУНКЦИИ filterGlyphPool
 export function filterGlyphPool(candidates: readonly string[], supported: (glyph: string) => boolean): readonly string[] {
@@ -102,6 +131,7 @@ function supportsGlyph(glyph: string): boolean {
 
 // НАЧАЛО ФУНКЦИИ getRenderableGlyphPool
 export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
+    prepareGlyphFonts();
     if (!renderablePools.has(phase)) renderablePools.set(phase, filterGlyphPool(profiles[phase].pool, supportsGlyph));
     return renderablePools.get(phase)!;
 }
@@ -109,6 +139,13 @@ export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. ВЫБОР И ВОССТАНОВЛЕНИЕ
+// НАЧАЛО ФУНКЦИИ isMutableGlyph
+export function isMutableGlyph(character: string, nextCharacter = ''): boolean {
+    return !protectedGlyphs.has(character) && !/\p{Script=Egyptian_Hieroglyphs}/u.test(character) &&
+        !/\p{M}/u.test(nextCharacter) && nextCharacter !== '\uFE0F' && nextCharacter !== '\u20E3' &&
+        /^[\p{L}\p{N}]$/u.test(character);
+}
+// КОНЕЦ ФУНКЦИИ isMutableGlyph
 // НАЧАЛО ФУНКЦИИ pickGlyph
 export function pickGlyph(phase: PhaseId, index: number, step: number, seed = 104729): string {
     const candidates = getRenderableGlyphPool(phase);
@@ -126,9 +163,7 @@ export function scrambleCanonicalText(canonical: string, phase: PhaseId, step: n
     return characters.map((character, index) => {
         // Египетские письмена входят в Unicode Letter, но остаются частью канона.
         // Знаки грамматики и цифры emoji-keycap также нельзя разрывать заменой.
-        const isProtected = protectedGlyphs.has(character) || /\p{Script=Egyptian_Hieroglyphs}/u.test(character) ||
-            characters[index + 1] === '\uFE0F' || characters[index + 1] === '\u20E3';
-        if (index < lock || isProtected || !/^[\p{L}\p{N}]$/u.test(character) || (index + offset) % stride !== 0) return character;
+        if (index < lock || !isMutableGlyph(character, characters[index + 1]) || (index + offset) % stride !== 0) return character;
         return pickGlyph(phase, index + offset, step);
     }).join('');
 }

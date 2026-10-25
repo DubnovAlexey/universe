@@ -95,6 +95,8 @@ import { resourceLedger } from '../core/resourceLedger';
 import { publishVisualSignals } from '../core/visualSignals';
 import { calmGlyphHover } from '../core/glyphHover';
 import { GLYPH_FONT_STACK } from '../core/glyphGrammar';
+import { getSingularityPhotonRadii, PHOTON_BRIGHT_STOP } from '../core/finaleComposition';
+import { buttonMotionController } from '../core/buttonMotion';
 import { DeterministicPRNG } from '../core/prng';
 import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
 import { mountLayer3Topology } from '../layers/Layer3_Topology';
@@ -1830,14 +1832,14 @@ export class UniverseRenderer {
             ctx.stroke();
         }
 
-        const fullShadowR = scale * 0.068;
-        const shadowR = fullShadowR * volumeEnvelope;
-        const photonOuterR = Math.max(2.4, shadowR * 2.45);
+        const photon = getSingularityPhotonRadii(scale, volumeEnvelope);
+        const shadowR = photon.shadowRadius;
+        const photonOuterR = photon.outerRadius;
 
         const photonGrad = ctx.createRadialGradient(
             cx - shadowR * 0.16,
             cy,
-            Math.max(0.2, shadowR * 0.65),
+            photon.innerRadius,
             cx,
             cy,
             photonOuterR
@@ -1848,7 +1850,7 @@ export class UniverseRenderer {
             `rgba(2, 3, 8, ${(0.98 * opacityEnvelope).toFixed(3)})`
         );
         photonGrad.addColorStop(
-            0.48,
+            PHOTON_BRIGHT_STOP,
             RenderPipeline.hexToRgba('#f8fafc', 0.94 * opacityEnvelope)
         );
         photonGrad.addColorStop(
@@ -2473,6 +2475,14 @@ export function bootstrapUniverseV2(): void {
 
     // 3. Подключаем инверсный квантовый перебор соседей при наведении на угловые панели
     bindCornerPanelsNeighborScramble();
+    const buttonMotion = buttonMotionController.mount(Array.from(document.querySelectorAll<HTMLElement>(
+        '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber'
+    )));
+    resourceLedger.trackPageLifetimeAllocation('listeners', buttonMotion.listenerCount);
+    resourceLedger.registerPageDisposable(() => {
+        buttonMotion.dispose();
+        resourceLedger.trackRelease('listeners', buttonMotion.listenerCount);
+    });
 
     // 4. Обработчики кликов по кнопкам переключения 5 фаз
     const phaseButtonsContainer = document.getElementById('ui-phase-buttons');

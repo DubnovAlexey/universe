@@ -6,6 +6,7 @@
 //   1. Зависимости, пути и проверка наличия файла requireFile.
 //   2. Проверка HTML-точек входа и путей к Astro-ресурсам.
 //   3. Проверка favicon, аудиотрека и самостоятельного Rust/WASM ABI v1.
+//   4. Проверка локальных шрифтов, предварительной загрузки и контрольных сумм.
 // ============================================================================
 
 // ============================================================================
@@ -15,6 +16,7 @@
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const frontendDirectory = path.resolve(scriptDirectory, '..');
@@ -30,6 +32,7 @@ async function requireFile(relativePath, description) {
     } catch {
         throw new Error(`${description} is missing: ${absolutePath}`);
     }
+    return absolutePath;
 }
 // --- КОНЕЦ ФУНКЦИИ requireFile ---
 
@@ -57,10 +60,14 @@ if (!html.includes(`${basePath}/favicon.png`)) {
     throw new Error(`Production entry does not reference the ${basePath} favicon path.`);
 }
 
-const bundledAssetRefs = [...html.matchAll(/(?:src|href)="([^"]*\/_astro\/[^\"]+)"/g)]
-    .map((match) => match[1]);
-if (bundledAssetRefs.length === 0) {
-    throw new Error('Production entry contains no Astro bundle references.');
+const bundledAssetRefs = [...html.matchAll(/(?:src|href)="([^"]*\/_astro\/[^"]+)"/g)]
+    .map((match) => match[1])
+    .filter((ref) => /\.(?:m?js|css)$/.test(new URL(ref, 'https://pages.invalid').pathname));
+if (
+    !bundledAssetRefs.some((ref) => /\.m?js$/.test(new URL(ref, 'https://pages.invalid').pathname)) ||
+    !bundledAssetRefs.some((ref) => new URL(ref, 'https://pages.invalid').pathname.endsWith('.css'))
+) {
+    throw new Error('Production entry must reference both Astro JavaScript and CSS bundles.');
 }
 
 for (const assetRef of bundledAssetRefs) {
@@ -106,6 +113,49 @@ if (!Number.isFinite(outsideLensMagnitude) || outsideLensMagnitude !== 0) {
     throw new Error('Published lens-refraction export must return zero outside the lens.');
 }
 
+// ============================================================================
+// РАЗДЕЛ 4. ЛОКАЛЬНЫЕ НАЧЕРТАНИЯ ИСТОРИЧЕСКИХ И МАТЕМАТИЧЕСКИХ СИМВОЛОВ
+// ============================================================================
+const glyphFonts = JSON.parse(await readFile(path.join(frontendDirectory, 'src/core/glyphFontAssets.json'), 'utf8'));
+if (glyphFonts.sourceDirectory !== 'src/assets') throw new Error('Glyph fonts must be Vite source assets.');
+await requireFile(glyphFonts.license, 'Glyph font license');
+const styleContents = await Promise.all(bundledAssetRefs.filter((ref) => ref.endsWith('.css')).map(async (ref) => {
+    const relative = new URL(ref, 'https://pages.invalid').pathname.slice(basePath.length + 1);
+    return readFile(path.join(distDirectory, relative), 'utf8');
+}));
+const fontPreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .filter((tag) => /\brel="preload"/.test(tag) && /\bas="font"/.test(tag))
+    .map((tag) => tag.match(/\bhref="([^"]+)"/)?.[1])
+    .filter(Boolean);
+for (const font of glyphFonts.fonts) {
+    if (!/^fonts\/[a-z0-9.-]+\.ttf$/.test(font.file)) throw new Error(`Unsafe font path: ${font.file}`);
+    const sourcePath = path.join(frontendDirectory, glyphFonts.sourceDirectory, font.file);
+    const sourceBytes = await readFile(sourcePath);
+    const sourceHash = createHash('sha256').update(sourceBytes).digest('hex');
+    if (sourceBytes.length !== font.bytes || sourceHash !== font.sha256 || sourceBytes.readUInt32BE(0) !== 0x00010000) {
+        throw new Error(`Source glyph font differs from its manifest: ${font.file}`);
+    }
+    const sourceStem = path.basename(font.file, '.ttf');
+    const matchingPreloads = fontPreloads.filter((ref) => {
+        const basename = path.posix.basename(new URL(ref, 'https://pages.invalid').pathname);
+        return basename.startsWith(`${sourceStem}.`) && basename.endsWith('.ttf');
+    });
+    if (matchingPreloads.length !== 1) throw new Error(`Expected one emitted font preload: ${font.file}`);
+    const fontUrl = matchingPreloads[0];
+    if (!fontUrl.startsWith(`${basePath}/_astro/`)) throw new Error(`Font preload is outside Astro assets: ${fontUrl}`);
+    const relativePath = decodeURIComponent(new URL(fontUrl, 'https://pages.invalid').pathname.slice(basePath.length + 1));
+    const emittedPath = await requireFile(relativePath, 'Emitted glyph font');
+    const emittedBytes = await readFile(emittedPath);
+    const emittedHash = createHash('sha256').update(emittedBytes).digest('hex');
+    if (emittedBytes.length !== font.bytes || emittedHash !== font.sha256 || !emittedBytes.equals(sourceBytes)) {
+        throw new Error(`Emitted glyph font differs from its source and manifest: ${font.file}`);
+    }
+    if (!styleContents.some((css) => css.includes(fontUrl))) {
+        throw new Error(`Font preload and CSS do not share the same emitted URL: ${font.file}`);
+    }
+}
+
 console.log(
-    `Pages artifact smoke check passed: ${requiredHooks.length} UI hooks, ${bundledAssetRefs.length} Astro bundles, favicon, soundtrack and valid Rust/WASM ABI v1.`
+    `Pages artifact smoke check passed: ${requiredHooks.length} UI hooks, ${bundledAssetRefs.length} Astro bundles, ${glyphFonts.fonts.length} licensed glyph subsets, favicon, soundtrack and valid Rust/WASM ABI v1.`
 );

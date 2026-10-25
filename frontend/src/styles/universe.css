@@ -10,10 +10,65 @@
  *   4. Каскады телеметрии, символы и статусы модулей.
  *   5. Финальная визитка и действия.
  *   6. Шкала фаз и нижняя панель управления.
- *   7. Мобильная компоновка при ширине до 920 px.
+ *   7. Адаптивная компоновка средних и узких экранов.
  * ============================================================================ */
 
-/* РАЗДЕЛ 1. ПАЛИТРА, СБРОС СТИЛЕЙ И КОСМИЧЕСКОЕ ПОЛОТНО */
+/* РАЗДЕЛ 1. ЛОКАЛЬНЫЕ СИМВОЛЫ, ПАЛИТРА И КОСМИЧЕСКОЕ ПОЛОТНО */
+/* Лицензированные наборы загружают только используемые исторические и математические знаки. */
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-runic.2718c62b3d4f.ttf?no-inline') format('truetype');
+    unicode-range: U+16A0, U+16A2, U+16A6, U+16A8, U+16B1-16B2, U+16B7, U+16B9-16BA, U+16BE, U+16C1, U+16C3, U+16C7-16C9, U+16CB, U+16CF, U+16D2, U+16D6-16D7, U+16DA, U+16DC, U+16DE-16DF;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-mayan-numerals.03f3dc2d4a6b.ttf?no-inline') format('truetype');
+    unicode-range: U+1D2E0-1D2F3;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-egyptian.55014a018207.ttf?no-inline') format('truetype');
+    unicode-range: U+13000, U+13079, U+13080, U+130BB, U+130ED, U+13153, U+13193, U+131A3, U+131F3, U+13216, U+132B9, U+132BD, U+132F9, U+1339B, U+133CF, U+1340D;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-math.7812a9fe056e.ttf?no-inline') format('truetype');
+    unicode-range: U+B7, U+398, U+39B, U+39E, U+3A0, U+3A6, U+3A8-3A9, U+2102, U+210F, U+2113, U+211A, U+211D, U+2124, U+2135-2136, U+2200, U+2202-2209, U+2211, U+2218, U+221D, U+222B, U+222E-2230, U+2237, U+2243, U+2245, U+2248, U+225C, U+2260-2261, U+2282-2283, U+2286-2287, U+2295, U+2297, U+2299, U+22A2-22A3, U+22A5, U+22A8, U+22C4, U+22C8-22CC, U+232C, U+235C-2362, U+2394, U+23E3, U+23E5, U+25C7-25C8, U+25CA-25CC, U+2736, U+27C2, U+27D0, U+27E1-27E3, U+27E6-27E9, U+29BF, U+29C6, U+29C8-29C9, U+2A00-2A02, U+2A37, U+1D6AB, U+1D6C1, U+1D6D1;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-symbols.2f01ee8d46a8.ttf?no-inline') format('truetype');
+    unicode-range: U+2301, U+232D, U+1F701-1F704, U+1F70D-1F70F, U+1F714-1F715, U+1F71A-1F71B, U+1F71E;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-symbols-2.95d6db8e9374.ttf?no-inline') format('truetype');
+    unicode-range: U+2318, U+2734;
+}
+
 :root {
     --void-obsidian: #020308;
     --void-graphite: #03050a;
@@ -35,11 +90,13 @@
     --text-muted: rgba(148, 163, 184, 0.80);
 
     --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, 'Segoe UI Historic', 'Noto Sans Egyptian Hieroglyphs', 'Segoe UI Symbol', monospace;
+    --font-mono: 'Universe Glyphs', 'JetBrains Mono', 'Fira Code', Consolas, 'Segoe UI Historic', 'Noto Sans Egyptian Hieroglyphs', 'Segoe UI Symbol', monospace;
 
     /* Базовая глубина глифов; активная анимация задаёт локальные inline-значения. */
     --glyph-depth-glow: 0.2;
     --glyph-depth-shift: 0px;
+    --button-rotate-x: 0deg;
+    --button-rotate-y: 0deg;
 }
 
 *,
@@ -208,7 +265,7 @@ body {
 .phase-pill:focus-visible,
 .btn-cipher-action:focus-visible,
 .audio-unlock-banner:focus-visible {
-    outline: 1.5px solid var(--accent-ice);
+    outline: 2px solid var(--accent-ice);
     outline-offset: 2px;
 }
 
@@ -218,6 +275,70 @@ body {
             0 2px 10px rgba(2, 3, 8, 0.96),
             0 0 12px rgba(125, 211, 252, var(--glyph-depth-glow));
     translate: 0 var(--glyph-depth-shift);
+}
+
+/* Барабан двигает только знак внутри окна; скрытая мера сохраняет ширину текста. */
+.glyph-reel-cell {
+    position: relative;
+    display: inline;
+}
+
+.glyph-reel-measure {
+    visibility: hidden;
+}
+
+.glyph-reel-window {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 1.15em);
+    height: max(1.3em, 16px);
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    pointer-events: none;
+    background: radial-gradient(ellipse, rgba(2, 5, 14, 0.65), transparent 78%);
+}
+
+.glyph-reel-track {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+}
+
+.glyph-reel-symbol {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    line-height: 1;
+    white-space: pre;
+    font-family: var(--font-mono), monospace;
+    font-size: max(1em, 13px);
+    color: var(--accent-pearl);
+    text-shadow: 0 0 7px rgba(125, 211, 252, 0.8), 0 2px 4px rgba(2, 3, 8, 0.95);
+}
+
+.glyph-reel-static {
+    display: inline;
+}
+
+/* Объём кнопок управляется общим кадром; фокус и наведение выравнивают грань. */
+:root .phase-pill[data-button-motion="1"],
+:root .btn-cyber[data-button-motion="1"] {
+    transform: perspective(520px) rotateX(var(--button-rotate-x)) rotateY(var(--button-rotate-y));
+    transform-origin: center;
+    backface-visibility: hidden;
+    will-change: transform;
+    background-image: linear-gradient(135deg, rgba(186, 230, 253, 0.11), transparent 58%, rgba(2, 3, 8, 0.25));
+    box-shadow:
+            inset 0 1px 0 rgba(186, 230, 253, 0.18),
+            inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+            0 4px 10px rgba(0, 0, 0, 0.48);
 }
 
 .hud-top-bar {
@@ -610,7 +731,7 @@ body {
     width: min(820px, calc(100vw - 1.5rem));
     max-height: calc(100dvh - 5.5rem);
     overflow-y: auto;
-    padding: 1.75rem 2.2rem;
+    padding: 1.1rem 2.2rem;
     border-radius: 36px;
     background:
             radial-gradient(
@@ -637,7 +758,7 @@ body {
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 0.72rem;
+    gap: 0.58rem;
     transform-origin: center center;
     will-change: transform, opacity;
     user-select: text;
@@ -692,10 +813,19 @@ body {
 }
 
 .finale-line-quantum-stream {
+    /* Постоянные ячейки не дают разным начертаниям менять высоту визитки. */
+    --quantum-columns: 25;
+    --quantum-compact-columns: 13;
+    display: grid;
+    grid-template-columns: repeat(var(--quantum-columns), minmax(0, 1fr));
+    grid-auto-rows: 1.9em;
+    column-gap: 0.04em;
+    width: 100%;
     font-family: var(--font-mono), monospace;
     font-size: clamp(0.84rem, 1.8vw, 1.16rem);
     font-weight: 600;
-    letter-spacing: 0.09em;
+    letter-spacing: 0;
+    line-height: 1.65;
     color: #e2e8f0;
     padding: 0.12rem 0;
     background: transparent;
@@ -706,7 +836,17 @@ body {
             0 0 16px rgba(125, 211, 252, 0.58),
             0 3px 14px rgba(2, 3, 8, 0.99);
     max-width: 100%;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+}
+
+.finale-quantum-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 1.9em;
+    white-space: nowrap;
+    line-height: 1.65;
 }
 
 .finale-line-stack {
@@ -805,7 +945,7 @@ body {
 
 .timeline-progress-track {
     width: 100%;
-    height: 2.5px;
+    height: 3px;
     background: rgba(125, 211, 252, 0.14);
     border-radius: 99px;
     overflow: hidden;
@@ -903,6 +1043,32 @@ body {
 .btn-github-profile {
     border-color: rgba(56, 189, 248, 0.38);
     color: var(--accent-ice);
+}
+
+/* Верхний блок оставляет центральную полосу поднятой визитке на средних экранах. */
+@media (min-width: 921px) and (max-width: 1730px) {
+    .brand-card {
+        max-width: clamp(200px, calc(50vw - 435px), 455px);
+    }
+}
+
+@media (min-width: 921px) and (max-width: 1280px) {
+    .brand-card {
+        padding: 0.38rem 0.68rem;
+    }
+
+    .brand-card .phase-codename {
+        font-size: 0.6rem;
+    }
+
+    .brand-card .phase-title {
+        font-size: 0.84rem;
+    }
+
+    .brand-card .phase-subtitle,
+    .brand-card .phase-philosophy {
+        display: none !important;
+    }
 }
 
 /* ============================================================================
@@ -1044,8 +1210,8 @@ body {
     }
 
     .finale-line-quantum-stream {
+        grid-template-columns: repeat(var(--quantum-compact-columns), minmax(0, 1fr));
         font-size: 0.76rem;
-        letter-spacing: 0.05em;
     }
 
     .finale-counter-actions {
