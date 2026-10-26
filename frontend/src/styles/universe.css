@@ -99,14 +99,25 @@
     --button-axis-y: 0;
     --button-axis-z: 0;
     --button-spin-angle: 0deg;
+    --button-shadow-x: 3px;
+    --button-shadow-y: 8px;
+    --button-shadow-blur: 6px;
+    --button-shadow-opacity: 0.52;
+    --button-shadow-scale-x: 1;
+    --button-shadow-scale-y: 0.85;
     --solid-width: 100px;
     --solid-height: 34px;
     --solid-depth: 18px;
     --solid-pad-x: 0.72rem;
     --solid-pad-y: 0.4rem;
-    --hud-compact-scale: 0.65;
-    --solid-rest-scale: 0.68;
-    --solid-read-scale: 1.5;
+    --hud-compact-scale: 0.666667;
+    --solid-rest-scale: 1;
+    --solid-read-scale: 1.4625;
+    --solid-live-scale: var(--solid-rest-scale);
+    --solid-shift-x: 0%;
+    --solid-shift-y: 0%;
+    --solid-shadow-lift: 0px;
+    --solid-shadow-fade: 1;
     --hud-bottom-inset: 4.5rem;
     --hud-top-inset: 3.6rem;
 }
@@ -340,7 +351,7 @@ body {
 }
 
 /* Неподвижная область нажатия содержит замкнутый кубоид из шести непрозрачных граней. */
-/* Масштаб оболочки и тела вместе дают 0.442 прежнего размера; hit area остаётся крупнее тела. */
+/* Исходный размер тела — две трети полного; область нажатия остаётся неподвижной. */
 .brand-card,
 .phase-timeline-dock,
 .controls-dock {
@@ -371,6 +382,33 @@ body {
     pointer-events: none;
 }
 
+/* Отдельная тень каждого тела не применяет filter к preserve-3d и не сплющивает грани. */
+:root [data-button-solid="1"]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    border-radius: 12%;
+    background: radial-gradient(ellipse,
+            #000104 20%, rgba(0, 1, 6, 0.96) 42%, rgba(46, 77, 113, 0.78) 70%, transparent 86%);
+    box-shadow:
+            0 3px 7px rgba(0, 0, 0, 0.94),
+            0 0 16px rgba(73, 124, 181, 0.76);
+    transform: translate(var(--button-shadow-x), var(--button-shadow-y))
+            scale(var(--button-shadow-scale-x), var(--button-shadow-scale-y));
+    transform-origin: center;
+    scale: var(--solid-live-scale);
+    translate: var(--solid-shift-x) var(--solid-shift-y);
+    filter: blur(calc(var(--button-shadow-blur) + var(--solid-shadow-lift)));
+    opacity: calc(var(--button-shadow-opacity) * var(--solid-shadow-fade) * 1.4);
+    pointer-events: none;
+    transition:
+            scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .solid-button-body {
     position: absolute;
     left: 0;
@@ -386,8 +424,8 @@ body {
     filter: none;
     will-change: transform;
     pointer-events: none;
-    scale: var(--solid-rest-scale) var(--solid-rest-scale) var(--solid-rest-scale);
-    translate: 0 0;
+    scale: var(--solid-live-scale) var(--solid-live-scale) var(--solid-live-scale);
+    translate: var(--solid-shift-x) var(--solid-shift-y);
     transition:
             scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
             translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
@@ -484,12 +522,9 @@ body {
 :root [data-button-solid="1"]:hover,
 :root [data-button-solid="1"]:focus-visible {
     z-index: 2;
-}
-
-/* Чтение увеличивает только выбранное тело, не меняя раскладку и собственное вращение соседей. */
-:root [data-button-solid="1"]:hover .solid-button-body,
-:root [data-button-solid="1"]:focus-visible .solid-button-body {
-    scale: var(--solid-read-scale) var(--solid-read-scale) var(--solid-read-scale);
+    --solid-live-scale: var(--solid-read-scale);
+    --solid-shadow-lift: 3px;
+    --solid-shadow-fade: 0.82;
 }
 
 :root .phase-pill[data-button-solid="1"],
@@ -497,27 +532,30 @@ body {
     min-height: 38px;
 }
 
-:root .phase-timeline-dock [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body,
-:root .controls-dock [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body {
-    translate: 0 -25%;
+/* Тело и его тень вместе освобождают края окна при чтении; hit area остаётся на месте. */
+:root .phase-timeline-dock [data-button-solid="1"]:is(:hover, :focus-visible),
+:root .controls-dock [data-button-solid="1"]:is(:hover, :focus-visible) {
+    --solid-shift-y: -25%;
 }
 
-:root .phase-buttons-row > :first-child:is(:hover, :focus-visible) .solid-button-body,
-:root .controls-dock > :first-child:is(:hover, :focus-visible) .solid-button-body {
-    translate: 25% -25%;
+:root .phase-buttons-row > :first-child:is(:hover, :focus-visible),
+:root .controls-dock > :first-child:is(:hover, :focus-visible) {
+    --solid-shift-x: 25%;
 }
 
-:root .phase-buttons-row > :last-child:is(:hover, :focus-visible) .solid-button-body,
-:root .controls-dock > :last-child:is(:hover, :focus-visible) .solid-button-body {
-    translate: -25% -25%;
+:root .phase-buttons-row > :last-child:is(:hover, :focus-visible),
+:root .controls-dock > :last-child:is(:hover, :focus-visible) {
+    --solid-shift-x: -25%;
 }
 
-:root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body {
-    translate: 25% 25%;
+:root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) {
+    --solid-shift-x: 25%;
+    --solid-shift-y: 25%;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .solid-button-body {
+    .solid-button-body,
+    :root [data-button-solid="1"]::before {
         transition: none;
     }
 }
@@ -1282,7 +1320,17 @@ body {
         padding:
                 calc(0.4rem + env(safe-area-inset-top, 0px))
                 0.45rem
-                calc(0.5rem + env(safe-area-inset-bottom, 0px));
+                calc(1rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .hud-top-bar {
+        justify-content: center;
+    }
+
+    .brand-card,
+    .phase-timeline-dock,
+    .controls-dock {
+        margin-inline: auto;
     }
 
     .brand-card {
@@ -1297,6 +1345,10 @@ body {
         --solid-pad-y: 0.12rem;
         padding: 0.12rem 0.3rem;
         margin-bottom: 0.32rem;
+    }
+
+    :root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) {
+        --solid-shift-x: 0%;
     }
 
     .phase-codename {
@@ -1345,7 +1397,7 @@ body {
 
     .hud-bottom-bar {
         flex-direction: column;
-        align-items: stretch;
+        align-items: center;
         gap: 0.32rem;
         width: 100%;
     }
@@ -1397,14 +1449,14 @@ body {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         width: calc(100vw - 0.9rem);
-        align-self: flex-end;
+        align-self: center;
         padding: 0.32rem 0.42rem;
         justify-content: center;
         gap: 0.24rem;
     }
 
-    :root .controls-dock > :nth-child(4n):is(:hover, :focus-visible) .solid-button-body {
-        translate: -25% -25%;
+    :root .controls-dock > :nth-child(4n):is(:hover, :focus-visible) {
+        --solid-shift-x: -25%;
     }
 
     .btn-cyber {
@@ -1461,5 +1513,47 @@ body {
         text-align: center;
         font-size: 0.62rem;
         padding: 0.38rem 0.65rem;
+    }
+}
+
+/* Телефон: нижние плашки занимают ширину окна с безопасными полями, верхняя остаётся компактной. */
+@media (max-width: 600px) {
+    .hud-overlay {
+        padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .hud-bottom-bar {
+        gap: 1rem;
+    }
+
+    .phase-timeline-dock,
+    .controls-dock {
+        width: calc((100vw - 0.9rem) / var(--hud-compact-scale));
+        max-width: none;
+    }
+
+    .phase-buttons-row {
+        gap: 0.55rem;
+    }
+
+    .phase-pill {
+        font-size: clamp(0.7rem, 2.8vw, 0.88rem);
+    }
+
+    .phase-number {
+        font-size: 0.78rem;
+    }
+
+    .controls-dock {
+        column-gap: 0.6rem;
+        row-gap: 2.25rem;
+    }
+
+    .btn-cyber {
+        font-size: clamp(0.78rem, 2.8vw, 0.92rem);
+    }
+
+    :root .controls-dock > :nth-child(4n + 1):is(:hover, :focus-visible) {
+        --solid-shift-x: 25%;
     }
 }

@@ -1,8 +1,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/buttonMotion.test.ts
-// НАЗНАЧЕНИЕ: Проверить полные обороты 3D-тел, выбор читаемой грани и освобождение.
+// НАЗНАЧЕНИЕ: Проверить обороты 3D-тел, независимые тени, читаемую грань и освобождение.
 // РАЗДЕЛЫ: 1. Минимальный host/кадр; 2. Обороты; 3. Взаимодействие и lifecycle.
-// ФУНКЦИИ: makeHarness, spin, axis, isFront, styleSnapshot, runButtonMotionChecks.
+// ФУНКЦИИ: makeHarness, spin, axis, isFront, styleSnapshot, shadowSnapshot, runButtonMotionChecks.
 // ============================================================================
 import { ButtonMotionController } from '../core/buttonMotion';
 import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
@@ -15,6 +15,7 @@ class MotionButton extends EventTarget {
     public values = new Map<string, string>();
     public priorities = new Map<string, string>();
     public writes = 0;
+    public shadowWrites = 0;
     // НАЧАЛО ФУНКЦИИ matches
     public matches(selector: string): boolean { return selector === ':focus-visible' && this.focusVisible; }
     // КОНЕЦ ФУНКЦИИ matches
@@ -28,6 +29,7 @@ class MotionButton extends EventTarget {
         // НАЧАЛО ФУНКЦИИ setProperty
         setProperty: (name: string, value: string, priority = ''): void => {
             this.writes++; this.values.set(name, value);
+            if (name.startsWith('--button-shadow-')) this.shadowWrites++;
             if (priority) this.priorities.set(name, priority);
             else this.priorities.delete(name);
         },
@@ -55,6 +57,8 @@ function makeHarness(count = 4, statusIndices: readonly number[] = []) {
         buttons[2].values.set('--button-axis-x', '0.2');
         buttons[2].priorities.set('--button-axis-x', 'important');
         buttons[2].values.set('--button-spin-angle', '37deg');
+        buttons[2].values.set('--button-shadow-y', '3px');
+        buttons[2].priorities.set('--button-shadow-y', 'important');
         buttons[2].dataset.buttonMotion = 'previous';
     }
     const binding = controller.mount(buttons as unknown as HTMLElement[]);
@@ -85,6 +89,11 @@ function isFront(button: MotionButton): boolean { return Math.abs(spin(button) -
 // НАЧАЛО ФУНКЦИИ styleSnapshot
 function styleSnapshot(button: MotionButton): string { return JSON.stringify([...button.values]); }
 // КОНЕЦ ФУНКЦИИ styleSnapshot
+// НАЧАЛО ФУНКЦИИ shadowSnapshot
+function shadowSnapshot(button: MotionButton): string {
+    return JSON.stringify([...button.values].filter(([name]) => name.startsWith('--button-shadow-')));
+}
+// КОНЕЦ ФУНКЦИИ shadowSnapshot
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО ФУНКЦИИ runButtonMotionChecks
@@ -95,7 +104,7 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     const statusAxis = axis(h.buttons[3]);
     check(h.shared.subscriptions === 1 && h.binding.listenerCount === 20 &&
         h.buttons.every((button) => Math.abs(Math.hypot(...axis(button)) - 1) < 0.000002 &&
-            button.values.size === 4 && !button.values.has('transform') && button.textContent === 'CANONICAL BUTTON') &&
+            button.values.size === 10 && !button.values.has('transform') && button.textContent === 'CANONICAL BUTTON') &&
         axis(h.buttons[0])[0] > 0.99 && axis(h.buttons[1])[1] > 0.99 &&
         statusAxis[0] > 0.9998 && Math.abs(statusAxis[1]) < 0.016 && Math.abs(statusAxis[2]) < 0.006 &&
         spin(h.buttons[0]) > 0 && spin(h.buttons[1]) < 0 && spin(h.buttons[2]) < 0 && spin(h.buttons[3]) > 0,
@@ -103,10 +112,33 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
 
     const fixedAxes = h.buttons.map((button) => JSON.stringify(axis(button)));
     const field = makeHarness(17);
+    const frontShadows = field.buttons.map(shadowSnapshot);
     field.step(240);
     check(new Set(field.buttons.map((button) => Math.abs(spin(button)).toFixed(4))).size === 17,
         'All seventeen control bodies have distinct orbital speeds instead of repeating synchronized groups');
+    field.step(120);
+    check(new Set(field.buttons.map(shadowSnapshot)).size === 17 &&
+        field.buttons.every((button, index) => shadowSnapshot(button) !== frontShadows[index] &&
+            [...button.values].filter(([name]) => name.startsWith('--button-shadow-'))
+                .every(([, value]) => Number.isFinite(Number.parseFloat(value)))) &&
+        field.buttons.some((button) => Number.parseFloat(button.values.get('--button-shadow-scale-x')!) < 0.8) &&
+        field.buttons.some((button) => Number.parseFloat(button.values.get('--button-shadow-scale-y')!) < 0.8),
+        'Each rotating body casts its own finite orientation-dependent shadow; horizontal and vertical silhouettes narrow independently instead of sharing one shadow');
     field.binding.dispose();
+
+    const shadowBudget = makeHarness(1);
+    const startingShadowWrites = shadowBudget.buttons[0].shadowWrites;
+    const startingAngle = spin(shadowBudget.buttons[0]);
+    shadowBudget.step(120, { frameDtSec: 1 / 120 });
+    const activeShadowWrites = shadowBudget.buttons[0].shadowWrites - startingShadowWrites;
+    const stableShadow = shadowSnapshot(shadowBudget.buttons[0]);
+    const stableWrites = shadowBudget.buttons[0].writes;
+    shadowBudget.step(30, { frameDtSec: 0 });
+    check(activeShadowWrites > 12 && activeShadowWrites <= 72 && spin(shadowBudget.buttons[0]) > startingAngle &&
+        shadowSnapshot(shadowBudget.buttons[0]) === stableShadow && shadowBudget.buttons[0].writes === stableWrites &&
+        shadowBudget.shared.subscriptions === 1,
+        'Shadow painting stays within a twelve-update budget during 120 shared frames per second, while zero-dt frames freeze it without a second scheduler');
+    shadowBudget.binding.dispose();
 
     const activated = makeHarness(2);
     activated.step(200);
@@ -174,11 +206,14 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     const firstHoverStep = Math.abs(spin(h.buttons[0]) - beforeHover);
     h.step(13);
     const heldWrites = h.buttons[0].writes;
+    const heldShadow = shadowSnapshot(h.buttons[0]);
+    const movingPeerShadow = shadowSnapshot(h.buttons[1]);
     h.step(24);
     check(firstHoverStep < Math.abs(nearestFront - beforeHover) * 0.1 &&
         spin(h.buttons[0]) === nearestFront && isFront(h.buttons[0]) &&
-        h.buttons[0].writes === heldWrites && spin(h.buttons[1]) < movingPeer,
-        'Hover smoothly aligns only the selected body to its nearest 360-degree front and then holds it without DOM writes while other bodies keep turning');
+        h.buttons[0].writes === heldWrites && shadowSnapshot(h.buttons[0]) === heldShadow &&
+        shadowSnapshot(h.buttons[1]) !== movingPeerShadow && spin(h.buttons[1]) < movingPeer,
+        'Hover aligns only the selected body and its shadow to the nearest front, then holds both without DOM writes while peers and their shadows keep turning');
 
     h.buttons[0].dispatchEvent(new Event('pointerleave'));
     const beforeRelease = spin(h.buttons[0]);
@@ -257,12 +292,13 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     h.buttons[1].dispatchEvent(new Event('focus'));
     check(h.shared.releases === 1 && h.shared.listener === null &&
         h.buttons[0].dataset.buttonMotion === undefined && h.buttons[0].values.size === 0 &&
-        h.buttons[2].dataset.buttonMotion === 'previous' && h.buttons[2].values.size === 2 &&
+        h.buttons[2].dataset.buttonMotion === 'previous' && h.buttons[2].values.size === 3 &&
         h.buttons[2].values.get('--button-axis-x') === '0.2' && h.buttons[2].priorities.get('--button-axis-x') === 'important' &&
         h.buttons[2].values.get('--button-spin-angle') === '37deg' &&
+        h.buttons[2].values.get('--button-shadow-y') === '3px' && h.buttons[2].priorities.get('--button-shadow-y') === 'important' &&
         h.buttons[3].dataset.buttonSolidKind === 'status' &&
         h.buttons.every((button, index) => button.writes === disposedWrites[index]),
-        'Disposal removes handlers and the shared subscription once, restores previous axis/angle priorities and marker, and preserves geometry-owned data');
+        'Disposal removes handlers and the shared subscription once, restores previous axis/angle/shadow priorities and marker, and preserves geometry-owned data');
     reduced.binding.dispose();
 
     const remounted = makeHarness(1);
