@@ -96,6 +96,7 @@ import { calmGlyphHover } from '../core/glyphHover';
 import { GLYPH_FONT_STACK } from '../core/glyphGrammar';
 import { getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP } from '../core/finaleComposition';
 import { buttonMotionController } from '../core/buttonMotion';
+import { buttonSolidManager, setSolidButtonLabel } from '../core/buttonSolid';
 import { DeterministicPRNG } from '../core/prng';
 import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
 import { mountLayer3Topology } from '../layers/Layer3_Topology';
@@ -2242,6 +2243,7 @@ export function getUniverseRenderer(): UniverseRenderer | null {
  * Передаёт канонический текст общему контроллеру с сохранением доступного имени.
  */
 function setCanonicalElementText(el: HTMLElement | null, nextText: string): void {
+    if (!el || setSolidButtonLabel(el, nextText)) return;
     calmGlyphHover.setCanonical(el, nextText);
 }
 // --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
@@ -2436,14 +2438,17 @@ export function bootstrapUniverseV2(): void {
         ledgerWithPage.registerPageDisposable(unsubHud);
     }
 
-    // 3. Вращаем цельные элементы меню, сохраняя надписи и семантику каждого узла.
-    const buttonMotion = buttonMotionController.mount(Array.from(document.querySelectorAll<HTMLElement>(
+    // 3. Закрытые шестигранные тела вращаются внутри неподвижных областей нажатия.
+    const cornerControls = Array.from(document.querySelectorAll<HTMLElement>(
         '.brand-card .phase-codename, .brand-card .phase-title, .brand-card .phase-subtitle, .brand-card .phase-philosophy, ' +
         '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber'
-    )));
+    ));
+    const buttonSolids = buttonSolidManager.mount(cornerControls);
+    const buttonMotion = buttonMotionController.mount(cornerControls);
     resourceLedger.trackPageLifetimeAllocation('listeners', buttonMotion.listenerCount);
     resourceLedger.registerPageDisposable(() => {
         buttonMotion.dispose();
+        buttonSolids.dispose();
         resourceLedger.trackRelease('listeners', buttonMotion.listenerCount);
     });
 

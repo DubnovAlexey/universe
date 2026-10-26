@@ -45,6 +45,7 @@ import { smoothAudioEnvelope } from '../utils/audioSync';
 import { runVisualSignalChecks } from './visualSignals.test';
 import { runFinaleCompositionChecks } from './finaleComposition.test';
 import { runButtonMotionChecks } from './buttonMotion.test';
+import { runButtonSolidChecks } from './buttonSolid.test';
 import { runWaterfallLifecycleChecks } from './waterfallLifecycle.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
@@ -674,6 +675,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     runWaterfallLifecycleChecks(check);
     runFinaleCompositionChecks(check);
     runButtonMotionChecks(check);
+    runButtonSolidChecks(check);
 
     return {
         passed: passedChecks === totalChecks,

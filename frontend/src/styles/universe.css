@@ -95,15 +95,18 @@
     /* Базовая глубина глифов; активная анимация задаёт локальные inline-значения. */
     --glyph-depth-glow: 0.2;
     --glyph-depth-shift: 0px;
-    --button-rotate-x: 0deg;
-    --button-rotate-y: 0deg;
-    --button-rotate-z: 0deg;
-    --button-depth: 0px;
-    --button-light-x: 50%;
-    --button-light-y: 28%;
-    --button-shadow-x: 0px;
-    --button-shadow-y: 4px;
-    --button-shade: 0.18;
+    --button-axis-x: 1;
+    --button-axis-y: 0;
+    --button-axis-z: 0;
+    --button-spin-angle: 0deg;
+    --solid-width: 100px;
+    --solid-height: 34px;
+    --solid-depth: 18px;
+    --solid-pad-x: 0.72rem;
+    --solid-pad-y: 0.4rem;
+    --hud-compact-scale: 0.65;
+    --solid-rest-scale: 0.68;
+    --solid-read-scale: 1.5;
     --hud-bottom-inset: 4.5rem;
     --hud-top-inset: 3.6rem;
 }
@@ -336,76 +339,198 @@ body {
     display: inline;
 }
 
-/* Цельная лицевая поверхность, задняя грань и толщина движутся вместе с надписью. */
-:root .phase-pill[data-button-motion="1"],
-:root .btn-cyber[data-button-motion="1"],
-:root .brand-card [data-button-motion="1"] {
-    position: relative;
-    z-index: 0;
-    transform: perspective(460px) translateZ(var(--button-depth))
-            rotateY(var(--button-rotate-y)) rotateX(var(--button-rotate-x)) rotateZ(var(--button-rotate-z));
-    transform-style: preserve-3d;
-    transform-origin: center;
-    backface-visibility: hidden;
-    overflow: visible;
-    will-change: transform;
-    background-image:
-            radial-gradient(ellipse at var(--button-light-x) var(--button-light-y),
-                    rgba(186, 230, 253, 0.26), transparent 68%),
-            linear-gradient(165deg, rgba(22, 48, 70, 0.72), rgba(3, 10, 23, 0.94));
-    border-color: rgba(148, 206, 237, 0.38);
-    box-shadow:
-            inset 0 1px 0 rgba(224, 242, 254, 0.54),
-            inset 0 -2px 0 rgba(0, 0, 0, 0.7),
-            0 1px 0 #24445d,
-            0 3px 0 #10253b,
-            0 5px 0 #030914,
-            var(--button-shadow-x) calc(var(--button-shadow-y) + 5px) 14px rgba(0, 0, 0, 0.66);
+/* Неподвижная область нажатия содержит замкнутый кубоид из шести непрозрачных граней. */
+/* Масштаб оболочки и тела вместе дают 0.442 прежнего размера; hit area остаётся крупнее тела. */
+.brand-card,
+.phase-timeline-dock,
+.controls-dock {
+    zoom: var(--hud-compact-scale);
 }
 
-:root [data-button-motion="1"]::before {
-    content: '';
+:root .phase-pill[data-button-solid="1"],
+:root .btn-cyber[data-button-solid="1"],
+:root .brand-card [data-button-solid="1"] {
+    position: relative;
+    z-index: 0;
+    perspective: 800px;
+    perspective-origin: center;
+    transform: none;
+    backface-visibility: visible;
+    overflow: visible;
+    will-change: auto;
+    background: transparent;
+    border: 0;
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+.solid-button-measurer {
+    display: block;
+    min-width: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.solid-button-body {
     position: absolute;
-    z-index: -1;
-    inset: -1px;
-    border-radius: inherit;
-    border: 1px solid rgba(117, 164, 198, 0.46);
-    background: linear-gradient(170deg, #23425b, rgba(2, 7, 17, calc(0.65 + var(--button-shade) * 0.3)));
-    transform: translate3d(calc(var(--button-shadow-x) * 0.3), calc(var(--button-shadow-y) * 0.3), -6px);
+    left: 0;
+    top: 0;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    transform: rotate3d(var(--button-axis-x), var(--button-axis-y), var(--button-axis-z), var(--button-spin-angle));
+    transform-origin: center center;
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+    overflow: visible;
+    opacity: 1;
+    filter: none;
+    will-change: transform;
+    pointer-events: none;
+    scale: var(--solid-rest-scale) var(--solid-rest-scale) var(--solid-rest-scale);
+    translate: 0 0;
+    transition:
+            scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.solid-button-face {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    border: 1px solid rgba(166, 206, 234, 0.55);
+    border-radius: 0;
+    background-color: #10243a;
     backface-visibility: hidden;
     pointer-events: none;
 }
 
-/* Статусные строки сохраняют семантику заголовка/текста внутри своего меню. */
-:root .brand-card [data-button-motion="1"] {
-    /* Широкие строки не пересекают соседей при сочетании двух осей поворота. */
-    transform: perspective(900px) translateZ(var(--button-depth))
-            rotateY(var(--button-rotate-y)) rotateX(var(--button-rotate-x))
-            rotateZ(calc(var(--button-rotate-z) * 0.35));
-    padding: 0.24rem 0.45rem;
-    margin-bottom: 0.5rem;
-    border: 1px solid rgba(125, 211, 252, 0.3);
-    border-radius: 8px 12px 9px 11px;
+.solid-button-face--front {
+    transform: translate(-50%, -50%) translateZ(calc(var(--solid-depth) / 2));
+    background-image: linear-gradient(165deg, #28455f, #0b1829 70%);
+    box-shadow: inset 0 1px 0 rgba(224, 242, 254, 0.5), inset 0 -1px 0 #020712;
 }
 
-.brand-card [data-button-motion="1"]:last-child {
+.solid-button-face--back {
+    transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--solid-depth) / 2));
+    background-color: #081524;
+    background-image: repeating-linear-gradient(135deg, transparent 0 7px, rgba(136, 181, 213, 0.12) 7px 8px);
+    box-shadow: inset 0 0 0 3px #0e2438;
+}
+
+.solid-button-face--top,
+.solid-button-face--bottom {
+    height: var(--solid-depth);
+}
+
+.solid-button-face--top {
+    transform: translate(-50%, -50%) rotateX(90deg) translateZ(calc(var(--solid-height) / 2));
+    background-color: #426887;
+}
+
+.solid-button-face--bottom {
+    transform: translate(-50%, -50%) rotateX(-90deg) translateZ(calc(var(--solid-height) / 2));
+    background-color: #030913;
+}
+
+.solid-button-face--left,
+.solid-button-face--right {
+    width: var(--solid-depth);
+}
+
+.solid-button-face--left {
+    transform: translate(-50%, -50%) rotateY(-90deg) translateZ(calc(var(--solid-width) / 2));
+    background-color: #142b40;
+}
+
+.solid-button-face--right {
+    transform: translate(-50%, -50%) rotateY(90deg) translateZ(calc(var(--solid-width) / 2));
+    background-color: #294b68;
+}
+
+.solid-button-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    padding: calc(var(--solid-pad-y) - 1px) calc(var(--solid-pad-x) - 1px);
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: inherit;
+    pointer-events: none;
+}
+
+/* Широкие информационные тела имеют собственный локальный центр вращения. */
+:root .brand-card [data-button-solid="1"] {
+    --solid-pad-x: 0.45rem;
+    --solid-pad-y: 0.24rem;
+    perspective: 1200px;
+    padding: 0.24rem 0.45rem;
+    margin-bottom: 0.5rem;
+}
+
+.brand-card .solid-button-label {
+    justify-content: flex-start;
+}
+
+.brand-card [data-button-solid="1"]:last-child {
     margin-bottom: 0;
 }
 
-:root [data-button-motion="1"]:hover,
-:root [data-button-motion="1"]:focus-within {
+:root [data-button-solid="1"]:hover,
+:root [data-button-solid="1"]:focus-visible {
     z-index: 2;
 }
 
-:root .phase-pill.active[data-button-motion="1"],
-:root .btn-cyber.active-toggle[data-button-motion="1"] {
+/* Чтение увеличивает только выбранное тело, не меняя раскладку и собственное вращение соседей. */
+:root [data-button-solid="1"]:hover .solid-button-body,
+:root [data-button-solid="1"]:focus-visible .solid-button-body {
+    scale: var(--solid-read-scale) var(--solid-read-scale) var(--solid-read-scale);
+}
+
+:root .phase-pill[data-button-solid="1"],
+:root .btn-cyber[data-button-solid="1"] {
+    min-height: 38px;
+}
+
+:root .phase-timeline-dock [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body,
+:root .controls-dock [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body {
+    translate: 0 -25%;
+}
+
+:root .phase-buttons-row > :first-child:is(:hover, :focus-visible) .solid-button-body,
+:root .controls-dock > :first-child:is(:hover, :focus-visible) .solid-button-body {
+    translate: 25% -25%;
+}
+
+:root .phase-buttons-row > :last-child:is(:hover, :focus-visible) .solid-button-body,
+:root .controls-dock > :last-child:is(:hover, :focus-visible) .solid-button-body {
+    translate: -25% -25%;
+}
+
+:root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) .solid-button-body {
+    translate: 25% 25%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .solid-button-body {
+        transition: none;
+    }
+}
+
+:root .phase-pill.active[data-button-solid="1"] .solid-button-face,
+:root .btn-cyber.active-toggle[data-button-solid="1"] .solid-button-face {
     border-color: var(--accent-ice);
 }
 
-:root .phase-pill[data-button-motion="1"]:hover,
-:root .btn-cyber[data-button-motion="1"]:hover,
-:root .brand-card [data-button-motion="1"]:hover {
+:root [data-button-solid="1"]:hover .solid-button-face--front,
+:root [data-button-solid="1"]:focus-visible .solid-button-face--front {
     border-color: var(--accent-ice);
+    background-image: linear-gradient(165deg, #385c79, #10243a 70%);
 }
 
 .hud-top-bar {
@@ -1161,13 +1286,15 @@ body {
     }
 
     .brand-card {
-        width: 100%;
-        max-width: 100%;
+        width: calc(100vw - 0.9rem);
+        max-width: calc(100vw - 0.9rem);
         padding: 0.38rem 0.68rem;
         border-radius: 14px 20px 16px 14px;
     }
 
-    :root .brand-card [data-button-motion="1"] {
+    :root .brand-card [data-button-solid="1"] {
+        --solid-pad-x: 0.3rem;
+        --solid-pad-y: 0.12rem;
         padding: 0.12rem 0.3rem;
         margin-bottom: 0.32rem;
     }
@@ -1224,7 +1351,7 @@ body {
     }
 
     .phase-timeline-dock {
-        width: 100%;
+        width: calc(100vw - 0.9rem);
         padding: 0.3rem 0.36rem;
         gap: 0.22rem;
     }
@@ -1239,6 +1366,8 @@ body {
     }
 
     .phase-pill {
+        --solid-pad-x: 0.14rem;
+        --solid-pad-y: 0.26rem;
         width: 100%;
         min-width: 0;
         padding: 0.26rem 0.14rem;
@@ -1255,6 +1384,10 @@ body {
         display: block;
     }
 
+    .phase-pill .solid-button-label {
+        flex-direction: column;
+    }
+
     .phase-number {
         font-size: 0.62rem;
         color: var(--accent-ice);
@@ -1263,13 +1396,20 @@ body {
     .controls-dock {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        width: 100%;
+        width: calc(100vw - 0.9rem);
+        align-self: flex-end;
         padding: 0.32rem 0.42rem;
         justify-content: center;
         gap: 0.24rem;
     }
 
+    :root .controls-dock > :nth-child(4n):is(:hover, :focus-visible) .solid-button-body {
+        translate: -25% -25%;
+    }
+
     .btn-cyber {
+        --solid-pad-x: 0.18rem;
+        --solid-pad-y: 0.3rem;
         padding: 0.3rem 0.18rem;
         font-size: clamp(0.58rem, 2.1vw, 0.68rem);
         white-space: normal;
