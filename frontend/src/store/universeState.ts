@@ -14,21 +14,12 @@
 // ============================================================================
 
 
-import { type InspectionLevel, type PhaseId } from '../core/contracts';
+import { type InspectionLevel, type PhaseId, type SingularityAct } from '../core/contracts';
 import { GOLDEN_SEED } from '../core/prng';
 import { SceneBufferSoA } from '../core/sceneBuffer';
 import { qualityGovernor, QualityGovernor } from '../core/qualityGovernor';
 
-export type { PhaseId, InspectionLevel };
-
-export type SingularityAct =
-    | 'NONE'
-    | 'INACTIVE'
-    | 'ACT_A_ACCRETION'
-    | 'ACT_B_LOGIC'
-    | 'ACT_C_ZERO_SILENCE'
-    | 'ACT_D_GITHUB_CARD'
-    | 'RESTART_COLLAPSE';
+export type { PhaseId, InspectionLevel, SingularityAct };
 
 export type EngineBackendKind =
     | 'WEBGPU'
@@ -68,13 +59,6 @@ export interface PhaseMetadata {
     baseEntropy: number;
     targetParticleCount: number;
     targetZoom: number;
-}
-
-export interface ArchitectLogEvent {
-    id: string;
-    timestamp: string;
-    type: string;
-    message: string;
 }
 
 export interface UniverseTelemetryState {
@@ -139,7 +123,6 @@ export interface UniverseState {
     layers: UniverseLayersVisibility;
     telemetry: UniverseTelemetryState;
     terminalLogs: ReadonlyArray<string>;
-    architectEvents: ReadonlyArray<ArchitectLogEvent>;
     lastRendererError: string | null;
 }
 
@@ -335,14 +318,6 @@ class UniverseStore {
                 silenceRmsDb: -60.0,
             },
             terminalLogs: [bootLine],
-            architectEvents: [
-                {
-                    id: 'boot_0',
-                    timestamp: bootTime,
-                    type: 'system:boot',
-                    message: `Инициализация UNIVERSE v2.5 (seed=${urlParams.seed}) [ts/universeState.ts]`,
-                },
-            ],
             lastRendererError: null,
         };
 
@@ -684,17 +659,7 @@ class UniverseStore {
     // --- НАЧАЛО ФУНКЦИИ appendLogEvent (UniverseStore) ---
     private appendLogEvent(type: string, message: string): void {
         const ts = this.formatTimestamp();
-        const nextEvent: ArchitectLogEvent = {
-            id: `evt_${Date.now()}_${this.state?.telemetry?.tick ?? 0}`,
-            timestamp: ts,
-            type,
-            message,
-        };
         const formattedLine = `[${ts}] [${type.toUpperCase()}] ${message}`;
-        this.state.architectEvents = [
-            nextEvent,
-            ...this.state.architectEvents.slice(0, 18),
-        ];
         this.state.terminalLogs = [
             formattedLine,
             ...this.state.terminalLogs.slice(0, 24),

@@ -109,6 +109,9 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       ├── utils/audioSync.ts             # AudioSyncEngine (Web Audio API, iOS audioSession, снятие слушателей с 1-го тапа)
     │       └── tests/
     │           ├── parityAndSeams.test.ts     # runUniverseVerificationSuite() — Регрессионные проверки ядра и DOM lifecycle
+    │           ├── buttonMotion.test.ts       # Полные обороты, индивидуальные тени, взаимодействия и очистка
+    │           ├── buttonSolid.test.ts        # Шесть граней, доступные подписи, размеры и восстановление DOM
+    │           ├── finaleComposition.test.ts # Размещение визитки, зазор над ореолом и плавный подъём
     │           ├── visualSignals.test.ts     # Кадровый шаг, Unicode/кириллица, доступность и прокрутка
     │           ├── waterfallLifecycle.test.ts # Кеш DOM, shared frame, visibility и lifecycle каскадов
     │           └── fixtures/nexusParity24.json # Общие входы и полный результат TS/Python, 40 рёбер

@@ -2494,9 +2494,9 @@ export function bootstrapUniverseV2(): void {
         universeStore.toggleLayer('layer5_truthXRayMode');
     });
 
-    // 6. Слушатели окна, указателя мыши/касаний и клавиатуры с учётом в ResourceLedger
+    // 6. Постоянные слушатели страницы сохраняются между циклами и входят в baseline.
     window.addEventListener('resize', renderer.handleResize, { passive: true });
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     window.addEventListener(
         'pointermove',
@@ -2505,7 +2505,7 @@ export function bootstrapUniverseV2(): void {
         },
         { passive: true }
     );
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     window.addEventListener(
         'pointerdown',
@@ -2522,7 +2522,7 @@ export function bootstrapUniverseV2(): void {
         },
         { passive: true }
     );
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     window.addEventListener(
         'pointerup',
@@ -2531,7 +2531,7 @@ export function bootstrapUniverseV2(): void {
         },
         { passive: true }
     );
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     window.addEventListener(
         'pointerleave',
@@ -2540,7 +2540,7 @@ export function bootstrapUniverseV2(): void {
         },
         { passive: true }
     );
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     // --- НАЧАЛО ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
     const handleVisibilityChange = (): void => {
@@ -2580,7 +2580,7 @@ export function bootstrapUniverseV2(): void {
             universeStore.triggerUniverseRestart();
         }
     });
-    resourceLedger.trackAllocation('listeners', 1);
+    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     renderer.start();
 }

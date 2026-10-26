@@ -3,7 +3,8 @@
 // ФАЙЛ: frontend/src/tests/parityAndSeams.test.ts
 // НАЗНАЧЕНИЕ: Автоматический набор регрессионных проверок паритета, бинарного
 //             протокола, шага времени Velocity Verlet, графа NEXUS (TS == Python),
-//             геометрии линзы, таймлайна 5-й фазы, скорости одометра и ресурсов.
+//             геометрии линзы, таймлайна 5-й фазы, скорости одометра, ресурсов
+//             и совместимости канонических типов с журналом событий хранилища.
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
@@ -23,7 +24,7 @@ import {
     SCENE_SCHEMA_VERSION,
     SceneBufferSoA,
 } from '../core/sceneBuffer';
-import { EntityKindCode } from '../core/contracts';
+import { EntityKindCode, type SingularityAct as CanonicalSingularityAct } from '../core/contracts';
 import { resourceLedger } from '../core/resourceLedger';
 import { WasmPhysicsBridge, wasmPhysicsBridge } from '../bridge/wasmBridge';
 import {
@@ -38,7 +39,7 @@ import {
     cipherOdometerEngine,
     type OdometerGlyphCellState,
 } from '../bridge/cipherOdometerEngine';
-import { universeStore } from '../store/universeState';
+import { universeStore, type SingularityAct as StoreSingularityAct } from '../store/universeState';
 import { stressStore, type StressStateData } from '../store/stressState';
 import { VoidPhaseSimulation, type TopologyEdge } from '../phases/01_void';
 import { smoothAudioEnvelope } from '../utils/audioSync';
@@ -81,6 +82,30 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         }
     };
     // --- КОНЕЦ ФУНКЦИИ check (runUniverseVerificationSuite) ---
+
+    // ------------------------------------------------------------------------
+    // КАНОНИЧЕСКИЙ ПОДАКТ СИНГУЛЯРНОСТИ И ОГРАНИЧЕННЫЙ ЖУРНАЛ ТЕРМИНАЛА
+    // ------------------------------------------------------------------------
+    const inactiveAct: CanonicalSingularityAct = 'INACTIVE';
+    const storeInactiveAct: StoreSingularityAct = inactiveAct;
+    const canonicalStoreAct: CanonicalSingularityAct = universeStore.getState().singularityAct;
+    check(
+        canonicalStoreAct === storeInactiveAct,
+        'Initial store state uses canonical INACTIVE singularity act through its public type re-export'
+    );
+
+    for (let index = 0; index < 30; index++) {
+        universeStore.emitEvent('qa:terminal', `Terminal regression ${index}`);
+    }
+    const terminalLogs = universeStore.getState().terminalLogs;
+    check(
+        terminalLogs.length === 25 &&
+        terminalLogs.every((line, index) =>
+            /^\[\d{2}:\d{2}:\d{2}\] \[QA:TERMINAL\] Terminal regression \d+$/.test(line) &&
+            line.endsWith(`Terminal regression ${29 - index}`)
+        ),
+        'Terminal log retains the latest 25 events in reverse order with timestamps and uppercase source tags'
+    );
 
     // ------------------------------------------------------------------------
     // ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG И АУДИООГИБАЮЩИХ (TS <-> RUST <-> PYTHON)

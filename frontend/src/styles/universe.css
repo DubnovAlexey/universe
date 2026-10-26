@@ -554,6 +554,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .audio-unlock-banner {
+        animation: none;
+    }
+
     .solid-button-body,
     :root [data-button-solid="1"]::before {
         transition: none;

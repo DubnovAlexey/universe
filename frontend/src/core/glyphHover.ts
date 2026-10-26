@@ -39,6 +39,7 @@ const REEL_HOLD_MS = 120;
 const SLOT_WAVE_MS = 24;
 let metricsContext: CanvasRenderingContext2D | null | undefined;
 const fitCache = new Map<string, number>();
+let fitCacheEpoch = -1;
 
 // НАЧАЛО ФУНКЦИИ ease
 function ease(value: number): number {
@@ -51,12 +52,18 @@ function ease(value: number): number {
 /** Широкий исторический знак вписывается в локальное окно, не растягивая кнопку. */
 function symbolFit(element: HTMLElement, glyph: string): number {
     if (typeof window === 'undefined' || typeof document === 'undefined') return 1;
+    const fontEpoch = getGlyphFontEpoch();
+    if (fontEpoch !== fitCacheEpoch) {
+        // Новые начертания не оставляют в памяти измерения прежнего поколения шрифтов.
+        fitCache.clear();
+        fitCacheEpoch = fontEpoch;
+    }
     const style = window.getComputedStyle(element);
     const fontPx = Number.parseFloat(style.fontSize) || 16;
     const rowWidth = Number.parseFloat(style.width);
     const availableWidth = Number.isFinite(rowWidth) && rowWidth > 0 ? rowWidth : fontPx * 1.15;
     const font = style.fontStyle + ' ' + style.fontWeight + ' ' + fontPx + 'px ' + GLYPH_FONT_STACK;
-    const key = getGlyphFontEpoch() + ':' + font + ':' + availableWidth.toFixed(3) + ':' + glyph;
+    const key = fontEpoch + ':' + font + ':' + availableWidth.toFixed(3) + ':' + glyph;
     const cached = fitCache.get(key);
     if (cached !== undefined) return cached;
     if (metricsContext === undefined) {

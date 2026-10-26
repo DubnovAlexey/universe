@@ -28,6 +28,7 @@ export type PhaseId =
 
 export type SingularityAct =
     | 'NONE'
+    | 'INACTIVE'
     | 'ACT_A_ACCRETION'
     | 'ACT_B_LOGIC'
     | 'ACT_C_ZERO_SILENCE'
