@@ -8,7 +8,8 @@ import { universeStore } from '../store/universeState';
 import { stressStore } from '../store/stressState';
 import { audioSync } from '../utils/audioSync';
 import { createVisualSignals, publishVisualSignals } from '../core/visualSignals';
-import { GLYPH_FAMILIES, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile, invalidateGlyphFontCache, scrambleCanonicalText } from '../core/glyphGrammar';
+import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile,
+    getOrderedGlyphState, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover } from '../core/glyphHover';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
@@ -139,6 +140,19 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     publishVisualSignals(state, audio, stress);
     const mock = new HoverElement();
     const element = mock as unknown as HTMLElement;
+    calmGlyphHover.start(element, 'ORDERED TEXT');
+    const orderedCells = descendants(mock, 'glyph-reel-cell');
+    const startsAtLeft = orderedCells.length === Array.from('ORDERED TEXT').length &&
+        orderedCells[0]?.dataset.glyphState === 'rolling' &&
+        orderedCells.slice(1).every((cell) => cell.dataset.glyphState === 'waiting');
+    for (let frame = 0; frame < 16; frame++) publishVisualSignals(state, audio, stress);
+    const lockedPrefix = orderedCells.filter((cell) => cell.dataset.glyphState === 'locked');
+    const waitsAtRight = orderedCells.at(-1)?.dataset.glyphState === 'waiting';
+    checks.push({ passed: startsAtLeft && lockedPrefix.length > 0 && waitsAtRight &&
+        lockedPrefix.every((cell, index) => cell === orderedCells[index] &&
+            descendants(cell, 'glyph-reel-symbol').map((node) => node.textContent).join('') === Array.from('ORDERED TEXT')[index]),
+        description: 'Ordered hover rolls from the left, locks a real canonical DOM prefix and leaves the unreached suffix blank' });
+    calmGlyphHover.stop(element);
     calmGlyphHover.start(element, '01.VOID');
     const shortCells = descendants(mock, 'glyph-reel-cell');
     const firstTrack = descendants(mock, 'glyph-reel-track')[0];
@@ -150,13 +164,13 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const motionAt100 = firstTrack.styleValues.get('transform') ?? '';
     const positiveMotion = /-([0-9.]+)%/.exec(motionAt50);
     const furtherMotion = /-([0-9.]+)%/.exec(motionAt100);
-    checks.push({ passed: shortCells.length >= 2 && shortCells.length <= 5 &&
-        shortCells.every((cell, index) => !index || Number(cell.dataset.glyphReel) - Number(shortCells[index - 1].dataset.glyphReel) >= 2) &&
+    checks.push({ passed: shortCells.length === Array.from('01.VOID').length &&
+        shortCells.every((cell, index) => Number(cell.dataset.glyphReel) === index) &&
         !!positiveMotion && !!furtherMotion && Number(positiveMotion[1]) > 0 &&
         Number(furtherMotion[1]) > Number(positiveMotion[1]) && Number(furtherMotion[1]) < 100 &&
         firstMeasure.textContent === canonicalMeasure && firstMeasure.styleValues.size === 0 &&
         shortCells.every((cell) => cell.styleValues.size === 0) && mock.getAttribute('aria-label') === '01.VOID',
-        description: 'Short controls contain multiple nonadjacent real reel windows; strips move continuously while canonical glyph measurements and accessible names stay fixed' });
+        description: 'Every position has an ordered reel window; strips move continuously while canonical measurements and accessible names stay fixed' });
     const trackBeforeRestart = descendants(mock, 'glyph-reel-track')[0];
     calmGlyphHover.start(element, '01.VOID', 999);
     publishVisualSignals(state, audio, stress);
@@ -195,17 +209,20 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
 
     publishVisualSignals(state, audio, stress);
     calmGlyphHover.start(element, 'LATEST CANONICAL');
-    for (let frame = 1; frame <= 32; frame++) {
+    const dwellCells = descendants(mock, 'glyph-reel-cell');
+    for (let frame = 1; frame <= 41; frame++) {
         publishVisualSignals({ ...state, telemetry: { ...state.telemetry, simulationTimeSec: frame * 0.05 } }, audio, stress);
     }
-    const canonicalDwell = calmGlyphHover.getVisualText(element) === 'LATEST CANONICAL' && calmGlyphHover.isActive(element);
+    const canonicalDwell = calmGlyphHover.getVisualText(element) === 'LATEST CANONICAL' && calmGlyphHover.isActive(element) &&
+        dwellCells.every((cell, index) => cell.dataset.glyphState === 'locked' &&
+            descendants(cell, 'glyph-reel-symbol').map((node) => node.textContent).join('') === Array.from('LATEST CANONICAL')[index]);
     publishVisualSignals({ ...state, isPaused: true, telemetry: { ...state.telemetry, simulationTimeSec: 1.6 } }, audio, stress);
     const pausedRestored = !calmGlyphHover.isActive(element) && mock.textContent === 'LATEST CANONICAL';
     publishVisualSignals({ ...state, reducedMotion: true }, audio, stress);
     calmGlyphHover.start(element, 'REDUCED MOTION');
     const reducedStatic = !calmGlyphHover.isActive(element) && mock.textContent === 'REDUCED MOTION';
     checks.push({ passed: canonicalDwell && pausedRestored && reducedStatic,
-        description: 'Roll enters a readable canonical dwell; pause and reduced motion stop decorative motion' });
+        description: 'Every reel physically locks its canonical DOM text during dwell; pause and reduced motion stop decorative motion' });
 
     // Скрытие страницы не обязано сопровождаться кадром: очищаем сразу два сеанса.
     publishVisualSignals(state, audio, stress);
@@ -232,7 +249,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         const target = node as unknown as HTMLElement;
         calmGlyphHover.start(target, 'ПЛАВНЫЙ ПЕРЕБОР ТЕКСТА');
         const frames: string[] = [];
-        for (let frame = 1; frame <= 120; frame++) {
+        for (let frame = 1; frame <= 150; frame++) {
             const phase = frame < 8 ? '03_EVOLUTION' : frame < 16 ? '05_SINGULARITY' : frame < 24 ? '01_VOID' : '03_EVOLUTION';
             publishVisualSignals({ ...state, currentPhase: phase, telemetry: { ...state.telemetry, frameTimeMs: 20,
                 simulationTimeSec: jumpTime ? (frame % 2 ? 1000 + frame : -1000 - frame) : frame * 0.02 } }, audio, stress);
@@ -245,8 +262,28 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const continuousFrames = recordHoverAcrossPhaseChanges(false);
     const jumpedFrames = recordHoverAcrossPhaseChanges(true);
     checks.push({ passed: continuousFrames.every((frame, index) => frame === jumpedFrames[index]) &&
-        continuousFrames[10].endsWith('|true') && continuousFrames[119].endsWith('|false'),
+        continuousFrames[10].endsWith('|true') && continuousFrames[149].endsWith('|false'),
         description: 'Hover timing and canonical dwell follow active frame time across forward/backward phase-clock jumps' });
+
+    const unicodeLabel = 'A\u0301 𓂀 👩‍🔬 1️⃣ Ж';
+    const unicodeCells = splitGlyphText(unicodeLabel);
+    checks.push({ passed: unicodeCells.join('') === unicodeLabel && unicodeCells.includes('A\u0301') &&
+        unicodeCells.includes('👩‍🔬') && unicodeCells.includes('1️⃣') &&
+        formatOrderedGlyphText(unicodeLabel, 0, 0, ['∇']).endsWith(GLYPH_WAITING_SPACE) &&
+        formatOrderedGlyphText(unicodeLabel, 1, 0, ['∇']) === unicodeLabel &&
+        [0, 0.1, 0.25, 0.5, 0.75, 1].every((progress) => {
+            const states = unicodeCells.map((_cell, index) => getOrderedGlyphState(index, unicodeCells.length, progress).state);
+            const ranks = states.map((value) => value === 'locked' ? 0 : value === 'rolling' ? 1 : 2);
+            return ranks.every((rank, index) => !index || rank >= ranks[index - 1]);
+        }), description: 'Ordered fronts preserve combining marks, supplementary signs and whole emoji clusters, with one locked/rolling/waiting progression' });
+
+    publishVisualSignals(state, audio, stress);
+    calmGlyphHover.start(element, unicodeLabel);
+    const unicodeHoverCells = descendants(mock, 'glyph-reel-cell');
+    for (let frame = 0; frame < 55; frame++) publishVisualSignals(state, audio, stress);
+    checks.push({ passed: unicodeHoverCells.length === unicodeCells.length && mock.textContent === unicodeLabel &&
+        calmGlyphHover.getVisualText(element) === unicodeLabel && !calmGlyphHover.isActive(element),
+        description: 'Unicode hover completes within three seconds and restores the exact original visible DOM text automatically' });
 
     publishVisualSignals(state, audio, stress);
     const paragraph = new HoverElement('p');

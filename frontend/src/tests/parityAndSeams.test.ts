@@ -3,12 +3,16 @@
 // ФАЙЛ: frontend/src/tests/parityAndSeams.test.ts
 // НАЗНАЧЕНИЕ: Автоматический набор регрессионных проверок паритета, бинарного
 //             протокола, шага времени Velocity Verlet, графа NEXUS (TS == Python),
-//             геометрии линзы, таймлайна 5-й фазы, скорости одометра, ресурсов
-//             и совместимости канонических типов с журналом событий хранилища.
+//             геометрии линзы, таймлайна 5-й фазы, скорости одометра, ресурсов,
+//             канонических типов, журнала событий, DPR и ввода линзы на разных экранах.
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. Функции модуля: assertCondition, runUniverseVerificationSuite.
+//   2. Функции модуля: assertCondition, runPipelineQualityChecks, runFinaleStoreChecks,
+//      runStressInputChecks, runUniverseVerificationSuite.
+//      runPipelineQualityChecks: getProfile, setTransform, set, getContext.
+//      runFinaleStoreChecks: advanceTo.
+//      runStressInputChecks: addEventListener, dispatchKeyboard, closest.
 //   3. runUniverseVerificationSuite: check.
 // ============================================================================
 
@@ -26,6 +30,8 @@ import {
 } from '../core/sceneBuffer';
 import { EntityKindCode, type SingularityAct as CanonicalSingularityAct } from '../core/contracts';
 import { resourceLedger } from '../core/resourceLedger';
+import { qualityGovernor } from '../core/qualityGovernor';
+import { RenderPipeline } from '../engine/pipeline';
 import { WasmPhysicsBridge, wasmPhysicsBridge } from '../bridge/wasmBridge';
 import {
     NexusGraphEngine,
@@ -68,6 +74,274 @@ function assertCondition(
 }
 // --- КОНЕЦ ФУНКЦИИ assertCondition ---
 
+// --- НАЧАЛО ФУНКЦИИ runPipelineQualityChecks ---
+function runPipelineQualityChecks(check: (passed: boolean, description: string) => void): void {
+    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const savedGetProfile = Object.getOwnPropertyDescriptor(qualityGovernor, 'getProfile');
+    const originalProfile = qualityGovernor.getProfile();
+    let maxDpr = 2;
+    let resizeWrites = 0;
+    let lastTransform: readonly number[] = [];
+    let pipeline: RenderPipeline | undefined;
+    const context = {
+        // --- НАЧАЛО ФУНКЦИИ setTransform (runPipelineQualityChecks) ---
+        setTransform(...matrix: number[]): void { lastTransform = matrix; resizeWrites++; },
+        // --- КОНЕЦ ФУНКЦИИ setTransform (runPipelineQualityChecks) ---
+    };
+    const style = new Proxy({ width: '', height: '' }, {
+        // --- НАЧАЛО ФУНКЦИИ set (runPipelineQualityChecks: style) ---
+        set(target, key, value): boolean { resizeWrites++; return Reflect.set(target, key, value); },
+        // --- КОНЕЦ ФУНКЦИИ set (runPipelineQualityChecks: style) ---
+    });
+    const canvas = new Proxy({
+        width: 0, height: 0, style,
+        // --- НАЧАЛО ФУНКЦИИ getContext (runPipelineQualityChecks) ---
+        getContext(): typeof context { return context; },
+        // --- КОНЕЦ ФУНКЦИИ getContext (runPipelineQualityChecks) ---
+    }, {
+        // --- НАЧАЛО ФУНКЦИИ set (runPipelineQualityChecks: canvas) ---
+        set(target, key, value): boolean { resizeWrites++; return Reflect.set(target, key, value); },
+        // --- КОНЕЦ ФУНКЦИИ set (runPipelineQualityChecks: canvas) ---
+    });
+    try {
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true, value: { innerWidth: 960, innerHeight: 540, devicePixelRatio: 2 },
+        });
+        // --- НАЧАЛО ФУНКЦИИ getProfile (runPipelineQualityChecks) ---
+        qualityGovernor.getProfile = () => ({ ...originalProfile, tier: maxDpr === 2 ? 'HIGH' : 'LOW', maxDpr });
+        // --- КОНЕЦ ФУНКЦИИ getProfile (runPipelineQualityChecks) ---
+        pipeline = new RenderPipeline(canvas as unknown as HTMLCanvasElement);
+        const highInitialized = pipeline.getCapabilities().dpr === 2 && canvas.width === 1920 && canvas.height === 1080;
+        maxDpr = 1.25;
+        const noImplicitResize = pipeline.getCapabilities().dpr === 2 && canvas.width === 1920;
+        pipeline.syncQualityProfile();
+        check(
+            highInitialized && noImplicitResize && pipeline.getCapabilities().dpr === 1.25 &&
+            canvas.width === 1200 && canvas.height === 675 && style.width === '960px' && style.height === '540px' &&
+            lastTransform.join(',') === '1.25,0,0,1.25,0,0',
+            'Quality downgrade applies the LOW 1.25 DPR cap to the backing canvas without a window resize or CSS size change'
+        );
+        const lowWrites = resizeWrites;
+        for (let frame = 0; frame < 60; frame++) pipeline.syncQualityProfile();
+        check(
+            resizeWrites === lowWrites && pipeline.getCapabilities().dpr === 1.25,
+            'Unchanged quality frames perform zero canvas size, CSS size or transform writes'
+        );
+        maxDpr = 2;
+        pipeline.syncQualityProfile();
+        check(
+            pipeline.getCapabilities().dpr === 2 && canvas.width === 1920 && canvas.height === 1080 &&
+            style.width === '960px' && style.height === '540px' && lastTransform.join(',') === '2,0,0,2,0,0',
+            'Quality recovery restores the HIGH DPR backing resolution and transform while preserving CSS geometry'
+        );
+        pipeline.dispose();
+        const disposedWrites = resizeWrites;
+        maxDpr = 1.25;
+        pipeline.syncQualityProfile();
+        check(
+            resizeWrites === disposedWrites && pipeline.getCapabilities().dpr === 2,
+            'A disposed pipeline ignores subsequent quality changes without resizing its canvas'
+        );
+    } finally {
+        pipeline?.dispose();
+        if (savedGetProfile) Object.defineProperty(qualityGovernor, 'getProfile', savedGetProfile);
+        else Reflect.deleteProperty(qualityGovernor, 'getProfile');
+        if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+        else Reflect.deleteProperty(globalThis, 'window');
+    }
+}
+// --- КОНЕЦ ФУНКЦИИ runPipelineQualityChecks ---
+
+// --- НАЧАЛО ФУНКЦИИ runFinaleStoreChecks ---
+function runFinaleStoreChecks(check: (passed: boolean, description: string) => void): void {
+    const UniverseStore = universeStore.constructor as new () => typeof universeStore;
+    const store = new UniverseStore();
+    store.setPhase('05_SINGULARITY');
+    // --- НАЧАЛО ФУНКЦИИ advanceTo (runFinaleStoreChecks) ---
+    const advanceTo = (phaseElapsedSec: number): void => store.updateTelemetry({
+        frameTimeMs: 16,
+        simulationTimeSec: store.getState().phaseMeta.startSec + phaseElapsedSec,
+        phaseElapsedSec,
+    });
+    // --- КОНЕЦ ФУНКЦИИ advanceTo (runFinaleStoreChecks) ---
+    const timeline: ReadonlyArray<readonly [number, CanonicalSingularityAct]> = [
+        [0, 'ACT_A_ACCRETION'], [8.499, 'ACT_A_ACCRETION'], [8.5, 'ACT_B_LOGIC'],
+        [13.599, 'ACT_B_LOGIC'], [13.6, 'ACT_C_ZERO_SILENCE'], [13.825, 'ACT_C_ZERO_SILENCE'],
+        [14.049, 'ACT_C_ZERO_SILENCE'], [14.05, 'ACT_D_GITHUB_CARD'],
+    ];
+    let timelinePreserved = true;
+    let silenceMidpointMs = -1;
+    for (const [elapsedSec, act] of timeline) {
+        advanceTo(elapsedSec);
+        timelinePreserved &&= store.getState().singularityAct === act;
+        if (elapsedSec === 13.825) silenceMidpointMs = store.getState().zeroSilenceElapsedMs;
+    }
+    check(
+        timelinePreserved && silenceMidpointMs === 225 && store.getState().zeroSilenceElapsedMs === 450,
+        'Original A/B/C/D boundaries remain fixed; zero-silence telemetry reports 225ms halfway and 450ms after ACT_C'
+    );
+    const firstDStartsAtZero = store.getState().githubCardAssemblyProgress === 0 && store.getState().finaleReachedOnce;
+    advanceTo(16.3);
+    const firstDReachesHalf = Math.abs(store.getState().githubCardAssemblyProgress - 0.5) < 1e-12;
+    advanceTo(18.55);
+    check(
+        firstDStartsAtZero && firstDReachesHalf && store.getState().githubCardAssemblyProgress === 1 &&
+        store.getState().singularityActProgress === 1 && store.getState().cycleCount === 1,
+        'First ACT_D assembles continuously from zero through half to one despite its early finaleReachedOnce flag'
+    );
+    store.setPhase('01_VOID');
+    advanceTo(0.1);
+    const ambientCardRetained = store.getState().githubCardAssemblyProgress === 1;
+    store.setPhase('05_SINGULARITY');
+    advanceTo(14.05);
+    const repeatedDStartsAssembled = store.getState().githubCardAssemblyProgress === 1;
+    advanceTo(14.1);
+    check(
+        ambientCardRetained && repeatedDStartsAssembled && store.getState().githubCardAssemblyProgress === 1 &&
+        store.getState().singularityAct === 'ACT_D_GITHUB_CARD' && store.getState().cycleCount === 1,
+        'Manual phase 01→05 return during cycle one retains the assembled ambient card and avoids replaying ACT_D assembly'
+    );
+}
+// --- КОНЕЦ ФУНКЦИИ runFinaleStoreChecks ---
+
+// --- НАЧАЛО ФУНКЦИИ runStressInputChecks ---
+function runStressInputChecks(check: (passed: boolean, description: string) => void): void {
+    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const handlers = new Map<string, Array<(event: KeyboardEvent) => void>>();
+    const testWindow = {
+        innerWidth: 390,
+        innerHeight: 844,
+        // --- НАЧАЛО ФУНКЦИИ addEventListener (runStressInputChecks) ---
+        addEventListener(type: string, handler: (event: KeyboardEvent) => void): void {
+            handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+        },
+        // --- КОНЕЦ ФУНКЦИИ addEventListener (runStressInputChecks) ---
+    };
+    const sceneState = universeStore.getState();
+    const savedPhase = sceneState.currentPhase;
+    const savedSimTime = sceneState.telemetry.simulationTimeSec;
+
+    // --- НАЧАЛО ФУНКЦИИ dispatchKeyboard (runStressInputChecks) ---
+    const dispatchKeyboard = (
+        type: 'keydown' | 'keyup',
+        key: string,
+        target: unknown = null,
+        options: Partial<Pick<KeyboardEvent, 'repeat' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'isComposing' | 'defaultPrevented'>> = {}
+    ): KeyboardEvent => {
+        const event = new Event(type, { cancelable: true }) as KeyboardEvent;
+        const { defaultPrevented, ...properties } = options;
+        Object.defineProperties(event, Object.fromEntries(Object.entries({
+            key, target, repeat: false, altKey: false, ctrlKey: false, metaKey: false,
+            shiftKey: false, isComposing: false, ...properties,
+        }).map(([name, value]) => [name, { value }])));
+        if (defaultPrevented) event.preventDefault();
+        handlers.get(type)?.forEach((handler) => handler(event));
+        return event;
+    };
+    // --- КОНЕЦ ФУНКЦИИ dispatchKeyboard (runStressInputChecks) ---
+
+    try {
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: testWindow });
+        const StressController = stressStore.constructor as new () => typeof stressStore;
+        const controller = new StressController();
+        const initial = controller.getState();
+        check(
+            initial.lensX === 195 && initial.lensY === 422 &&
+            initial.pointerX === 195 && initial.pointerY === 422 &&
+            initial.baseBreachRadius === 47 && initial.maxBreachRadius === 86 &&
+            !initial.hasUserInteracted && !initial.isPointerInside &&
+            [...handlers.keys()].join(',') === 'keydown,keyup',
+            'Stress controller initializes mobile lens geometry before input and adds no resize listener'
+        );
+
+        Object.assign(sceneState, { currentPhase: '04_COLLAPSE' });
+        sceneState.telemetry.simulationTimeSec = 66;
+        controller.stepPhysics(0.016);
+        const mobileDirectorVisible = controller.getState().currentBreachRadius > 0 &&
+            Math.abs(controller.getState().lensX - 195) <= 120 &&
+            Math.abs(controller.getState().lensY - 422) <= 70;
+        controller.syncViewportSize(600, 360);
+        controller.stepPhysics(0.016);
+        const resizedDirectorVisible = Math.abs(controller.getState().lensX - 300) <= 120 &&
+            Math.abs(controller.getState().lensY - 180) <= 70 &&
+            controller.getState().baseBreachRadius === 43 && controller.getState().maxBreachRadius === 79;
+        controller.syncViewportSize(Number.NaN, Number.POSITIVE_INFINITY);
+        controller.syncViewportSize(-1, 0);
+        check(
+            mobileDirectorVisible && resizedDirectorVisible &&
+            controller.getState().lensX === 300 && controller.getState().lensY === 180 &&
+            !controller.getState().isPointerInside && !controller.getState().hasUserInteracted,
+            'No-pointer director breach stays on the mobile viewport after resize; invalid dimensions preserve finite geometry'
+        );
+
+        controller.syncViewportSize(390, 844);
+        const uiTargets = ['button', 'a', 'input', 'textarea', 'select', 'summary',
+            '[role="button"]', '[role="slider"]', '[data-ui-panel]', '[data-github-card]'].map((match) => ({
+            // --- НАЧАЛО ФУНКЦИИ closest (runStressInputChecks) ---
+            closest(selectors: string): object | null {
+                return selectors.split(',').some((selector) => selector.trim() === match) ? this : null;
+            },
+            // --- КОНЕЦ ФУНКЦИИ closest (runStressInputChecks) ---
+        }));
+        const blockedTargets = [...uiTargets, { isContentEditable: true }];
+        const blockedOptions = [{ defaultPrevented: true }, { altKey: true }, { ctrlKey: true },
+            { metaKey: true }, { shiftKey: true }, { isComposing: true }];
+        let ignoredKeysPreserved = true;
+        for (const key of [' ', 'ArrowLeft', 'Escape']) {
+            for (const target of blockedTargets) {
+                ignoredKeysPreserved &&= !dispatchKeyboard('keydown', key, target).defaultPrevented;
+            }
+            for (const options of blockedOptions) {
+                ignoredKeysPreserved &&= dispatchKeyboard('keydown', key, null, options).defaultPrevented ===
+                    ('defaultPrevented' in options);
+            }
+        }
+        check(
+            ignoredKeysPreserved && !dispatchKeyboard('keydown', 'Tab').defaultPrevented &&
+            !controller.getState().isPointerInside && !controller.getState().isBreaching &&
+            !controller.getState().hasUserInteracted && controller.getState().lensX === 195,
+            'UI, editable, prevented, composing and modified keyboard events keep native behavior without interacting with the lens'
+        );
+
+        const arrowHandled = dispatchKeyboard('keydown', 'ArrowRight').defaultPrevented &&
+            controller.getState().pointerX === 223 && controller.getState().pointerY === 422;
+        const spaceHandled = dispatchKeyboard('keydown', ' ').defaultPrevented && controller.getState().isBreaching;
+        const shockwaveCount = controller.getState().shockwaves.length;
+        const repeatHandled = dispatchKeyboard('keydown', ' ', null, { repeat: true }).defaultPrevented &&
+            controller.getState().shockwaves.length === shockwaveCount;
+        dispatchKeyboard('keyup', ' ', uiTargets[0], { ctrlKey: true, defaultPrevented: true });
+        check(
+            arrowHandled && spaceHandled && repeatHandled && !controller.getState().isBreaching,
+            'Scene arrows and Space prevent scrolling; repeated Space opens once and releases after focus moves to a control'
+        );
+
+        controller.setBreaching(true, false);
+        dispatchKeyboard('keyup', ' ', uiTargets[0]);
+        const pointerBreachPreserved = controller.getState().isBreaching;
+        const uiEscapePreserved = !dispatchKeyboard('keydown', 'Escape', uiTargets[0]).defaultPrevented &&
+            controller.getState().isBreaching;
+        const sceneEscapeHandled = dispatchKeyboard('keydown', 'Escape').defaultPrevented &&
+            !controller.getState().isBreaching && !controller.getState().isPointerInside;
+        controller.updatePointer(580, 340, 600, 360);
+        controller.syncViewportSize(320, 240);
+        controller.updatePointer(Number.NaN, Number.POSITIVE_INFINITY, 320, 240);
+        check(
+            pointerBreachPreserved && uiEscapePreserved && sceneEscapeHandled &&
+            controller.getState().pointerX === 320 && controller.getState().lensX === 320 &&
+            controller.getState().pointerY === 240 && controller.getState().lensY === 240 &&
+            controller.getState().normX === 1 && controller.getState().normY === 1 &&
+            controller.getState().baseBreachRadius === 29 && controller.getState().maxBreachRadius === 53,
+            'Unowned Space release and UI Escape preserve pointer breach; scene Escape closes it and resize clamps active lens geometry'
+        );
+    } finally {
+        Object.assign(sceneState, { currentPhase: savedPhase });
+        sceneState.telemetry.simulationTimeSec = savedSimTime;
+        if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+        else Reflect.deleteProperty(globalThis, 'window');
+    }
+}
+// --- КОНЕЦ ФУНКЦИИ runStressInputChecks ---
+
 // --- НАЧАЛО ФУНКЦИИ runUniverseVerificationSuite ---
 export function runUniverseVerificationSuite(): VerificationSuiteResult {
     const details: string[] = [];
@@ -106,6 +380,9 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         ),
         'Terminal log retains the latest 25 events in reverse order with timestamps and uppercase source tags'
     );
+    runStressInputChecks(check);
+    runPipelineQualityChecks(check);
+    runFinaleStoreChecks(check);
 
     // ------------------------------------------------------------------------
     // ПРОВЕРКА GOLDEN-ВЕКТОРОВ PRNG И АУДИООГИБАЮЩИХ (TS <-> RUST <-> PYTHON)

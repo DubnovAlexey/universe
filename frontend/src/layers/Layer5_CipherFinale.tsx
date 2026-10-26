@@ -12,7 +12,7 @@
 //             и клавиатурного фокуса (triggerLineOrButtonScramble).
 //   РАЗДЕЛ 2. Контроллер анимации на общем такте кадра (FinaleCardDomAnimator):
 //     - Подраздел 2.1. Подписка общего кадра (активна в Акте D и в постоянном
-//                      полупрозрачном фоновом режиме после первого цикла),
+//                      полупрозрачном фоновом режиме после первого показа),
 //                      безопасное смещение визитки после возврата в фазу 01.
 //     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
 //                      постоянные ячейки без скачков метрик шрифта) и
@@ -24,7 +24,7 @@
 // ============================================================================
 
 import { React } from './Layer2_Metrics';
-import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
+import { CANONICAL_FINALE_LINES, formatFinaleStaticLine } from '../bridge/cipherOdometerEngine';
 import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES,
     smootherstep, universeStore, type UniverseState,
@@ -206,11 +206,7 @@ class FinaleCardDomAnimator {
     // ------------------------------------------------------------------------
 
     // --- НАЧАЛО ФУНКЦИИ formatOdometerLineForProgress ---
-    /**
-     * Формирует строку с эффектом барабана одометра во время начальной сборки (p < 0.76).
-     * ИСПРАВЛЕНО: порог lockThreshold уложен в [0.14 .. 0.72], чтобы правый край
-     * 3-й и 4-й строк гарантированно фиксировался в канонический текст без остатков глифов.
-     */
+    /** Общий с Canvas фронт слева направо; непройденные окна остаются пустыми. */
     private formatOdometerLineForProgress(
         canonical: string,
         lineIndex: number,
@@ -218,30 +214,7 @@ class FinaleCardDomAnimator {
         assemblyWheelStep: number,
         glyphPool: readonly string[]
     ): string {
-        if (progress >= 0.76) return canonical;
-        const canonicalChars = Array.from(canonical);
-        const len = canonicalChars.length;
-        let out = '';
-        for (let i = 0; i < len; i++) {
-            const ch = canonicalChars[i];
-            const lockThreshold =
-                0.14 + lineIndex * 0.055 + (i / Math.max(1, len)) * 0.34;
-            if (
-                progress >= lockThreshold ||
-                ch === ' ' ||
-                ch === '·' ||
-                ch === ':' ||
-                ch === '(' ||
-                ch === ')'
-            ) {
-                out += ch;
-            } else {
-                const wheelIdx =
-                    (assemblyWheelStep + i * 5 + lineIndex * 9) % glyphPool.length;
-                out += glyphPool[wheelIdx];
-            }
-        }
-        return out;
+        return formatFinaleStaticLine(canonical, lineIndex, progress, assemblyWheelStep, glyphPool);
     }
     // --- КОНЕЦ ФУНКЦИИ formatOdometerLineForProgress ---
 
@@ -268,7 +241,9 @@ class FinaleCardDomAnimator {
         const glyphPool = getRenderableGlyphPool(state.currentPhase);
 
         if (this.cardBoxEl) {
-            const p = isPersistentCard && state.cycleCount > 1
+            const hasLoopCard = isPersistentCard &&
+                (state.cycleCount > 1 || !isActD || this.ambientRiseElapsedSec > 0);
+            const p = hasLoopCard
                 ? 1.0
                 : Math.max(0, Math.min(1, state.githubCardAssemblyProgress));
             if (isSimActive && !state.reducedMotion) {
@@ -277,10 +252,9 @@ class FinaleCardDomAnimator {
 
             if (isSimActive) this.breathHeartbeat = signals.heartbeat;
 
-            // После первого полного цикла подъём занимает 12 секунд активного времени.
+            // После первого показа и выхода из Акта D подъём занимает 12 активных секунд.
             // Общий кадр объединяет его с дыханием: CSS не переопределяет transform,
             // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
-            const hasLoopCard = isPersistentCard && state.cycleCount > 1;
             if (!hasLoopCard) {
                 this.ambientRiseElapsedSec = 0;
             } else if (state.reducedMotion) {
@@ -294,7 +268,7 @@ class FinaleCardDomAnimator {
 
             // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении
             const emergeScale =
-                state.reducedMotion || (isPersistentCard && state.cycleCount > 1)
+                state.reducedMotion || hasLoopCard
                     ? 1.0
                     : 0.04 + 0.96 * smootherstep(0.0, 0.46, p);
 

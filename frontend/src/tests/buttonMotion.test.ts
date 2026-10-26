@@ -40,7 +40,7 @@ class MotionButton extends EventTarget {
     };
 }
 // НАЧАЛО ФУНКЦИИ makeHarness
-function makeHarness(count = 4, statusIndices: readonly number[] = []) {
+function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds: readonly string[] = []) {
     const shared: { listener: ((frame: Readonly<VisualSignalSnapshot>) => void) | null; subscriptions: number; releases: number } = {
         listener: null, subscriptions: 0, releases: 0,
     };
@@ -51,6 +51,7 @@ function makeHarness(count = 4, statusIndices: readonly number[] = []) {
     const buttons = Array.from({ length: count }, (_, index) => {
         const button = new MotionButton();
         if (statusIndices.includes(index)) button.dataset.buttonSolidKind = 'status';
+        if (phaseIds[index]) button.dataset.phaseId = phaseIds[index];
         return button;
     });
     if (buttons[2]) {
@@ -60,6 +61,7 @@ function makeHarness(count = 4, statusIndices: readonly number[] = []) {
         buttons[2].values.set('--button-shadow-y', '3px');
         buttons[2].priorities.set('--button-shadow-y', 'important');
         buttons[2].dataset.buttonMotion = 'previous';
+        if (phaseIds[2]) buttons[2].dataset.buttonPhaseEmphasis = 'previous';
     }
     const binding = controller.mount(buttons as unknown as HTMLElement[]);
     const frame: Readonly<VisualSignalSnapshot> = {
@@ -198,6 +200,90 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     // КОНЕЦ РАЗДЕЛА 2
 
     // НАЧАЛО РАЗДЕЛА 3. ВЗАИМОДЕЙСТВИЕ И LIFECYCLE
+    const phases = makeHarness(6, [], ['01_VOID', '02_GENESIS', '03_EVOLUTION', '04_COLLAPSE', '05_SINGULARITY']);
+    phases.step(100);
+    const phaseFrontWrites = phases.buttons[2].writes;
+    const initialPeerAngle = spin(phases.buttons[0]);
+    phases.step(20);
+    check(isFront(phases.buttons[2]) && phases.buttons[2].writes === phaseFrontWrites &&
+        phases.buttons[2].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons.filter((button) => button.dataset.buttonPhaseEmphasis === '1').length === 1 &&
+        spin(phases.buttons[0]) > initialPeerAngle,
+        'The playing phase holds its readable front and emphasis without repeated style writes while all other phase bodies keep rotating');
+
+    const releasedPhaseAngle = spin(phases.buttons[2]);
+    phases.step(20, { phase: '04_COLLAPSE' });
+    check(isFront(phases.buttons[3]) && phases.buttons[3].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons[2].dataset.buttonPhaseEmphasis === undefined && spin(phases.buttons[2]) < releasedPhaseAngle - 5 &&
+        phases.buttons.filter((button) => button.dataset.buttonPhaseEmphasis === '1').length === 1,
+        'A phase change transfers the single readable emphasis to the new playing phase and smoothly releases the previous phase');
+
+    phases.buttons[0].dispatchEvent(new Event('pointerenter'));
+    phases.buttons[5].dispatchEvent(new Event('pointerenter'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    const independentPeerAngle = spin(phases.buttons[3]);
+    phases.step(10, { phase: '05_SINGULARITY' });
+    const hoverTakesPriority = isFront(phases.buttons[0]) && isFront(phases.buttons[5]) &&
+        phases.buttons[0].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons[4].dataset.buttonPhaseEmphasis === undefined &&
+        phases.buttons.filter((button) => button.dataset.buttonPhaseEmphasis === '1').length === 1 &&
+        spin(phases.buttons[3]) > independentPeerAngle;
+    phases.buttons[0].dispatchEvent(new Event('pointerleave'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    check(hoverTakesPriority && isFront(phases.buttons[4]) && phases.buttons[4].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons[0].dataset.buttonPhaseEmphasis === undefined && isFront(phases.buttons[5]),
+        'Hover overrides the playing phase exclusively, independent control hover still works, and pointer leave restores the latest playing phase');
+
+    phases.buttons[1].focusVisible = true;
+    phases.buttons[1].dispatchEvent(new Event('focus'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    const keyboardPhaseFront = spin(phases.buttons[1]);
+    phases.buttons[0].dispatchEvent(new Event('pointerenter'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    const pointerOverridesKeyboard = isFront(phases.buttons[0]) &&
+        phases.buttons[0].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons[1].dataset.buttonPhaseEmphasis === undefined && spin(phases.buttons[1]) < keyboardPhaseFront - 5;
+    phases.buttons[0].dispatchEvent(new Event('pointerleave'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    const keyboardRestored = isFront(phases.buttons[1]) && phases.buttons[1].dataset.buttonPhaseEmphasis === '1';
+    phases.buttons[1].focusVisible = false;
+    phases.buttons[1].dispatchEvent(new Event('blur'));
+    phases.step(20, { phase: '05_SINGULARITY' });
+    check(pointerOverridesKeyboard && keyboardRestored && isFront(phases.buttons[4]) &&
+        phases.buttons[4].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons.filter((button) => button.dataset.buttonPhaseEmphasis === '1').length === 1,
+        'Phase reading priority is pointer hover, keyboard focus-visible, then the playing phase, with one effective target through each restoration');
+
+    phases.buttons[5].dispatchEvent(new Event('pointerleave'));
+    phases.step(1, { isPaused: true, frameDtSec: 0, phase: '02_GENESIS' });
+    const pausedPhasePose = phases.buttons.map(styleSnapshot);
+    phases.step(20, { isPaused: true, frameDtSec: 0, phase: '02_GENESIS' });
+    const phaseSelectedInPause = isFront(phases.buttons[1]) && phases.buttons[1].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons.every((button, index) => styleSnapshot(button) === pausedPhasePose[index]);
+    phases.buttons[0].dispatchEvent(new Event('pointerenter'));
+    const pausedHoverFront = isFront(phases.buttons[0]) && phases.buttons[0].dataset.buttonPhaseEmphasis === '1';
+    phases.buttons[0].dispatchEvent(new Event('pointerleave'));
+    check(phaseSelectedInPause && pausedHoverFront && isFront(phases.buttons[1]) &&
+        phases.buttons[1].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons.slice(2).every((button, index) => styleSnapshot(button) === pausedPhasePose[index + 2]),
+        'Phase changes and explicit hover remain readable during pause without advancing peers or producing repeated style writes');
+
+    phases.step(1, { reducedMotion: true, phase: '03_EVOLUTION' });
+    const reducedPhasePose = phases.buttons.map(styleSnapshot);
+    phases.step(20, { reducedMotion: true, phase: '04_COLLAPSE' });
+    check(phases.buttons.every((button, index) => isFront(button) && styleSnapshot(button) === reducedPhasePose[index]) &&
+        phases.buttons[3].dataset.buttonPhaseEmphasis === '1' &&
+        phases.buttons.filter((button) => button.dataset.buttonPhaseEmphasis === '1').length === 1,
+        'Reduced motion keeps all fronts stationary while the single phase emphasis follows the playing phase');
+    phases.binding.dispose();
+    const restoredPhaseMarkers = phases.buttons.map((button) => button.dataset.buttonPhaseEmphasis);
+    phases.buttons[0].dispatchEvent(new Event('pointerenter'));
+    check(restoredPhaseMarkers[2] === 'previous' &&
+        restoredPhaseMarkers.every((marker, index) => index === 2 || marker === undefined) &&
+        phases.buttons.every((button, index) => button.dataset.buttonPhaseEmphasis === restoredPhaseMarkers[index]) &&
+        phases.shared.subscriptions === 1 && phases.shared.releases === 1 && phases.binding.listenerCount === 30,
+        'Disposal restores existing phase-emphasis markers and removes temporary markers using the existing subscription and interaction handlers');
+
     const beforeHover = spin(h.buttons[0]);
     const nearestFront = Math.round(beforeHover / 360) * 360;
     const movingPeer = spin(h.buttons[1]);

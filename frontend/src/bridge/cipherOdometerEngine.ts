@@ -13,7 +13,7 @@
 import { DeterministicPRNG } from '../core/prng';
 import { smootherstep, universeStore } from '../store/universeState';
 import { getVisualSignals } from '../core/visualSignals';
-import { getRenderableGlyphPool } from '../core/glyphGrammar';
+import { GLYPH_WAITING_SPACE, formatOrderedGlyphText, getOrderedGlyphState, getRenderableGlyphPool, isMutableGlyph, splitGlyphText } from '../core/glyphGrammar';
 
 export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
     'DUBNOV ALEXEY',
@@ -24,6 +24,19 @@ export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, s
 ];
 
 const ENDLESS_SPIN_LINE_INDEX = 2;
+
+// --- НАЧАЛО ФУНКЦИИ getFinaleLineAssemblyProgress ---
+/** Общие сроки статических строк для начального Canvas и семантического DOM. */
+export function getFinaleLineAssemblyProgress(progress: number, lineIndex: number): number {
+    return Math.max(0, Math.min(1, (progress - 0.06 - lineIndex * 0.015) / 0.58));
+}
+// --- КОНЕЦ ФУНКЦИИ getFinaleLineAssemblyProgress ---
+
+// --- НАЧАЛО ФУНКЦИИ formatFinaleStaticLine ---
+export function formatFinaleStaticLine(canonical: string, lineIndex: number, progress: number, step: number, glyphPool: readonly string[]): string {
+    return formatOrderedGlyphText(canonical, getFinaleLineAssemblyProgress(progress, lineIndex), step, glyphPool, lineIndex);
+}
+// --- КОНЕЦ ФУНКЦИИ formatFinaleStaticLine ---
 
 const MONOCHROME_NEBULA_PALETTE: ReadonlyArray<{
     colorHex: string;
@@ -288,7 +301,7 @@ export class CipherOdometerEngine {
 
         for (let lineIdx = 0; lineIdx < CANONICAL_FINALE_LINES.length; lineIdx++) {
             const lineStr = CANONICAL_FINALE_LINES[lineIdx];
-            const lineCharacters = Array.from(lineStr);
+            const lineCharacters = splitGlyphText(lineStr);
             const len = lineCharacters.length;
             const typo = this.getLineTypography(lineIdx, len, viewportWidth);
             const lineWidth = len * typo.stepWidthPx;
@@ -297,6 +310,10 @@ export class CipherOdometerEngine {
 
             for (let cIdx = 0; cIdx < len; cIdx++) {
                 const targetChar = lineCharacters[cIdx];
+                const isEndlessLine = lineIdx === ENDLESS_SPIN_LINE_INDEX;
+                const ordered = getOrderedGlyphState(cIdx, len, getFinaleLineAssemblyProgress(p, lineIdx));
+                const isWaiting = !isEndlessLine && !reducedMotion && ordered.state === 'waiting';
+                const isCanonicalRolling = !isEndlessLine && !isMutableGlyph(targetChar);
                 const baseTargetX = startX + cIdx * typo.stepWidthPx;
 
                 const targetX = cx + (baseTargetX - cx) * cardHeartbeat;
@@ -324,20 +341,15 @@ export class CipherOdometerEngine {
                     this.pointerY - targetY
                 );
                 const hoverRadius = lineIdx === 0 ? 38 : 30;
-                if (distToPointer < hoverRadius && p > 0.5 && isSimActive) {
+                if (isEndlessLine && distToPointer < hoverRadius && p > 0.5 && isSimActive) {
                     this.hoverExcitedUntilMs.set(globalIdx, nowMs + 860);
                 }
                 const excitedUntil = this.hoverExcitedUntilMs.get(globalIdx) ?? 0;
                 const hoverRemainingMs = Math.max(0, excitedUntil - nowMs);
                 const isHoverSpinning = hoverRemainingMs > 0;
 
-                const isEndlessLine = lineIdx === ENDLESS_SPIN_LINE_INDEX;
-                const lockThreshold =
-                    0.18 + lineIdx * 0.06 + (cIdx / Math.max(1, len)) * 0.32;
                 const isLocked =
-                    !isEndlessLine &&
-                    !isHoverSpinning &&
-                    p >= Math.min(0.76, lockThreshold);
+                    !isEndlessLine && (reducedMotion || ordered.state === 'locked');
 
                 const hoverSpeedBoost = isHoverSpinning
                     ? smootherstep(0, 860, hoverRemainingMs) * 2.4
@@ -345,14 +357,14 @@ export class CipherOdometerEngine {
 
                 // Индивидуальный делитель слота (0.5 или 0.35), дающий ~8–11 видимых смен символа/с
                 const slotFactor = cIdx % 3 === 0 ? 0.5 : 0.38;
-                const cellWheelPos =
+                const cellWheelPos = isEndlessLine ?
                     baseSpinPhase * slotFactor +
                     cIdx * 0.35 +
                     r2 * 12.0 +
-                    hoverSpeedBoost;
+                    hoverSpeedBoost : ordered.progress * 2;
 
                 const baseGlyphIdx = Math.floor(cellWheelPos) % nGlyphs;
-                const wheelPhaseFrac = isLocked ? 0 : (cellWheelPos % 1.0) - 0.5;
+                const wheelPhaseFrac = isLocked || isCanonicalRolling ? 0 : (cellWheelPos % 1.0) - 0.5;
 
                 const individualBreath = isEndlessLine
                     ? 0.92 +
@@ -366,12 +378,12 @@ export class CipherOdometerEngine {
                         : Math.max(0.54, Math.cos(wheelPhaseFrac * 1.05)) *
                         individualBreath) * emergeScale;
 
-                const primaryChar = isLocked
+                const primaryChar = isWaiting ? GLYPH_WAITING_SPACE : isLocked || isCanonicalRolling
                     ? targetChar
                     : quantumGlyphs[(baseGlyphIdx + nGlyphs) % nGlyphs];
-                const upperChar =
+                const upperChar = isWaiting || isCanonicalRolling ? GLYPH_WAITING_SPACE :
                     quantumGlyphs[(baseGlyphIdx + nGlyphs - 1) % nGlyphs];
-                const lowerChar =
+                const lowerChar = isWaiting || isCanonicalRolling ? GLYPH_WAITING_SPACE :
                     quantumGlyphs[(baseGlyphIdx + 1) % nGlyphs];
 
                 let cellColor = typo.colorHex;
@@ -411,10 +423,11 @@ export class CipherOdometerEngine {
                 let lockFlash = 0;
                 if (
                     !isEndlessLine &&
-                    p >= lockThreshold &&
-                    p <= lockThreshold + 0.12
+                    ordered.state === 'locked' &&
+                    getFinaleLineAssemblyProgress(p, lineIdx) < 1
                 ) {
-                    lockFlash = 1.0 - (p - lockThreshold) / 0.12;
+                    const lockAt = cIdx / Math.max(1, len - 1) * 0.72 + 0.28;
+                    lockFlash = Math.max(0, 1 - (getFinaleLineAssemblyProgress(p, lineIdx) - lockAt) / 0.16);
                 } else if (isHoverSpinning) {
                     lockFlash = Math.min(0.48, (hoverRemainingMs / 860) * 0.48);
                 }
@@ -446,7 +459,7 @@ export class CipherOdometerEngine {
                     fontWeight: typo.fontWeight,
                     shadowColor,
                     shadowBlur,
-                    glyphBreathAlpha,
+                    glyphBreathAlpha: isWaiting ? 0 : glyphBreathAlpha,
                 });
 
                 globalIdx++;

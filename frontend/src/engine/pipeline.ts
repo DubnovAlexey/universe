@@ -12,7 +12,7 @@
 //                      разделяет наличие адаптера и фактически рисующий бэкенд
 //                      Canvas2D-HighDPI (устраняет замечание Аудита P1 #15).
 //     - Подраздел 2.3. Генератор тайла дизеринга 64x64 (buildBlueNoiseDitherPattern)
-//                      и утилиты управления размером и цветами.
+//                      и утилиты управления размером, качеством (syncQualityProfile) и цветами.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -187,6 +187,16 @@ export class RenderPipeline {
         return { width, height, dpr };
     }
     // --- КОНЕЦ ФУНКЦИИ updateViewportSize ---
+
+    // --- НАЧАЛО ФУНКЦИИ syncQualityProfile ---
+    /** Применяет новый DPR-кэп на общем кадре без пересоздания частиц и ожидания resize. */
+    public syncQualityProfile(): void {
+        if (this.isDisposed) return;
+        const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const nextDpr = Math.min(qualityGovernor.getProfile().maxDpr, Math.max(1, rawDpr));
+        if (nextDpr !== this.capabilities.dpr) this.updateViewportSize();
+    }
+    // --- КОНЕЦ ФУНКЦИИ syncQualityProfile ---
 
     // --- НАЧАЛО ФУНКЦИИ getContext ---
     public getContext(): CanvasRenderingContext2D {

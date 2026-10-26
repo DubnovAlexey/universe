@@ -12,7 +12,8 @@ import {
 import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES, smootherstep,
 } from '../store/universeState';
-import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
+import { CANONICAL_FINALE_LINES, CipherOdometerEngine, formatFinaleStaticLine, getFinaleLineAssemblyProgress } from '../bridge/cipherOdometerEngine';
+import { GLYPH_WAITING_SPACE, getOrderedGlyphState, splitGlyphText } from '../core/glyphGrammar';
 import { bindFinaleQuantumCells, updateFinaleQuantumCells } from '../layers/Layer5_CipherFinale';
 
 const PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
@@ -48,6 +49,28 @@ function makeQuantumLine(): {
 
 // НАЧАЛО ФУНКЦИИ runFinaleCompositionChecks
 export function runFinaleCompositionChecks(check: (passed: boolean, description: string) => void): void {
+    const initialEngine = new CipherOdometerEngine();
+    const halfwayCells = initialEngine.evaluateCells(1920, 1080, 0.4, false, 0);
+    check([0, 1, 3, 4].every((lineIndex) => {
+        const canonical = CANONICAL_FINALE_LINES[lineIndex];
+        const characters = splitGlyphText(canonical);
+        const text = splitGlyphText(formatFinaleStaticLine(canonical, lineIndex, 0.4, 4, ['∇']));
+        const lineCells = halfwayCells.filter((cell) => cell.lineIndex === lineIndex);
+        const states = characters.map((_character, index) =>
+            getOrderedGlyphState(index, characters.length, getFinaleLineAssemblyProgress(0.4, lineIndex)).state);
+        return states.includes('locked') && states.includes('rolling') && states.includes('waiting') &&
+            states.every((state, index) => state === 'locked'
+                ? text[index] === characters[index] && lineCells[index].isLocked && lineCells[index].primaryChar === characters[index]
+                : state !== 'waiting' || (text[index] === GLYPH_WAITING_SPACE &&
+                    lineCells[index].primaryChar === GLYPH_WAITING_SPACE && lineCells[index].glyphBreathAlpha === 0)) &&
+            formatFinaleStaticLine(canonical, lineIndex, 1, 100, ['∇']) === canonical;
+    }), 'Initial Canvas and DOM static lines share a locked left prefix, rolling front and invisible waiting suffix, then restore every canonical character');
+    const endlessBefore = halfwayCells.filter((cell) => cell.lineIndex === 2);
+    const endlessAfter = initialEngine.evaluateCells(1920, 1080, 1, false, 0).filter((cell) => cell.lineIndex === 2);
+    check(endlessBefore.length > 0 && endlessBefore.every((cell, index) => !cell.isLocked && !endlessAfter[index].isLocked &&
+        cell.primaryChar === endlessAfter[index].primaryChar && cell.wheelPhaseFrac === endlessAfter[index].wheelPhaseFrac),
+        'The endless Canvas quantum row never joins the static locking front or changes its wheel phase with assembly progress');
+
     const quantum = makeQuantumLine();
     const cells = bindFinaleQuantumCells(quantum.line);
     const mountedNodes = quantum.state.children.slice();

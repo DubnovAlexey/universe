@@ -4,7 +4,8 @@
 // РАЗДЕЛЫ: 1. Семейства/профили; 2. Проверка шрифтов; 3. Детерминированный выбор.
 // ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, getRenderableGlyphPool,
 // pickGlyph, isMutableGlyph, scrambleCanonicalText, prepareGlyphFonts,
-// invalidateGlyphFontCache, getGlyphFontEpoch. Все пулы — полные code points.
+// invalidateGlyphFontCache, getGlyphFontEpoch, splitGlyphText, getOrderedGlyphState,
+// formatOrderedGlyphText. Все пулы — полные code points; канон делится на графемы.
 // ============================================================================
 import type { PhaseId } from './contracts';
 
@@ -139,6 +140,44 @@ export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. ВЫБОР И ВОССТАНОВЛЕНИЕ
+const textSegmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
+export const GLYPH_WAITING_SPACE = '\u00A0';
+
+// НАЧАЛО ФУНКЦИИ splitGlyphText
+/** Не разделяет составные emoji, диакритику и символы за пределами BMP. */
+export function splitGlyphText(text: string): string[] {
+    return Array.from(textSegmenter.segment(text), (part) => part.segment);
+}
+// КОНЕЦ ФУНКЦИИ splitGlyphText
+
+// НАЧАЛО ФУНКЦИИ getOrderedGlyphState
+/** Один фронт: слева закреплённый текст, затем барабаны, справа пустые окна. */
+export function getOrderedGlyphState(index: number, count: number, progress: number, rollingSpan = 0.28): {
+    state: 'waiting' | 'rolling' | 'locked'; progress: number;
+} {
+    const p = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+    const span = Math.max(0.01, Math.min(1, rollingSpan));
+    const start = count > 1 ? index / (count - 1) * (1 - span) : 0;
+    const local = (p - start) / span;
+    if (p >= 1 || local >= 1 - 1e-9) return { state: 'locked', progress: 1 };
+    if (local < -1e-9) return { state: 'waiting', progress: 0 };
+    return { state: 'rolling', progress: Math.max(0, local) };
+}
+// КОНЕЦ ФУНКЦИИ getOrderedGlyphState
+
+// НАЧАЛО ФУНКЦИИ formatOrderedGlyphText
+/** Общая сборка статических строк DOM/Canvas; бесконечная строка сюда не входит. */
+export function formatOrderedGlyphText(canonical: string, progress: number, step: number, glyphPool: readonly string[], offset = 0): string {
+    const characters = splitGlyphText(canonical);
+    return characters.map((character, index) => {
+        const cell = getOrderedGlyphState(index, characters.length, progress);
+        if (cell.state === 'waiting') return GLYPH_WAITING_SPACE;
+        if (cell.state === 'locked' || !isMutableGlyph(character) || !glyphPool.length) return character;
+        return glyphPool[((step + index * 5 + offset * 9) % glyphPool.length + glyphPool.length) % glyphPool.length];
+    }).join('');
+}
+// КОНЕЦ ФУНКЦИИ formatOrderedGlyphText
+
 // НАЧАЛО ФУНКЦИИ isMutableGlyph
 export function isMutableGlyph(character: string, nextCharacter = ''): boolean {
     return !protectedGlyphs.has(character) && !/\p{Script=Egyptian_Hieroglyphs}/u.test(character) &&

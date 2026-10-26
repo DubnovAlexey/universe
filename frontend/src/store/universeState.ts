@@ -801,8 +801,8 @@ class UniverseStore {
                 const actCProg = (el - 13.6) / 0.45;
                 this.state.singularityActProgress = Math.max(0, Math.min(1, actCProg));
                 this.state.zeroSilenceElapsedMs = Math.min(
-                    2500,
-                    Math.round(this.state.singularityActProgress * 2500)
+                    450,
+                    Math.round((el - 13.6) * 1000)
                 );
                 this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce
                     ? 1.0
@@ -814,13 +814,17 @@ class UniverseStore {
                     'Точка Нуля достигнута: мгновенное перерождение в визитку DUBNOV ALEXEY'
                 );
             } else {
+                // Повторный вход сохраняет собранную карточку; первый показ проходит всю сборку.
+                const keepCardAssembled = this.state.cycleCount > 1 ||
+                    (this.state.finaleReachedOnce &&
+                        (prevAct !== 'ACT_D_GITHUB_CARD' || this.state.githubCardAssemblyProgress >= 1));
                 this.state.singularityAct = 'ACT_D_GITHUB_CARD';
                 this.state.finaleReachedOnce = true;
-                this.state.zeroSilenceElapsedMs = 2500;
+                this.state.zeroSilenceElapsedMs = 450;
                 this.state.opticalWeights.logicConvergence = 0;
                 const cardElapsed = el - 14.05;
                 this.state.githubCardAssemblyProgress =
-                    this.state.cycleCount > 1
+                    keepCardAssembled
                         ? 1.0
                         : Math.max(0, Math.min(1, cardElapsed / 4.5));
                 this.state.singularityActProgress =

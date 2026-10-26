@@ -11,8 +11,8 @@
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. StressStateController: constructor, getState, bindKeyboardNavigation, moveLensByKeyboard,
-//      updatePointer, clearPointer, setBreaching, setTargetStress, injectEntropySpike, spawnShockwave,
+//   2. StressStateController: constructor, getState, syncViewportSize, bindKeyboardNavigation,
+//      moveLensByKeyboard, updatePointer, clearPointer, setBreaching, setTargetStress, injectEntropySpike, spawnShockwave,
 //      spawnSpontaneousRift, generateDeterministicMicroCracks, stepPhysics, getDeformedLensRadiusAtAngle,
 //      getBoundaryRefractionOffset, getTruthRevealFactorAt.
 // ============================================================================
@@ -123,10 +123,12 @@ class StressStateController {
     private viewportWidth = 1920;
     private viewportHeight = 1080;
     private viewportMinSide = 1080;
+    private keyboardBreachHeld = false;
 
     // --- НАЧАЛО ФУНКЦИИ constructor (StressStateController) ---
     constructor() {
         if (typeof window !== 'undefined') {
+            this.syncViewportSize(window.innerWidth, window.innerHeight);
             this.bindKeyboardNavigation();
         }
     }
@@ -138,10 +140,46 @@ class StressStateController {
     }
     // --- КОНЕЦ ФУНКЦИИ getState (StressStateController) ---
 
+    // --- НАЧАЛО ФУНКЦИИ syncViewportSize (StressStateController) ---
+    public syncViewportSize(viewportWidth: number, viewportHeight: number): void {
+        this.viewportWidth = Number.isFinite(viewportWidth) && viewportWidth > 0
+            ? Math.max(1, viewportWidth) : this.viewportWidth;
+        this.viewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
+            ? Math.max(1, viewportHeight) : this.viewportHeight;
+        this.viewportMinSide = Math.min(this.viewportWidth, this.viewportHeight);
+
+        // Радиусы и центр задаются до первого ввода, включая режиссёрский авто-разрыв.
+        this.state.baseBreachRadius = Math.round(this.viewportMinSide * 0.12);
+        this.state.maxBreachRadius = Math.round(this.viewportMinSide * 0.22);
+        if (!this.state.isPointerInside) {
+            this.state.pointerX = this.state.lensX = this.viewportWidth * 0.5;
+            this.state.pointerY = this.state.lensY = this.viewportHeight * 0.5;
+            this.state.lensVx = 0;
+            this.state.lensVy = 0;
+        } else {
+            this.state.pointerX = Math.max(0, Math.min(this.viewportWidth, this.state.pointerX));
+            this.state.pointerY = Math.max(0, Math.min(this.viewportHeight, this.state.pointerY));
+            this.state.lensX = Math.max(0, Math.min(this.viewportWidth, this.state.lensX));
+            this.state.lensY = Math.max(0, Math.min(this.viewportHeight, this.state.lensY));
+        }
+        this.state.normX = this.state.pointerX / this.viewportWidth;
+        this.state.normY = this.state.pointerY / this.viewportHeight;
+    }
+    // --- КОНЕЦ ФУНКЦИИ syncViewportSize (StressStateController) ---
+
     // Клавиатурная альтернатива по MASTER 04: стрелки двигают линзу, Space удерживает, Esc закрывает
     // --- НАЧАЛО ФУНКЦИИ bindKeyboardNavigation (StressStateController) ---
     private bindKeyboardNavigation(): void {
         window.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            const target = e.target as HTMLElement | null;
+            if (target?.isContentEditable || target?.closest?.(
+                'button, a, input, textarea, select, summary, [contenteditable]:not([contenteditable="false"]), ' +
+                '[role="button"], [role="link"], [role="textbox"], [role="slider"], [role="spinbutton"], ' +
+                '[role="combobox"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], ' +
+                '[data-ui-panel], [data-github-card]'
+            )) return;
+
             const step = 28;
             if (e.key === 'ArrowLeft') {
                 this.moveLensByKeyboard(-step, 0);
@@ -151,19 +189,30 @@ class StressStateController {
                 this.moveLensByKeyboard(0, -step);
             } else if (e.key === 'ArrowDown') {
                 this.moveLensByKeyboard(0, step);
-            } else if (e.key === ' ' && !e.repeat) {
-                if (!this.state.isPointerInside) {
-                    this.updatePointer(this.viewportWidth * 0.5, this.viewportHeight * 0.5, this.viewportWidth, this.viewportHeight);
+            } else if (e.key === ' ') {
+                if (!e.repeat) {
+                    this.keyboardBreachHeld = true;
+                    if (!this.state.isPointerInside) {
+                        this.updatePointer(this.viewportWidth * 0.5, this.viewportHeight * 0.5, this.viewportWidth, this.viewportHeight);
+                    }
+                    this.setBreaching(true, true);
+                } else if (!this.keyboardBreachHeld) {
+                    return;
                 }
-                this.setBreaching(true, true);
             } else if (e.key === 'Escape') {
+                this.keyboardBreachHeld = false;
                 this.setBreaching(false, false);
                 this.clearPointer();
+            } else {
+                return;
             }
+            e.preventDefault();
         });
 
         window.addEventListener('keyup', (e: KeyboardEvent) => {
-            if (e.key === ' ') {
+            // Отпускание принятого Space закрывает линзу и после переноса фокуса на UI.
+            if (e.key === ' ' && this.keyboardBreachHeld) {
+                this.keyboardBreachHeld = false;
                 this.setBreaching(false, false);
             }
         });
@@ -182,13 +231,10 @@ class StressStateController {
 
     // --- НАЧАЛО ФУНКЦИИ updatePointer (StressStateController) ---
     public updatePointer(x: number, y: number, viewportWidth: number, viewportHeight: number): void {
-        this.viewportWidth = Math.max(320, viewportWidth);
-        this.viewportHeight = Math.max(320, viewportHeight);
-        this.viewportMinSide = Math.min(this.viewportWidth, this.viewportHeight);
-
-        // Радиус R = 12–24% меньшей стороны окна по MASTER 04
-        this.state.baseBreachRadius = Math.round(this.viewportMinSide * 0.12);
-        this.state.maxBreachRadius = Math.round(this.viewportMinSide * 0.22);
+        this.syncViewportSize(viewportWidth, viewportHeight);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        x = Math.max(0, Math.min(this.viewportWidth, x));
+        y = Math.max(0, Math.min(this.viewportHeight, y));
 
         if (!this.state.isPointerInside) {
             this.state.lensX = x;
@@ -197,8 +243,8 @@ class StressStateController {
 
         this.state.pointerX = x;
         this.state.pointerY = y;
-        this.state.normX = this.viewportWidth > 0 ? x / this.viewportWidth : 0.5;
-        this.state.normY = this.viewportHeight > 0 ? y / this.viewportHeight : 0.5;
+        this.state.normX = x / this.viewportWidth;
+        this.state.normY = y / this.viewportHeight;
         this.state.isPointerInside = true;
     }
     // --- КОНЕЦ ФУНКЦИИ updatePointer (StressStateController) ---

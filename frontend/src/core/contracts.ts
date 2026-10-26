@@ -253,7 +253,7 @@ export interface UniverseSnapshot {
     nextPhase: PhaseId;
     transitionProgress: number; // Прогресс активной огибающей перехода (0.0 .. 1.0)
     subAct: SingularityAct;
-    zeroSilenceElapsed: number; // Точный таймер живой тишины в мс (0 .. 2500 мс)
+    zeroSilenceElapsed: number; // Таймер импульса Точки Нуля в мс (0 .. 450 мс)
     audioStatus: HonestStatusLabel;
     quality: QualityTier;
     inspectionLevel: InspectionLevel;

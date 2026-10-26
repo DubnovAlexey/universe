@@ -314,7 +314,8 @@ body {
     position: absolute;
     left: 50%;
     top: 50%;
-    width: max(100%, 1.15em);
+    /* Соседние наборные окна не перекрываются; широкий глиф вписывает symbolFit. */
+    width: 100%;
     height: max(1.3em, 16px);
     transform: translate(-50%, -50%);
     overflow: hidden;
@@ -519,8 +520,9 @@ body {
     margin-bottom: 0;
 }
 
-:root [data-button-solid="1"]:hover,
-:root [data-button-solid="1"]:focus-visible {
+/* Шкала фаз использует единый приоритет чтения: курсор, keyboard focus, текущая фаза. */
+:root [data-button-solid="1"]:not(.phase-pill):is(:hover, :focus-visible),
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"] {
     z-index: 2;
     --solid-live-scale: var(--solid-read-scale);
     --solid-shadow-lift: 3px;
@@ -533,17 +535,17 @@ body {
 }
 
 /* Тело и его тень вместе освобождают края окна при чтении; hit area остаётся на месте. */
-:root .phase-timeline-dock [data-button-solid="1"]:is(:hover, :focus-visible),
+:root .phase-timeline-dock [data-button-solid="1"][data-button-phase-emphasis="1"],
 :root .controls-dock [data-button-solid="1"]:is(:hover, :focus-visible) {
     --solid-shift-y: -25%;
 }
 
-:root .phase-buttons-row > :first-child:is(:hover, :focus-visible),
+:root .phase-buttons-row > :first-child[data-button-phase-emphasis="1"],
 :root .controls-dock > :first-child:is(:hover, :focus-visible) {
     --solid-shift-x: 25%;
 }
 
-:root .phase-buttons-row > :last-child:is(:hover, :focus-visible),
+:root .phase-buttons-row > :last-child[data-button-phase-emphasis="1"],
 :root .controls-dock > :last-child:is(:hover, :focus-visible) {
     --solid-shift-x: -25%;
 }
@@ -569,8 +571,8 @@ body {
     border-color: var(--accent-ice);
 }
 
-:root [data-button-solid="1"]:hover .solid-button-face--front,
-:root [data-button-solid="1"]:focus-visible .solid-button-face--front {
+:root [data-button-solid="1"]:not(.phase-pill):is(:hover, :focus-visible) .solid-button-face--front,
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"] .solid-button-face--front {
     border-color: var(--accent-ice);
     background-image: linear-gradient(165deg, #385c79, #10243a 70%);
 }

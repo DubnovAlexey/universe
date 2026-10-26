@@ -3,9 +3,10 @@
 // НАЗНАЧЕНИЕ: Полные обороты цельных 3D-тел вокруг собственной неподвижной оси.
 // РАЗДЕЛЫ: 1. Оси/контракт; 2. Привязка и освобождение; 3. Движение общего кадра.
 // ФУНКЦИИ: easeC2, formatCssNumber, createAxis, constructor, mount, dispose,
-// setInteracting, snapFront, publishAngle, publishShadow, updateSceneSpeed, update.
+// setInteracting, updateReadTarget, setHeld, snapFront, publishAngle, publishShadow,
+// updateSceneSpeed, update.
 // Host сохраняет геометрию и доступность; rotate3d получает только вложенное тело.
-// Новых RAF и таймеров нет. Наведение и keyboard focus выравнивают одно тело.
+// Новых RAF и таймеров нет. Наведение, keyboard focus и текущая фаза задают читаемую грань.
 // ============================================================================
 import { subscribeVisualSignals, type VisualSignalSnapshot } from './visualSignals';
 
@@ -27,9 +28,12 @@ interface ButtonPose {
     readonly axis: readonly [number, number, number];
     readonly originalStyles: readonly { property: ButtonProperty; value: string; priority: string }[];
     readonly originalMarker: string | undefined;
+    readonly originalPhaseEmphasis: string | undefined;
+    readonly phaseId: string | undefined;
     cleanup: () => void;
     hovered: boolean;
     keyboardFocused: boolean;
+    held: boolean;
     angle: number;
     alignFrom: number;
     alignTarget: number;
@@ -81,6 +85,7 @@ export class ButtonMotionController {
     private sceneSpeedFactor = 1;
     private paused = false;
     private reducedMotion = false;
+    private currentPhase: VisualSignalSnapshot['phase'] | null = null;
     private generation = 0;
 
     // НАЧАЛО ФУНКЦИИ constructor
@@ -95,6 +100,7 @@ export class ButtonMotionController {
         this.sceneSpeedFactor = 1;
         this.paused = false;
         this.reducedMotion = false;
+        this.currentPhase = null;
         this.buttons = Array.from(new Set(elements)).map((element, index) => {
             const axis = createAxis(index, element.dataset.buttonSolidKind === 'status');
             const pose: ButtonPose = {
@@ -107,7 +113,10 @@ export class ButtonMotionController {
                     priority: element.style.getPropertyPriority(property),
                 })),
                 originalMarker: element.dataset.buttonMotion,
+                originalPhaseEmphasis: element.dataset.buttonPhaseEmphasis,
+                phaseId: element.dataset.phaseId,
                 cleanup: () => {}, hovered: false, keyboardFocused: element.matches(':focus-visible'),
+                held: false,
                 angle: 0, alignFrom: 0, alignTarget: 0,
                 alignElapsedSec: 0, releaseElapsedSec: 0, lastAngle: '',
                 shadowElapsedSec: 0, lastShadowAngle: null, lastShadowValues: [],
@@ -140,6 +149,7 @@ export class ButtonMotionController {
             pose.shadowElapsedSec = SHADOW_INTERVAL_SEC * ((index * SHADOW_PHASE_STEP) % 1);
             return pose;
         });
+        this.updateReadTarget();
         if (this.buttons.length) this.unsubscribe = this.subscribeFrame(this.update);
         let disposed = false;
         return {
@@ -164,6 +174,8 @@ export class ButtonMotionController {
             });
             if (pose.originalMarker === undefined) delete pose.element.dataset.buttonMotion;
             else pose.element.dataset.buttonMotion = pose.originalMarker;
+            if (pose.originalPhaseEmphasis === undefined) delete pose.element.dataset.buttonPhaseEmphasis;
+            else pose.element.dataset.buttonPhaseEmphasis = pose.originalPhaseEmphasis;
         });
         this.buttons = [];
     }
@@ -171,12 +183,36 @@ export class ButtonMotionController {
 
     // НАЧАЛО ФУНКЦИИ setInteracting
     private setInteracting(pose: ButtonPose, hovered: boolean, keyboardFocused: boolean): void {
-        const wasInteracting = pose.hovered || pose.keyboardFocused;
         pose.hovered = hovered;
         pose.keyboardFocused = keyboardFocused;
-        const isInteracting = hovered || keyboardFocused;
-        if (wasInteracting === isInteracting) return;
-        if (isInteracting) {
+        this.updateReadTarget();
+    }
+    // КОНЕЦ ФУНКЦИИ setInteracting
+
+    // НАЧАЛО ФУНКЦИИ updateReadTarget
+    /** В шкале фаз читается одна кнопка; наведение и keyboard focus временно важнее текущей фазы. */
+    private updateReadTarget(): void {
+        const phaseTarget = this.buttons.find((pose) => pose.phaseId && pose.hovered) ??
+            this.buttons.find((pose) => pose.phaseId && pose.keyboardFocused) ??
+            this.buttons.find((pose) => pose.phaseId === this.currentPhase);
+        this.buttons.forEach((pose) => {
+            if (pose.phaseId) {
+                if (pose === phaseTarget) {
+                    if (pose.element.dataset.buttonPhaseEmphasis !== '1') pose.element.dataset.buttonPhaseEmphasis = '1';
+                } else if (pose.element.dataset.buttonPhaseEmphasis !== undefined) {
+                    delete pose.element.dataset.buttonPhaseEmphasis;
+                }
+            }
+            this.setHeld(pose, pose.phaseId ? pose === phaseTarget : pose.hovered || pose.keyboardFocused);
+        });
+    }
+    // КОНЕЦ ФУНКЦИИ updateReadTarget
+
+    // НАЧАЛО ФУНКЦИИ setHeld
+    private setHeld(pose: ButtonPose, held: boolean): void {
+        if (pose.held === held) return;
+        pose.held = held;
+        if (held) {
             pose.alignFrom = pose.angle;
             pose.alignTarget = Math.round(pose.angle / 360) * 360;
             pose.alignElapsedSec = 0;
@@ -188,7 +224,7 @@ export class ButtonMotionController {
             pose.releaseElapsedSec = 0;
         }
     }
-    // КОНЕЦ ФУНКЦИИ setInteracting
+    // КОНЕЦ ФУНКЦИИ setHeld
     // КОНЕЦ РАЗДЕЛА 2
 
     // НАЧАЛО РАЗДЕЛА 3. ДВИЖЕНИЕ ОБЩЕГО КАДРА
@@ -258,6 +294,10 @@ export class ButtonMotionController {
     // НАЧАЛО ФУНКЦИИ update
     private update = (signals: Readonly<VisualSignalSnapshot>): void => {
         this.paused = signals.isPaused;
+        if (this.currentPhase !== signals.phase) {
+            this.currentPhase = signals.phase;
+            this.updateReadTarget();
+        }
         if (signals.reducedMotion) {
             if (!this.reducedMotion) this.buttons.forEach((pose) => this.snapFront(pose));
             this.reducedMotion = true;
@@ -277,7 +317,7 @@ export class ButtonMotionController {
         this.buttons.forEach((pose) => {
             pose.shadowElapsedSec = Math.min(SHADOW_INTERVAL_SEC, pose.shadowElapsedSec + dt);
             let alignedNow = false;
-            if (pose.hovered || pose.keyboardFocused) {
+            if (pose.held) {
                 const wasAligned = pose.alignElapsedSec >= ALIGN_DURATION_SEC;
                 pose.alignElapsedSec += dt;
                 const progress = easeC2(pose.alignElapsedSec / ALIGN_DURATION_SEC);

@@ -270,6 +270,7 @@ export class UniverseRenderer {
         const caps = this.pipeline.getCapabilities();
         this.width = caps.viewportWidth;
         this.height = caps.viewportHeight;
+        stressStore.syncViewportSize(this.width, this.height);
 
         this.simulation = new VoidPhaseSimulation(this.width, this.height);
 
@@ -455,6 +456,7 @@ export class UniverseRenderer {
         this.width = width;
         this.height = height;
         this.simulation.resize(width, height);
+        stressStore.syncViewportSize(width, height);
     };
     // --- КОНЕЦ ФУНКЦИИ handleResize ---
 
@@ -2133,6 +2135,7 @@ export class UniverseRenderer {
 
             const isActiveSim = !state.isPaused && !state.isTabHidden;
             const simDtSec = isActiveSim ? clampedDtSec * state.timeScale : 0.0;
+            // Часы сохраняют дробный шаг: округление каждого кадра даёт дрейф на 120/144 Гц.
             const nextSimSec = state.telemetry.simulationTimeSec + simDtSec;
             const nextPhaseElapsed = state.telemetry.phaseElapsedSec + simDtSec;
 
@@ -2159,6 +2162,7 @@ export class UniverseRenderer {
             const particles = this.getSimParticles();
             const edges = this.getSimEdges();
             const pulses = this.getSimPulses();
+            this.pipeline.syncQualityProfile();
             const caps = this.pipeline.getCapabilities();
 
             // Сначала продвигаем часы фазы и подакта сингулярности,
@@ -2166,8 +2170,8 @@ export class UniverseRenderer {
             if (latestState.singularityAct === 'RESTART_COLLAPSE') {
                 universeStore.updateTelemetry({
                     frameTimeMs: Number(rawDtMs.toFixed(1)),
-                    simulationTimeSec: Number(nextSimSec.toFixed(3)),
-                    phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
+                    simulationTimeSec: nextSimSec,
+                    phaseElapsedSec: nextPhaseElapsed,
                     audioStatus: audioSnap.status,
                     silenceRmsDb: audioSnap.rmsDb,
                 });
@@ -2177,8 +2181,8 @@ export class UniverseRenderer {
                     activeParticles: particles.length,
                     activeConnections: edges.length,
                     activePulses: pulses.length,
-                    simulationTimeSec: Number(nextSimSec.toFixed(3)),
-                    phaseElapsedSec: Number(nextPhaseElapsed.toFixed(3)),
+                    simulationTimeSec: nextSimSec,
+                    phaseElapsedSec: nextPhaseElapsed,
                     engineBackend: caps.activeBackend,
                     wasmStatus: latestState.telemetry.wasmStatus,
                     pythonBackendStatus:

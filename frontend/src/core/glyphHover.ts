@@ -8,23 +8,24 @@
 // ============================================================================
 
 import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } from './visualSignals';
-import { GLYPH_FONT_STACK, getGlyphFontEpoch, getGlyphProfile, isMutableGlyph, pickGlyph } from './glyphGrammar';
+import { GLYPH_FONT_STACK, GLYPH_WAITING_SPACE, getGlyphFontEpoch, getGlyphProfile, getOrderedGlyphState,
+    isMutableGlyph, pickGlyph, splitGlyphText } from './glyphGrammar';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТЫ И МЕТРИКИ
 interface GlyphTextNodes { canonical: HTMLElement | null; visual: HTMLElement; }
 interface GlyphReelCell {
     index: number;
     canonical: string;
+    node: HTMLElement;
     track: HTMLElement;
     outgoing: HTMLElement;
     incoming: HTMLElement;
-    delayMs: number;
     turn: number;
     progress: number;
+    state: 'waiting' | 'rolling' | 'locked';
 }
 interface HoverSession {
     canonical: string;
-    characters: string[];
     logicalText: string;
     cells: GlyphReelCell[];
     elapsedMs: number;
@@ -32,11 +33,13 @@ interface HoverSession {
     rollMs: number;
     dwellMs: number;
     offset: number;
+    waveMs: number;
     cleanup: () => void;
 }
-const REEL_TURNS = 4;
+const REEL_TURNS = 2;
 const REEL_HOLD_MS = 120;
-const SLOT_WAVE_MS = 24;
+const SLOT_WAVE_MS = 90;
+const MAX_WAVE_MS = 1700;
 let metricsContext: CanvasRenderingContext2D | null | undefined;
 const fitCache = new Map<string, number>();
 let fitCacheEpoch = -1;
@@ -156,32 +159,11 @@ class CalmGlyphHover {
     // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ОКНА И ВЕРТИКАЛЬНЫЕ ЛЕНТЫ
     // НАЧАЛО ФУНКЦИИ createReels
     private createReels(element: HTMLElement, canonical: string): GlyphReelCell[] {
-        const characters = Array.from(canonical);
-        const eligible = characters.flatMap((character, index) =>
-            isMutableGlyph(character, characters[index + 1]) ? [index] : []);
-        const wanted = Math.min(5, Math.max(2, Math.ceil(eligible.length * 0.42)));
-        const selected: number[] = [];
-        for (let slot = 0; slot < eligible.length && selected.length < wanted; slot++) {
-            const rank = Math.floor(slot * eligible.length / wanted) % Math.max(1, eligible.length);
-            const index = eligible[rank];
-            if (!selected.some((prior) => Math.abs(prior - index) < 2)) selected.push(index);
-        }
-        if (!selected.length && eligible.length) selected.push(eligible[0]);
-        selected.sort((a, b) => a - b);
-
+        const characters = splitGlyphText(canonical);
         const nodes: HTMLElement[] = [];
         const cells: GlyphReelCell[] = [];
         const document = element.ownerDocument;
-        let staticText = '';
         for (let index = 0; index < characters.length; index++) {
-            if (!selected.includes(index)) { staticText += characters[index]; continue; }
-            if (staticText) {
-                const span = document.createElement('span');
-                span.className = 'glyph-reel-static';
-                span.textContent = staticText;
-                nodes.push(span);
-                staticText = '';
-            }
             const cell = document.createElement('span');
             const measure = document.createElement('span');
             const windowEl = document.createElement('span');
@@ -195,19 +177,14 @@ class CalmGlyphHover {
             windowEl.className = 'glyph-reel-window';
             track.className = 'glyph-reel-track';
             outgoing.className = incoming.className = 'glyph-reel-symbol';
-            outgoing.textContent = incoming.textContent = characters[index];
+            outgoing.textContent = incoming.textContent = GLYPH_WAITING_SPACE;
             track.replaceChildren(outgoing, incoming);
             windowEl.replaceChildren(track);
             cell.replaceChildren(measure, windowEl);
             nodes.push(cell);
-            cells.push({ index, canonical: characters[index], track, outgoing, incoming,
-                delayMs: (cells.length % 5) * SLOT_WAVE_MS, turn: -1, progress: -1 });
-        }
-        if (staticText) {
-            const span = document.createElement('span');
-            span.className = 'glyph-reel-static';
-            span.textContent = staticText;
-            nodes.push(span);
+            cell.dataset.glyphState = 'waiting';
+            cells.push({ index, canonical: characters[index], node: cell, track, outgoing, incoming,
+                turn: -1, progress: -1, state: 'waiting' });
         }
         this.ensureTextNodes(element).visual.replaceChildren(...nodes);
         return cells;
@@ -216,15 +193,45 @@ class CalmGlyphHover {
 
     // НАЧАЛО ФУНКЦИИ updateReels
     private updateReels(session: HoverSession, signals: Readonly<VisualSignalSnapshot>): void {
-        const characters = [...session.characters];
+        const characters: string[] = [];
+        const rollDuration = session.rollMs * REEL_TURNS + REEL_HOLD_MS * (REEL_TURNS - 1);
+        const totalMs = session.waveMs + rollDuration;
+        const elapsed = session.elapsedMs - session.delayMs;
         for (const cell of session.cells) {
-            const localMs = Math.max(0, session.elapsedMs - session.delayMs - cell.delayMs);
-            const turn = Math.min(REEL_TURNS, Math.floor(localMs / (session.rollMs + REEL_HOLD_MS)));
-            if (turn === REEL_TURNS) { characters[cell.index] = cell.canonical; continue; }
-            const from = turn === 0 ? cell.canonical :
-                pickGlyph(signals.phase, cell.index + session.offset, turn - 1, signals.seed);
-            const to = turn === REEL_TURNS - 1 ? cell.canonical :
-                pickGlyph(signals.phase, cell.index + session.offset, turn, signals.seed);
+            const front = elapsed < 0 ? { state: 'waiting' as const, progress: 0 } :
+                getOrderedGlyphState(cell.index, session.cells.length, elapsed / totalMs, rollDuration / totalMs);
+            if (front.state !== cell.state) {
+                cell.state = front.state;
+                cell.node.dataset.glyphState = front.state;
+            }
+            if (front.state === 'waiting') {
+                characters[cell.index] = GLYPH_WAITING_SPACE;
+                if (cell.progress !== 0) {
+                    cell.track.style.setProperty('transform', 'translate3d(0, 0.000%, 0)');
+                    cell.progress = 0;
+                }
+                continue;
+            }
+            if (front.state === 'locked') {
+                // Закрепление меняет настоящий DOM, а не только логическую строку.
+                if (cell.turn !== REEL_TURNS) {
+                    cell.outgoing.textContent = cell.canonical;
+                    cell.incoming.textContent = '';
+                    cell.outgoing.style.setProperty('font-family', 'inherit');
+                    cell.outgoing.style.setProperty('font-size', 'inherit');
+                    cell.outgoing.style.setProperty('transform', 'scaleX(1)');
+                    cell.track.style.setProperty('transform', 'translate3d(0, 0.000%, 0)');
+                    cell.turn = REEL_TURNS;
+                }
+                characters[cell.index] = cell.canonical;
+                continue;
+            }
+            const localMs = front.progress * rollDuration;
+            const turn = Math.min(REEL_TURNS - 1, Math.floor(localMs / (session.rollMs + REEL_HOLD_MS)));
+            const mutable = isMutableGlyph(cell.canonical);
+            const from = mutable ? pickGlyph(signals.phase, cell.index + session.offset, turn, signals.seed) : cell.canonical;
+            const to = !mutable || turn === REEL_TURNS - 1 ? cell.canonical :
+                pickGlyph(signals.phase, cell.index + session.offset, turn + 1, signals.seed);
             if (turn !== cell.turn) {
                 cell.turn = turn;
                 cell.outgoing.textContent = from;
@@ -266,11 +273,13 @@ class CalmGlyphHover {
         element.addEventListener('blur', restore);
         const profile = getGlyphProfile(signals.phase);
         this.sessions.set(element, {
-            canonical, characters: Array.from(canonical), logicalText: canonical, cells,
+            canonical, logicalText: canonical, cells,
             elapsedMs: 0, delayMs: Math.max(0, Math.min(240, offset * 60)),
             rollMs: profile.rollMs, dwellMs: profile.dwellMs, offset,
+            waveMs: Math.min(MAX_WAVE_MS, Math.max(0, cells.length - 1) * SLOT_WAVE_MS),
             cleanup: () => { element.removeEventListener('pointerleave', restore); element.removeEventListener('blur', restore); },
         });
+        this.updateReels(this.sessions.get(element)!, signals);
         element.dataset.glyphActive = '1';
         element.dataset.scrambling = '1';
         if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot) => this.update(snapshot));
@@ -300,9 +309,8 @@ class CalmGlyphHover {
         this.sessions.forEach((session, element) => {
             if (!element.isConnected || signals.isPaused || signals.reducedMotion) { this.stop(element); return; }
             session.elapsedMs += signals.frameDtSec * 1000;
-            const lastDelay = session.cells[session.cells.length - 1]?.delayMs ?? 0;
             const rollDuration = (session.rollMs + REEL_HOLD_MS) * (REEL_TURNS - 1) + session.rollMs;
-            const duration = session.delayMs + lastDelay + rollDuration + session.dwellMs;
+            const duration = session.delayMs + session.waveMs + rollDuration + session.dwellMs;
             if (session.elapsedMs >= duration) { this.stop(element); return; }
             this.updateReels(session, signals);
             const depth = Math.sin(Math.min(1, Math.max(0, session.elapsedMs - session.delayMs) / (duration - session.delayMs)) * Math.PI);
