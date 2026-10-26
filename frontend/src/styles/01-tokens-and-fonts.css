@@ -1,0 +1,190 @@
+/* noinspection CssUnusedSymbol */
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/01-tokens-and-fonts.css
+ * НАЗНАЧЕНИЕ: Локальные шрифты, общие переменные, сброс стилей и космическое полотно.
+ * РАЗДЕЛЫ:
+ *   1. ЛОКАЛЬНЫЕ ИСТОРИЧЕСКИЕ И МАТЕМАТИЧЕСКИЕ ШРИФТЫ.
+ *   2. ПАЛИТРА, ПЕРЕМЕННЫЕ И СБРОС СТИЛЕЙ.
+ *   3. ПОЛОТНО, ДИНАМИЧЕСКАЯ ВЫСОТА И ВИНЬЕТКА.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. ЛОКАЛЬНЫЕ ИСТОРИЧЕСКИЕ И МАТЕМАТИЧЕСКИЕ ШРИФТЫ */
+/* Лицензированные наборы загружают только используемые исторические и математические знаки. */
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-runic.2718c62b3d4f.ttf?no-inline') format('truetype');
+    unicode-range: U+16A0, U+16A2, U+16A6, U+16A8, U+16B1-16B2, U+16B7, U+16B9-16BA, U+16BE, U+16C1, U+16C3, U+16C7-16C9, U+16CB, U+16CF, U+16D2, U+16D6-16D7, U+16DA, U+16DC, U+16DE-16DF;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-mayan-numerals.03f3dc2d4a6b.ttf?no-inline') format('truetype');
+    unicode-range: U+1D2E0-1D2F3;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-egyptian.55014a018207.ttf?no-inline') format('truetype');
+    unicode-range: U+13000, U+13079, U+13080, U+130BB, U+130ED, U+13153, U+13193, U+131A3, U+131F3, U+13216, U+132B9, U+132BD, U+132F9, U+1339B, U+133CF, U+1340D;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-math.7812a9fe056e.ttf?no-inline') format('truetype');
+    unicode-range: U+B7, U+398, U+39B, U+39E, U+3A0, U+3A6, U+3A8-3A9, U+2102, U+210F, U+2113, U+211A, U+211D, U+2124, U+2135-2136, U+2200, U+2202-2209, U+2211, U+2218, U+221D, U+222B, U+222E-2230, U+2237, U+2243, U+2245, U+2248, U+225C, U+2260-2261, U+2282-2283, U+2286-2287, U+2295, U+2297, U+2299, U+22A2-22A3, U+22A5, U+22A8, U+22C4, U+22C8-22CC, U+232C, U+235C-2362, U+2394, U+23E3, U+23E5, U+25C7-25C8, U+25CA-25CC, U+2736, U+27C2, U+27D0, U+27E1-27E3, U+27E6-27E9, U+29BF, U+29C6, U+29C8-29C9, U+2A00-2A02, U+2A37, U+1D6AB, U+1D6C1, U+1D6D1;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-symbols.2f01ee8d46a8.ttf?no-inline') format('truetype');
+    unicode-range: U+2301, U+232D, U+1F701-1F704, U+1F70D-1F70F, U+1F714-1F715, U+1F71A-1F71B, U+1F71E;
+}
+
+@font-face {
+    font-family: 'Universe Glyphs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/universe-symbols-2.95d6db8e9374.ttf?no-inline') format('truetype');
+    unicode-range: U+2318, U+2734;
+}
+/* КОНЕЦ РАЗДЕЛА 1. ЛОКАЛЬНЫЕ ИСТОРИЧЕСКИЕ И МАТЕМАТИЧЕСКИЕ ШРИФТЫ */
+
+/* НАЧАЛО РАЗДЕЛА 2. ПАЛИТРА, ПЕРЕМЕННЫЕ И СБРОС СТИЛЕЙ */
+:root {
+    --void-obsidian: #020308;
+    --void-graphite: #03050a;
+    --void-indigo: #060b19;
+    --glass-surface: rgba(3, 7, 18, 0.48);
+    --glass-surface-hover: rgba(6, 13, 30, 0.76);
+    --glass-border: rgba(125, 211, 252, 0.18);
+    --glass-border-bright: rgba(56, 189, 248, 0.46);
+
+    --accent-ice: #7dd3fc;
+    --accent-cyan: #38bdf8;
+    --accent-ultramarine: #1e1b4b;
+    --accent-violet: #6366f1;
+    --accent-pearl: #f8fafc;
+    --accent-amber: #f59e0b;
+
+    --text-primary: rgba(248, 250, 252, 0.96);
+    --text-secondary: rgba(186, 230, 253, 0.88);
+    --text-muted: rgba(148, 163, 184, 0.80);
+
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Universe Glyphs', 'JetBrains Mono', 'Fira Code', Consolas, 'Segoe UI Historic', 'Noto Sans Egyptian Hieroglyphs', 'Segoe UI Symbol', monospace;
+
+    /* Базовая глубина глифов; активная анимация задаёт локальные inline-значения. */
+    --glyph-depth-glow: 0.2;
+    --glyph-depth-shift: 0px;
+    --button-axis-x: 1;
+    --button-axis-y: 0;
+    --button-axis-z: 0;
+    --button-spin-angle: 0deg;
+    --button-shadow-x: 3px;
+    --button-shadow-y: 8px;
+    --button-shadow-blur: 6px;
+    --button-shadow-opacity: 0.52;
+    --button-shadow-scale-x: 1;
+    --button-shadow-scale-y: 0.85;
+    --solid-width: 100px;
+    --solid-height: 34px;
+    --solid-depth: 18px;
+    --solid-pad-x: 0.72rem;
+    --solid-pad-y: 0.4rem;
+    --hud-compact-scale: 0.666667;
+    --solid-rest-scale: 1;
+    --solid-read-scale: 1.4625;
+    --solid-live-scale: var(--solid-rest-scale);
+    --solid-shift-x: 0%;
+    --solid-shift-y: 0%;
+    --solid-shadow-lift: 0px;
+    --solid-shadow-fade: 1;
+    --hud-bottom-inset: 4.5rem;
+    --hud-top-inset: 3.6rem;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--void-obsidian);
+    color: var(--text-primary);
+    font-family: var(--font-display), sans-serif;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+}
+/* КОНЕЦ РАЗДЕЛА 2. ПАЛИТРА, ПЕРЕМЕННЫЕ И СБРОС СТИЛЕЙ */
+
+/* НАЧАЛО РАЗДЕЛА 3. ПОЛОТНО, ДИНАМИЧЕСКАЯ ВЫСОТА И ВИНЬЕТКА */
+.universe-viewport {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(
+            circle at 50% 50%,
+            var(--void-indigo) 0%,
+            var(--void-obsidian) 100%
+    );
+}
+
+/* Динамическая высота сохраняет vh как fallback для остальных браузеров. */
+
+@supports (height: 100dvh) {
+    html,
+    body,
+    .universe-viewport {
+        height: 100dvh;
+    }
+}
+
+#universe-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    cursor: crosshair;
+    touch-action: none;
+    display: block;
+}
+
+.optical-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background: radial-gradient(
+            circle at 50% 50%,
+            transparent 62%,
+            rgba(2, 3, 8, 0.64) 100%
+    );
+}
+/* КОНЕЦ РАЗДЕЛА 3. ПОЛОТНО, ДИНАМИЧЕСКАЯ ВЫСОТА И ВИНЬЕТКА */

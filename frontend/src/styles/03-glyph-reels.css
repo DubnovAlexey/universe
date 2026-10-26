@@ -1,0 +1,93 @@
+/* noinspection CssUnusedSymbol */
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/03-glyph-reels.css
+ * НАЗНАЧЕНИЕ: Глубина символов, окна и ленты барабанов, скрытый доступный текст.
+ * РАЗДЕЛЫ:
+ *   1. ЛОКАЛЬНАЯ ГЛУБИНА АКТИВНЫХ СИМВОЛОВ.
+ *   2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ.
+ *   3. СКРЫТЫЙ КАНОНИЧЕСКИЙ ТЕКСТ И МАНИФЕСТ.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. ЛОКАЛЬНАЯ ГЛУБИНА АКТИВНЫХ СИМВОЛОВ */
+/* Локальная глубина глифов не меняет геометрию строк и панелей. */
+
+:root [data-glyph-active] {
+    text-shadow:
+            0 2px 10px rgba(2, 3, 8, 0.96),
+            0 0 12px rgba(125, 211, 252, var(--glyph-depth-glow));
+    translate: 0 var(--glyph-depth-shift);
+}
+/* КОНЕЦ РАЗДЕЛА 1. ЛОКАЛЬНАЯ ГЛУБИНА АКТИВНЫХ СИМВОЛОВ */
+
+/* НАЧАЛО РАЗДЕЛА 2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ */
+/* Барабан двигает только знак внутри окна; скрытая мера сохраняет ширину текста. */
+
+.glyph-reel-cell {
+    position: relative;
+    display: inline;
+}
+
+.glyph-reel-measure {
+    visibility: hidden;
+}
+
+.glyph-reel-window {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    /* Соседние наборные окна не перекрываются; широкий глиф вписывает symbolFit. */
+    width: 100%;
+    height: max(1.3em, 16px);
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    pointer-events: none;
+    background: radial-gradient(ellipse, rgba(2, 5, 14, 0.65), transparent 78%);
+}
+
+.glyph-reel-track {
+    position: absolute;
+    /* Текущий знак находится в окне, входящий — слева; лента движется вправо. */
+    display: flex;
+    flex-direction: row-reverse;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+}
+
+.glyph-reel-symbol {
+    display: flex;
+    flex: 0 0 100%;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    line-height: 1;
+    white-space: pre;
+    font-family: var(--font-mono), monospace;
+    font-size: max(1em, 13px);
+    color: var(--accent-pearl);
+    text-shadow: 0 0 7px rgba(125, 211, 252, 0.8), 0 2px 4px rgba(2, 3, 8, 0.95);
+}
+
+.glyph-reel-static {
+    display: inline;
+}
+/* КОНЕЦ РАЗДЕЛА 2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ */
+
+/* НАЧАЛО РАЗДЕЛА 3. СКРЫТЫЙ КАНОНИЧЕСКИЙ ТЕКСТ И МАНИФЕСТ */
+.sr-only-manifesto,
+.glyph-canonical-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+/* КОНЕЦ РАЗДЕЛА 3. СКРЫТЫЙ КАНОНИЧЕСКИЙ ТЕКСТ И МАНИФЕСТ */

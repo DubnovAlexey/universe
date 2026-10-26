@@ -1,0 +1,305 @@
+/* noinspection CssUnusedSymbol */
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/06-responsive.css
+ * НАЗНАЧЕНИЕ: Ограничение декоративного движения и адаптивная компоновка экранов.
+ * РАЗДЕЛЫ:
+ *   1. УМЕНЬШЕННОЕ ДВИЖЕНИЕ.
+ *   2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ.
+ *   3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ.
+ *   4. ТЕЛЕФОНЫ ДО 600 ПИКСЕЛЕЙ.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. УМЕНЬШЕННОЕ ДВИЖЕНИЕ */
+@media (prefers-reduced-motion: reduce) {
+    .audio-unlock-banner {
+        animation: none;
+    }
+
+    .solid-button-body,
+    :root [data-button-solid="1"]::before {
+        transition: none;
+    }
+}
+/* КОНЕЦ РАЗДЕЛА 1. УМЕНЬШЕННОЕ ДВИЖЕНИЕ */
+
+/* НАЧАЛО РАЗДЕЛА 2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ */
+/* Верхний блок оставляет центральную полосу поднятой визитке на средних экранах. */
+
+@media (min-width: 921px) and (max-width: 1730px) {
+    .brand-card {
+        max-width: clamp(200px, calc(50vw - 435px), 455px);
+    }
+}
+
+@media (min-width: 921px) and (max-width: 1280px) {
+    .brand-card {
+        padding: 0.38rem 0.68rem;
+    }
+
+    .brand-card .phase-codename {
+        font-size: 0.6rem;
+    }
+
+    .brand-card .phase-title {
+        font-size: 0.84rem;
+    }
+
+    .brand-card .phase-subtitle,
+    .brand-card .phase-philosophy {
+        display: none !important;
+    }
+}
+/* КОНЕЦ РАЗДЕЛА 2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ */
+
+/* НАЧАЛО РАЗДЕЛА 3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ */
+/* ============================================================================
+ * АДАПТИВНАЯ ВЕРТИКАЛЬНАЯ КОМПОНОВКА 9:16 ДЛЯ МОБИЛЬНЫХ ТЕЛЕФОНОВ (<= 920px)
+ * Все 5 кнопок фаз целиком помещаются по ширине экрана без скролла.
+ * ============================================================================ */
+
+@media (max-width: 920px) {
+    .hud-overlay {
+        padding:
+                calc(0.4rem + env(safe-area-inset-top, 0px))
+                0.45rem
+                calc(1rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .hud-top-bar {
+        justify-content: center;
+    }
+
+    .brand-card,
+    .phase-timeline-dock,
+    .controls-dock {
+        margin-inline: auto;
+    }
+
+    .brand-card {
+        width: calc(100vw - 0.9rem);
+        max-width: calc(100vw - 0.9rem);
+        padding: 0.38rem 0.68rem;
+        border-radius: 14px 20px 16px 14px;
+    }
+
+    :root .brand-card [data-button-solid="1"] {
+        --solid-pad-x: 0.3rem;
+        --solid-pad-y: 0.12rem;
+        padding: 0.12rem 0.3rem;
+        margin-bottom: 0.32rem;
+    }
+
+    :root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) {
+        --solid-shift-x: 0%;
+    }
+
+    .phase-codename {
+        font-size: 0.6rem;
+        margin-bottom: 0.06rem;
+    }
+
+    .phase-title {
+        font-size: 0.84rem;
+        margin-bottom: 0;
+    }
+
+    .phase-subtitle,
+    .phase-philosophy {
+        display: none !important;
+    }
+
+    .inspection-islands-stack {
+        position: fixed;
+        top: calc(3.8rem + env(safe-area-inset-top, 0px));
+        left: 0.45rem;
+        right: 0.45rem;
+        bottom: auto;
+        width: auto;
+        max-height: calc(100dvh - 11.2rem - env(safe-area-inset-bottom, 0px));
+        z-index: 24;
+        justify-content: flex-start;
+    }
+
+    .waterfall-island-slot {
+        flex: 0 1 auto;
+    }
+
+    .waterfall-island-slot:has(.layer-hidden) {
+        display: none !important;
+    }
+
+    .metrics-inspector-v2,
+    .topology-inspector-v2,
+    .terminal-inspector-v2 {
+        height: auto;
+        min-height: 175px;
+        max-height: calc(100dvh - 11.5rem);
+        padding: 0.7rem 0.95rem;
+    }
+
+    .hud-bottom-bar {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.32rem;
+        width: 100%;
+    }
+
+    .phase-timeline-dock {
+        width: calc(100vw - 0.9rem);
+        padding: 0.3rem 0.36rem;
+        gap: 0.22rem;
+    }
+
+    /* 5-колоночная сетка: все 5 кнопок фаз всегда видны целиком без прокрутки */
+    .phase-buttons-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.18rem;
+        width: 100%;
+        overflow: visible;
+    }
+
+    .phase-pill {
+        --solid-pad-x: 0.14rem;
+        --solid-pad-y: 0.26rem;
+        width: 100%;
+        min-width: 0;
+        padding: 0.26rem 0.14rem;
+        font-size: clamp(0.48rem, 1.85vw, 0.66rem);
+        min-height: 40px;
+        line-height: 1.35;
+        letter-spacing: -0.02em;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .phase-number,
+    .phase-name {
+        display: block;
+    }
+
+    .phase-pill .solid-button-label {
+        flex-direction: column;
+    }
+
+    .phase-number {
+        font-size: 0.62rem;
+        color: var(--accent-ice);
+    }
+
+    .controls-dock {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        width: calc(100vw - 0.9rem);
+        align-self: center;
+        padding: 0.32rem 0.42rem;
+        justify-content: center;
+        gap: 0.24rem;
+    }
+
+    :root .controls-dock > :nth-child(4n):is(:hover, :focus-visible) {
+        --solid-shift-x: -25%;
+    }
+
+    .btn-cyber {
+        --solid-pad-x: 0.18rem;
+        --solid-pad-y: 0.3rem;
+        padding: 0.3rem 0.18rem;
+        font-size: clamp(0.58rem, 2.1vw, 0.68rem);
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .audio-unlock-banner {
+        bottom: var(--hud-bottom-inset);
+        font-size: 0.62rem;
+        padding: 0.46rem 0.95rem;
+        width: max-content;
+        max-width: 92vw;
+    }
+
+    .finale-stage-container {
+        padding:
+                var(--hud-top-inset)
+                0.5rem
+                var(--hud-bottom-inset);
+    }
+
+    .finale-manifesto-card {
+        width: calc(100vw - 1rem);
+        max-height: calc(100dvh - var(--hud-bottom-inset) - var(--hud-top-inset));
+        padding: 0.6rem 0.8rem;
+        gap: 0.3rem;
+        border-radius: 36px;
+    }
+
+    .finale-line-author {
+        font-size: 1.2rem;
+        letter-spacing: 0.12em;
+    }
+
+    .finale-line-quantum-stream {
+        grid-template-columns: repeat(var(--quantum-compact-columns), minmax(0, 1fr));
+        font-size: 0.76rem;
+    }
+
+    .finale-counter-actions {
+        flex-direction: column;
+        gap: 0.36rem;
+        width: 100%;
+        margin-top: 0.2rem;
+    }
+
+    .btn-cipher-action {
+        width: 100%;
+        text-align: center;
+        font-size: 0.62rem;
+        padding: 0.38rem 0.65rem;
+    }
+}
+/* КОНЕЦ РАЗДЕЛА 3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ */
+
+/* НАЧАЛО РАЗДЕЛА 4. ТЕЛЕФОНЫ ДО 600 ПИКСЕЛЕЙ */
+/* Телефон: нижние плашки занимают ширину окна с безопасными полями, верхняя остаётся компактной. */
+
+@media (max-width: 600px) {
+    .hud-overlay {
+        padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .hud-bottom-bar {
+        gap: 1rem;
+    }
+
+    .phase-timeline-dock,
+    .controls-dock {
+        width: calc((100vw - 0.9rem) / var(--hud-compact-scale));
+        max-width: none;
+    }
+
+    .phase-buttons-row {
+        gap: 0.55rem;
+    }
+
+    .phase-pill {
+        font-size: clamp(0.7rem, 2.8vw, 0.88rem);
+    }
+
+    .phase-number {
+        font-size: 0.78rem;
+    }
+
+    .controls-dock {
+        column-gap: 0.6rem;
+        row-gap: 2.25rem;
+    }
+
+    .btn-cyber {
+        font-size: clamp(0.78rem, 2.8vw, 0.92rem);
+    }
+
+    :root .controls-dock > :nth-child(4n + 1):is(:hover, :focus-visible) {
+        --solid-shift-x: 25%;
+    }
+}
+/* КОНЕЦ РАЗДЕЛА 4. ТЕЛЕФОНЫ ДО 600 ПИКСЕЛЕЙ */

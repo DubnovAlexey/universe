@@ -1,0 +1,563 @@
+/* noinspection CssUnusedSymbol */
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/02-hud-and-3d-buttons.css
+ * НАЗНАЧЕНИЕ: Оболочка HUD, включение звука, объёмные кнопки с тенями и панели управления.
+ * РАЗДЕЛЫ:
+ *   1. ВКЛЮЧЕНИЕ ЗВУКА И АНИМАЦИЯ audioBannerPulse.
+ *   2. ОБЩАЯ ОБОЛОЧКА HUD, ВИДИМОСТЬ И ФОКУС.
+ *   3. ГЕОМЕТРИЯ КУБОИДОВ, ИНДИВИДУАЛЬНЫЕ ТЕНИ И ЧИТАЕМАЯ ГРАНЬ.
+ *   4. ВЕРХНЯЯ ПАНЕЛЬ И КАРТОЧКА ТЕКУЩЕЙ ФАЗЫ.
+ *   5. ШКАЛА ФАЗ И НИЖНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. ВКЛЮЧЕНИЕ ЗВУКА И АНИМАЦИЯ audioBannerPulse */
+@keyframes audioBannerPulse {
+    0%, 100% {
+        transform: translate3d(-50%, 0, 0) scale(1);
+        box-shadow: 0 8px 32px rgba(2, 3, 8, 0.85), 0 0 18px rgba(56, 189, 248, 0.25);
+    }
+    50% {
+        transform: translate3d(-50%, -2px, 0) scale(1.025);
+        box-shadow: 0 10px 38px rgba(2, 3, 8, 0.9), 0 0 28px rgba(125, 211, 252, 0.52);
+    }
+}
+
+.audio-unlock-banner {
+    position: fixed;
+    left: 50%;
+    bottom: var(--hud-bottom-inset);
+    transform: translate3d(-50%, 0, 0);
+    z-index: 28;
+    font-family: var(--font-mono), monospace;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--accent-pearl);
+    background: radial-gradient(
+            ellipse at 50% 50%,
+            rgba(8, 20, 46, 0.86) 0%,
+            rgba(3, 8, 22, 0.78) 100%
+    );
+    border: 1px solid rgba(125, 211, 252, 0.45);
+    border-radius: 999px;
+    padding: 0.55rem 1.35rem;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    text-shadow: 0 0 12px rgba(125, 211, 252, 0.65);
+    animation: audioBannerPulse 2.4s ease-in-out infinite;
+    transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.audio-unlock-banner.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    animation: none;
+}
+/* КОНЕЦ РАЗДЕЛА 1. ВКЛЮЧЕНИЕ ЗВУКА И АНИМАЦИЯ audioBannerPulse */
+
+/* НАЧАЛО РАЗДЕЛА 2. ОБЩАЯ ОБОЛОЧКА HUD, ВИДИМОСТЬ И ФОКУС */
+.hud-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding:
+            calc(0.65rem + env(safe-area-inset-top, 0px))
+            1.25rem
+            calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hud-overlay.act-silence-hidden .brand-card,
+.hud-overlay.act-silence-hidden .inspection-islands-stack {
+    opacity: 0.24;
+    transition: opacity 0.45s ease;
+}
+
+.hud-panel {
+    pointer-events: auto;
+    background: var(--glass-surface);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px 26px 20px 24px;
+    box-shadow: 0 8px 28px rgba(2, 3, 8, 0.58);
+    opacity: 0.88;
+    transition:
+            opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            background-color 0.35s ease,
+            border-color 0.35s ease,
+            transform 0.35s ease;
+}
+
+.hud-panel:hover,
+.hud-panel:focus-within {
+    opacity: 0.98;
+    background: var(--glass-surface-hover);
+    border-color: var(--glass-border-bright);
+}
+
+.layer-hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateX(14px);
+}
+
+.btn-cyber:focus-visible,
+.phase-pill:focus-visible,
+.btn-cipher-action:focus-visible,
+.audio-unlock-banner:focus-visible {
+    outline: 2px solid var(--accent-ice);
+    outline-offset: 2px;
+}
+/* КОНЕЦ РАЗДЕЛА 2. ОБЩАЯ ОБОЛОЧКА HUD, ВИДИМОСТЬ И ФОКУС */
+
+/* НАЧАЛО РАЗДЕЛА 3. ГЕОМЕТРИЯ КУБОИДОВ, ИНДИВИДУАЛЬНЫЕ ТЕНИ И ЧИТАЕМАЯ ГРАНЬ */
+/* Неподвижная область нажатия содержит замкнутый кубоид из шести непрозрачных граней. */
+
+/* Исходный размер тела — две трети полного; область нажатия остаётся неподвижной. */
+
+.brand-card,
+.phase-timeline-dock,
+.controls-dock {
+    zoom: var(--hud-compact-scale);
+}
+
+:root .phase-pill[data-button-solid="1"],
+:root .btn-cyber[data-button-solid="1"],
+:root .brand-card [data-button-solid="1"] {
+    position: relative;
+    z-index: 0;
+    perspective: 800px;
+    perspective-origin: center;
+    transform: none;
+    backface-visibility: visible;
+    overflow: visible;
+    will-change: auto;
+    background: transparent;
+    border: 0;
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+.solid-button-measurer {
+    display: block;
+    min-width: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* Отдельная тень каждого тела не применяет filter к preserve-3d и не сплющивает грани. */
+
+:root [data-button-solid="1"]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    border-radius: 12%;
+    background: radial-gradient(ellipse,
+            #000104 20%, rgba(0, 1, 6, 0.96) 42%, rgba(46, 77, 113, 0.78) 70%, transparent 86%);
+    box-shadow:
+            0 3px 7px rgba(0, 0, 0, 0.94),
+            0 0 16px rgba(73, 124, 181, 0.76);
+    transform: translate(var(--button-shadow-x), var(--button-shadow-y))
+            scale(var(--button-shadow-scale-x), var(--button-shadow-scale-y));
+    transform-origin: center;
+    scale: var(--solid-live-scale);
+    translate: var(--solid-shift-x) var(--solid-shift-y);
+    filter: blur(calc(var(--button-shadow-blur) + var(--solid-shadow-lift)));
+    opacity: calc(var(--button-shadow-opacity) * var(--solid-shadow-fade) * 1.4);
+    pointer-events: none;
+    transition:
+            scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.solid-button-body {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    transform: rotate3d(var(--button-axis-x), var(--button-axis-y), var(--button-axis-z), var(--button-spin-angle));
+    transform-origin: center center;
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+    overflow: visible;
+    opacity: 1;
+    filter: none;
+    will-change: transform;
+    pointer-events: none;
+    scale: var(--solid-live-scale) var(--solid-live-scale) var(--solid-live-scale);
+    translate: var(--solid-shift-x) var(--solid-shift-y);
+    transition:
+            scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.solid-button-face {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--solid-width);
+    height: var(--solid-height);
+    border: 1px solid rgba(166, 206, 234, 0.55);
+    border-radius: 0;
+    background-color: #10243a;
+    backface-visibility: hidden;
+    pointer-events: none;
+}
+
+.solid-button-face--front {
+    transform: translate(-50%, -50%) translateZ(calc(var(--solid-depth) / 2));
+    background-image: linear-gradient(165deg, #28455f, #0b1829 70%);
+    box-shadow: inset 0 1px 0 rgba(224, 242, 254, 0.5), inset 0 -1px 0 #020712;
+}
+
+.solid-button-face--back {
+    transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--solid-depth) / 2));
+    background-color: #081524;
+    background-image: repeating-linear-gradient(135deg, transparent 0 7px, rgba(136, 181, 213, 0.12) 7px 8px);
+    box-shadow: inset 0 0 0 3px #0e2438;
+}
+
+.solid-button-face--top,
+.solid-button-face--bottom {
+    height: var(--solid-depth);
+}
+
+.solid-button-face--top {
+    transform: translate(-50%, -50%) rotateX(90deg) translateZ(calc(var(--solid-height) / 2));
+    background-color: #426887;
+}
+
+.solid-button-face--bottom {
+    transform: translate(-50%, -50%) rotateX(-90deg) translateZ(calc(var(--solid-height) / 2));
+    background-color: #030913;
+}
+
+.solid-button-face--left,
+.solid-button-face--right {
+    width: var(--solid-depth);
+}
+
+.solid-button-face--left {
+    transform: translate(-50%, -50%) rotateY(-90deg) translateZ(calc(var(--solid-width) / 2));
+    background-color: #142b40;
+}
+
+.solid-button-face--right {
+    transform: translate(-50%, -50%) rotateY(90deg) translateZ(calc(var(--solid-width) / 2));
+    background-color: #294b68;
+}
+
+.solid-button-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    padding: calc(var(--solid-pad-y) - 1px) calc(var(--solid-pad-x) - 1px);
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: inherit;
+    pointer-events: none;
+}
+
+/* Широкие информационные тела имеют собственный локальный центр вращения. */
+
+:root .brand-card [data-button-solid="1"] {
+    --solid-pad-x: 0.45rem;
+    --solid-pad-y: 0.24rem;
+    perspective: 1200px;
+    padding: 0.24rem 0.45rem;
+    margin-bottom: 0.5rem;
+}
+
+.brand-card .solid-button-label {
+    justify-content: flex-start;
+}
+
+.brand-card [data-button-solid="1"]:last-child {
+    margin-bottom: 0;
+}
+
+/* Шкала фаз использует единый приоритет чтения: курсор, keyboard focus, текущая фаза. */
+
+:root [data-button-solid="1"]:not(.phase-pill):is(:hover, :focus-visible),
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"] {
+    z-index: 2;
+    --solid-live-scale: var(--solid-read-scale);
+    --solid-shadow-lift: 3px;
+    --solid-shadow-fade: 0.82;
+}
+
+:root .phase-pill[data-button-solid="1"],
+:root .btn-cyber[data-button-solid="1"] {
+    min-height: 38px;
+}
+
+/* Тело и его тень вместе освобождают края окна при чтении; hit area остаётся на месте. */
+
+:root .phase-timeline-dock [data-button-solid="1"][data-button-phase-emphasis="1"],
+:root .controls-dock [data-button-solid="1"]:is(:hover, :focus-visible) {
+    --solid-shift-y: -25%;
+}
+
+:root .phase-buttons-row > :first-child[data-button-phase-emphasis="1"],
+:root .controls-dock > :first-child:is(:hover, :focus-visible) {
+    --solid-shift-x: 25%;
+}
+
+:root .phase-buttons-row > :last-child[data-button-phase-emphasis="1"],
+:root .controls-dock > :last-child:is(:hover, :focus-visible) {
+    --solid-shift-x: -25%;
+}
+
+:root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) {
+    --solid-shift-x: 25%;
+    --solid-shift-y: 25%;
+}
+
+:root .phase-pill.active[data-button-solid="1"] .solid-button-face,
+:root .btn-cyber.active-toggle[data-button-solid="1"] .solid-button-face {
+    border-color: var(--accent-ice);
+}
+
+:root [data-button-solid="1"]:not(.phase-pill):is(:hover, :focus-visible) .solid-button-face--front,
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"] .solid-button-face--front {
+    border-color: var(--accent-ice);
+    background-image: linear-gradient(165deg, #385c79, #10243a 70%);
+}
+/* КОНЕЦ РАЗДЕЛА 3. ГЕОМЕТРИЯ КУБОИДОВ, ИНДИВИДУАЛЬНЫЕ ТЕНИ И ЧИТАЕМАЯ ГРАНЬ */
+
+/* НАЧАЛО РАЗДЕЛА 4. ВЕРХНЯЯ ПАНЕЛЬ И КАРТОЧКА ТЕКУЩЕЙ ФАЗЫ */
+.hud-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    position: relative;
+    width: 100%;
+}
+
+.brand-card {
+    padding: 0.65rem 1.05rem;
+    max-width: 455px;
+    background: radial-gradient(
+            ellipse at 24% 34%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.32) 68%,
+            transparent 96%
+    );
+    border: 1px solid rgba(125, 211, 252, 0.14);
+    border-radius: 22px 34px 28px 18px;
+    box-shadow: 0 10px 32px rgba(2, 3, 8, 0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    text-shadow:
+            0 2px 12px rgba(2, 3, 8, 0.96),
+            0 0 10px rgba(56, 189, 248, 0.24);
+}
+
+.brand-card:hover,
+.brand-card:focus-within {
+    background: radial-gradient(
+            ellipse at 24% 34%,
+            rgba(8, 17, 38, 0.82) 0%,
+            rgba(4, 9, 22, 0.48) 74%,
+            transparent 98%
+    );
+    border-color: rgba(125, 211, 252, 0.32);
+}
+
+.phase-codename {
+    font-family: var(--font-mono), monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-ice);
+    display: block;
+    margin-bottom: 0.14rem;
+    text-shadow: 0 0 10px rgba(125, 211, 252, 0.38);
+    transition: color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.phase-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--accent-pearl);
+    margin-bottom: 0.16rem;
+    transition: color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.phase-subtitle {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.34;
+    transition: color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.phase-philosophy {
+    display: none;
+    margin-top: 0.38rem;
+    padding-top: 0.38rem;
+    border-top: 1px solid rgba(125, 211, 252, 0.14);
+    font-size: 0.78rem;
+    line-height: 1.42;
+    color: var(--text-primary);
+    transition: color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.brand-card:hover .phase-philosophy,
+.brand-card:focus-within .phase-philosophy {
+    display: block;
+}
+/* КОНЕЦ РАЗДЕЛА 4. ВЕРХНЯЯ ПАНЕЛЬ И КАРТОЧКА ТЕКУЩЕЙ ФАЗЫ */
+
+/* НАЧАЛО РАЗДЕЛА 5. ШКАЛА ФАЗ И НИЖНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ */
+.hud-bottom-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 26;
+}
+
+.phase-timeline-dock {
+    padding: 0.65rem 0.9rem;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.34rem;
+    border-radius: 24px 18px 28px 16px;
+    background: radial-gradient(
+            ellipse at 50% 60%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.42) 100%
+    );
+}
+
+.timeline-progress-track {
+    width: 100%;
+    height: 3px;
+    background: rgba(125, 211, 252, 0.14);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.timeline-progress-fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(
+            90deg,
+            var(--accent-ice),
+            var(--accent-violet),
+            var(--accent-pearl)
+    );
+    transition: width 0.15s linear;
+}
+
+.phase-buttons-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.phase-pill {
+    background: rgba(2, 5, 14, 0.58);
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    color: var(--text-secondary);
+    padding: 0.4rem 0.72rem;
+    min-height: 34px;
+    border-radius: 12px 16px 12px 16px;
+    font-family: var(--font-mono), monospace;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+            background-color 0.25s ease,
+            border-color 0.25s ease,
+            color 0.25s ease,
+            text-shadow 0.25s ease;
+}
+
+.phase-pill:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-pearl);
+}
+
+.phase-pill.active {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: var(--accent-ice);
+    color: var(--accent-pearl);
+}
+
+.controls-dock {
+    padding: 0.65rem 0.9rem;
+    max-width: 100%;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    border-radius: 18px 26px 16px 24px;
+    background: radial-gradient(
+            ellipse at 50% 60%,
+            rgba(6, 13, 30, 0.68) 0%,
+            rgba(3, 7, 18, 0.42) 100%
+    );
+}
+
+.btn-cyber {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 5, 14, 0.6);
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    color: var(--text-primary);
+    padding: 0.4rem 0.72rem;
+    min-height: 34px;
+    border-radius: 12px 16px 12px 16px;
+    font-family: var(--font-mono), monospace;
+    font-size: 0.84rem;
+    line-height: 1.25;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+            background-color 0.25s ease,
+            border-color 0.25s ease,
+            color 0.25s ease,
+            text-shadow 0.25s ease;
+}
+
+.btn-cyber:hover {
+    border-color: var(--accent-ice);
+    color: var(--accent-ice);
+}
+
+.btn-cyber.active-toggle {
+    background: rgba(99, 102, 241, 0.28);
+    border-color: var(--accent-ice);
+    color: var(--accent-pearl);
+}
+
+.btn-github-profile {
+    border-color: rgba(56, 189, 248, 0.38);
+    color: var(--accent-ice);
+}
+/* КОНЕЦ РАЗДЕЛА 5. ШКАЛА ФАЗ И НИЖНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ */

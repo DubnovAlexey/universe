@@ -2003,7 +2003,9 @@ export class UniverseRenderer {
 
             ctx.save();
             ctx.translate(c.currentX, c.currentY);
-            ctx.scale(1.0, c.verticalScale);
+            // Наборные строки прокручивают знак по X слева направо, как и фронт сборки.
+            const horizontalRoll = c.rollAxis === 'x';
+            ctx.scale(horizontalRoll ? c.rollScale : 1.0, horizontalRoll ? 1.0 : c.rollScale);
 
             ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px ${GLYPH_FONT_STACK}`;
             const breathAlpha = (c.glyphBreathAlpha ?? 0.92) * canvasParticlesFade;
@@ -2019,8 +2021,8 @@ export class UniverseRenderer {
                     ghostTonePool[(c.charIndex + c.lineIndex) % ghostTonePool.length];
                 ctx.fillText(
                     c.upperChar,
-                    0,
-                    -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
+                    horizontalRoll ? ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
+                    horizontalRoll ? 0 : -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
                 );
 
                 ctx.globalAlpha = 0.22 * breathAlpha;
@@ -2028,8 +2030,8 @@ export class UniverseRenderer {
                     ghostTonePool[(c.charIndex + c.lineIndex + 2) % ghostTonePool.length];
                 ctx.fillText(
                     c.lowerChar,
-                    0,
-                    ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
+                    horizontalRoll ? -ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
+                    horizontalRoll ? 0 : ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
                 );
             }
 
@@ -2048,8 +2050,8 @@ export class UniverseRenderer {
 
             ctx.fillText(
                 c.primaryChar,
-                0,
-                c.isLocked ? 0 : -c.wheelPhaseFrac * c.fontSizePx * 0.44
+                horizontalRoll && !c.isLocked ? c.wheelPhaseFrac * c.fontSizePx * 0.44 : 0,
+                horizontalRoll || c.isLocked ? 0 : -c.wheelPhaseFrac * c.fontSizePx * 0.44
             );
 
             ctx.restore();

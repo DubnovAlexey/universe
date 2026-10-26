@@ -1,0 +1,235 @@
+/* noinspection CssUnusedSymbol */
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/05-finale-card.css
+ * НАЗНАЧЕНИЕ: Финальная визитка, тональная глубина, квантовая строка и действия.
+ * РАЗДЕЛЫ:
+ *   1. СЦЕНА ВИЗИТКИ, ТОНАЛЬНЫЕ СЛОИ И РЕЖИМ ambient-loop.
+ *   2. АВТОР, КВАНТОВЫЕ ЯЧЕЙКИ И ТЕХНОЛОГИЧЕСКИЕ СТРОКИ.
+ *   3. ДЕЙСТВИЯ И СОСТОЯНИЯ КНОПОК ВИЗИТКИ.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. СЦЕНА ВИЗИТКИ, ТОНАЛЬНЫЕ СЛОИ И РЕЖИМ ambient-loop */
+.finale-stage-container {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 1rem var(--hud-bottom-inset);
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+            opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+            visibility 0.55s ease;
+}
+
+.finale-stage-container.visible {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Затухающие тональные слои дают глубину без контура и овального обрезания текста. */
+
+.finale-manifesto-card {
+    --finale-tonal-light: 0.075;
+    --finale-tonal-depth: 0.34;
+    --finale-core-alpha: 0.68;
+    --finale-mid-alpha: 0.38;
+    pointer-events: none;
+    width: min(820px, calc(100vw - 1.5rem));
+    max-height: calc(100dvh - var(--hud-bottom-inset) - 1rem);
+    overflow-y: auto;
+    padding: 0.6rem 2.2rem;
+    border-radius: 36px;
+    background:
+            radial-gradient(
+                    ellipse at 50% 32%,
+                    rgba(148, 189, 224, var(--finale-tonal-light)) 0%,
+                    transparent 68%
+            ),
+            radial-gradient(
+                    ellipse at 50% 70%,
+                    rgba(0, 1, 5, var(--finale-tonal-depth)) 0%,
+                    transparent 78%
+            ),
+            radial-gradient(
+                    ellipse at 50% 50%,
+                    rgba(3, 8, 22, var(--finale-core-alpha)) 0%,
+                    rgba(2, 5, 15, var(--finale-mid-alpha)) 48%,
+                    transparent 80%
+            );
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.4rem;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    user-select: text;
+    transition:
+            opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+            background 0.55s ease;
+}
+
+.finale-stage-container.visible .finale-manifesto-card {
+    pointer-events: auto;
+}
+
+.finale-manifesto-card.ambient-loop {
+    --finale-tonal-light: 0.055;
+    --finale-tonal-depth: 0.30;
+    --finale-core-alpha: 0.44;
+    --finale-mid-alpha: 0.20;
+    opacity: 0.60;
+}
+
+.finale-manifesto-card.ambient-loop:hover,
+.finale-manifesto-card.ambient-loop:focus-within {
+    --finale-tonal-light: 0.09;
+    --finale-tonal-depth: 0.40;
+    --finale-core-alpha: 0.64;
+    --finale-mid-alpha: 0.38;
+    opacity: 0.98;
+}
+/* КОНЕЦ РАЗДЕЛА 1. СЦЕНА ВИЗИТКИ, ТОНАЛЬНЫЕ СЛОИ И РЕЖИМ ambient-loop */
+
+/* НАЧАЛО РАЗДЕЛА 2. АВТОР, КВАНТОВЫЕ ЯЧЕЙКИ И ТЕХНОЛОГИЧЕСКИЕ СТРОКИ */
+.finale-line-author {
+    font-family: var(--font-mono), monospace;
+    font-size: clamp(1.35rem, 3vw, 2.05rem);
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--accent-pearl);
+    text-shadow:
+            0 0 22px rgba(186, 230, 253, 0.72),
+            0 4px 16px rgba(2, 3, 8, 0.99);
+    cursor: pointer;
+}
+
+.finale-line-subtitle {
+    font-family: var(--font-mono), monospace;
+    font-size: clamp(0.70rem, 1.5vw, 0.92rem);
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    color: #bae6fd;
+    text-shadow:
+            0 2px 14px rgba(2, 3, 8, 0.99),
+            0 0 12px rgba(56, 189, 248, 0.32);
+    cursor: pointer;
+}
+
+.finale-line-quantum-stream {
+    /* Постоянные ячейки не дают разным начертаниям менять высоту визитки. */
+    --quantum-columns: 25;
+    --quantum-compact-columns: 13;
+    display: grid;
+    grid-template-columns: repeat(var(--quantum-columns), minmax(0, 1fr));
+    grid-auto-rows: 1.9em;
+    column-gap: 0.04em;
+    width: 100%;
+    font-family: var(--font-mono), monospace;
+    font-size: clamp(0.84rem, 1.8vw, 1.16rem);
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.65;
+    color: #e2e8f0;
+    padding: 0.12rem 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    text-shadow:
+            0 0 16px rgba(125, 211, 252, 0.58),
+            0 3px 14px rgba(2, 3, 8, 0.99);
+    max-width: 100%;
+    overflow-wrap: normal;
+}
+
+.finale-quantum-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 1.9em;
+    white-space: nowrap;
+    line-height: 1.65;
+}
+
+.finale-line-stack {
+    font-family: var(--font-mono), monospace;
+    font-size: clamp(0.68rem, 1.4vw, 0.88rem);
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    color: #e2e8f0;
+    text-shadow: 0 2px 14px rgba(2, 3, 8, 0.99);
+    cursor: pointer;
+}
+
+.finale-line-math {
+    font-family: var(--font-mono), monospace;
+    font-size: clamp(0.64rem, 1.25vw, 0.82rem);
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    color: #94a3b8;
+    text-shadow: 0 2px 14px rgba(2, 3, 8, 0.99);
+    cursor: pointer;
+}
+/* КОНЕЦ РАЗДЕЛА 2. АВТОР, КВАНТОВЫЕ ЯЧЕЙКИ И ТЕХНОЛОГИЧЕСКИЕ СТРОКИ */
+
+/* НАЧАЛО РАЗДЕЛА 3. ДЕЙСТВИЯ И СОСТОЯНИЯ КНОПОК ВИЗИТКИ */
+.finale-counter-actions {
+    margin-top: 0.45rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.65rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition:
+            opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+            transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.finale-stage-container.visible .finale-counter-actions.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.btn-cipher-action {
+    pointer-events: auto;
+    font-family: var(--font-mono), monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 0.54rem 1.05rem;
+    border-radius: 14px 20px 14px 20px;
+    background: rgba(6, 11, 25, 0.72);
+    color: var(--accent-ice);
+    border: 1px solid rgba(125, 211, 252, 0.28);
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(2, 3, 8, 0.85);
+    transition: all 0.25s ease;
+}
+
+.btn-cipher-action:hover:not(:disabled) {
+    background: rgba(56, 189, 248, 0.22);
+    color: var(--accent-pearl);
+    border-color: var(--accent-pearl);
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.45);
+}
+
+.btn-cipher-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+/* КОНЕЦ РАЗДЕЛА 3. ДЕЙСТВИЯ И СОСТОЯНИЯ КНОПОК ВИЗИТКИ */

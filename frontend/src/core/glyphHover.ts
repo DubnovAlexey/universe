@@ -156,7 +156,7 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ isActive
     // КОНЕЦ РАЗДЕЛА 2
 
-    // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ОКНА И ВЕРТИКАЛЬНЫЕ ЛЕНТЫ
+    // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ОКНА И ЛЕНТЫ СЛЕВА НАПРАВО
     // НАЧАЛО ФУНКЦИИ createReels
     private createReels(element: HTMLElement, canonical: string): GlyphReelCell[] {
         const characters = splitGlyphText(canonical);
@@ -207,7 +207,7 @@ class CalmGlyphHover {
             if (front.state === 'waiting') {
                 characters[cell.index] = GLYPH_WAITING_SPACE;
                 if (cell.progress !== 0) {
-                    cell.track.style.setProperty('transform', 'translate3d(0, 0.000%, 0)');
+                    cell.track.style.setProperty('transform', 'translate3d(0.000%, 0, 0)');
                     cell.progress = 0;
                 }
                 continue;
@@ -220,7 +220,7 @@ class CalmGlyphHover {
                     cell.outgoing.style.setProperty('font-family', 'inherit');
                     cell.outgoing.style.setProperty('font-size', 'inherit');
                     cell.outgoing.style.setProperty('transform', 'scaleX(1)');
-                    cell.track.style.setProperty('transform', 'translate3d(0, 0.000%, 0)');
+                    cell.track.style.setProperty('transform', 'translate3d(0.000%, 0, 0)');
                     cell.turn = REEL_TURNS;
                 }
                 characters[cell.index] = cell.canonical;
@@ -249,7 +249,7 @@ class CalmGlyphHover {
             const progress = ease(rollMs / session.rollMs);
             if (progress !== cell.progress) {
                 cell.progress = progress;
-                cell.track.style.setProperty('transform', 'translate3d(0, ' + (-100 * progress).toFixed(3) + '%, 0)');
+                cell.track.style.setProperty('transform', 'translate3d(' + (100 * progress).toFixed(3) + '%, 0, 0)');
             }
             characters[cell.index] = progress > 0 ? to : from;
         }

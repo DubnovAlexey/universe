@@ -51,6 +51,9 @@ function makeQuantumLine(): {
 export function runFinaleCompositionChecks(check: (passed: boolean, description: string) => void): void {
     const initialEngine = new CipherOdometerEngine();
     const halfwayCells = initialEngine.evaluateCells(1920, 1080, 0.4, false, 0);
+    check(halfwayCells.every((cell) =>
+        cell.rollAxis === (cell.lineIndex === 2 ? 'y' : 'x') && Number.isFinite(cell.rollScale)),
+        'Initial static Canvas glyphs roll on X; the independent endless stream retains its original axis');
     check([0, 1, 3, 4].every((lineIndex) => {
         const canonical = CANONICAL_FINALE_LINES[lineIndex];
         const characters = splitGlyphText(canonical);

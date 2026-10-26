@@ -162,15 +162,15 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const motionAt50 = firstTrack.styleValues.get('transform') ?? '';
     publishVisualSignals(state, audio, stress);
     const motionAt100 = firstTrack.styleValues.get('transform') ?? '';
-    const positiveMotion = /-([0-9.]+)%/.exec(motionAt50);
-    const furtherMotion = /-([0-9.]+)%/.exec(motionAt100);
+    const positiveMotion = /^translate3d\(([0-9.]+)%, 0, 0\)$/.exec(motionAt50);
+    const furtherMotion = /^translate3d\(([0-9.]+)%, 0, 0\)$/.exec(motionAt100);
     checks.push({ passed: shortCells.length === Array.from('01.VOID').length &&
         shortCells.every((cell, index) => Number(cell.dataset.glyphReel) === index) &&
         !!positiveMotion && !!furtherMotion && Number(positiveMotion[1]) > 0 &&
         Number(furtherMotion[1]) > Number(positiveMotion[1]) && Number(furtherMotion[1]) < 100 &&
         firstMeasure.textContent === canonicalMeasure && firstMeasure.styleValues.size === 0 &&
         shortCells.every((cell) => cell.styleValues.size === 0) && mock.getAttribute('aria-label') === '01.VOID',
-        description: 'Every position has an ordered reel window; strips move continuously while canonical measurements and accessible names stay fixed' });
+        description: 'Every position has an ordered reel window; strips move right on positive X with zero Y while canonical measurements and accessible names stay fixed' });
     const trackBeforeRestart = descendants(mock, 'glyph-reel-track')[0];
     calmGlyphHover.start(element, '01.VOID', 999);
     publishVisualSignals(state, audio, stress);
@@ -185,7 +185,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const heldPosition = holdTrack.styleValues.get('transform');
     const heldSymbols = holdTrack.textContent;
     publishVisualSignals(state, audio, stress);
-    const holdsReadableGlyph = heldPosition === 'translate3d(0, -100.000%, 0)' &&
+    const holdsReadableGlyph = heldPosition === 'translate3d(100.000%, 0, 0)' &&
         holdTrack.styleValues.get('transform') === heldPosition && holdTrack.textContent === heldSymbols;
     calmGlyphHover.stop(element);
     const delayedMock = new HoverElement();
@@ -194,9 +194,9 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     calmGlyphHover.start(delayedElement, 'DELAYED NEIGHBOR', 4);
     publishVisualSignals(state, audio, stress);
     checks.push({ passed: holdsReadableGlyph &&
-        descendants(mock, 'glyph-reel-track')[0].styleValues.get('transform') !== 'translate3d(0, 0.000%, 0)' &&
-        descendants(delayedMock, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0, 0.000%, 0)',
-        description: 'Each slow glyph turn has a readable stationary hold, and neighboring labels enter as a staggered wave' });
+        descendants(mock, 'glyph-reel-track')[0].styleValues.get('transform') !== 'translate3d(0.000%, 0, 0)' &&
+        descendants(delayedMock, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0.000%, 0, 0)',
+        description: 'Each slow rightward glyph turn holds at positive 100% X with zero Y, and neighboring labels enter as a staggered wave' });
     calmGlyphHover.stop(element);
     calmGlyphHover.stop(delayedElement);
 
@@ -215,6 +215,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     }
     const canonicalDwell = calmGlyphHover.getVisualText(element) === 'LATEST CANONICAL' && calmGlyphHover.isActive(element) &&
         dwellCells.every((cell, index) => cell.dataset.glyphState === 'locked' &&
+            descendants(cell, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0.000%, 0, 0)' &&
             descendants(cell, 'glyph-reel-symbol').map((node) => node.textContent).join('') === Array.from('LATEST CANONICAL')[index]);
     publishVisualSignals({ ...state, isPaused: true, telemetry: { ...state.telemetry, simulationTimeSec: 1.6 } }, audio, stress);
     const pausedRestored = !calmGlyphHover.isActive(element) && mock.textContent === 'LATEST CANONICAL';

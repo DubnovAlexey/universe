@@ -103,7 +103,8 @@ export interface OdometerGlyphCellState {
     primaryChar: string;
     lowerChar: string;
     wheelPhaseFrac: number;
-    verticalScale: number;
+    rollAxis: 'x' | 'y';
+    rollScale: number;
     isLocked: boolean;
     lockFlash: number;
     currentX: number;
@@ -372,7 +373,7 @@ export class CipherOdometerEngine {
                     musicBreathBoost *
                     Math.sin(this.lfoClockSec * 1.65 + cIdx * 0.44 + r1 * 5.0)
                     : 1.0;
-                const verticalScale =
+                const rollScale =
                     (isLocked
                         ? cardHeartbeat
                         : Math.max(0.54, Math.cos(wheelPhaseFrac * 1.05)) *
@@ -446,7 +447,8 @@ export class CipherOdometerEngine {
                     primaryChar,
                     lowerChar,
                     wheelPhaseFrac,
-                    verticalScale,
+                    rollAxis: isEndlessLine ? 'y' : 'x',
+                    rollScale,
                     isLocked,
                     lockFlash,
                     currentX,
