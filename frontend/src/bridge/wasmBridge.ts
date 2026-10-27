@@ -13,11 +13,13 @@
 // миграция; tryLoadWasmModule — асинхронная загрузка; useTypescriptFallback — отказ;
 // refreshMemoryViewsIfNeeded — указатели; stepSymplecticPhysics — расчёт;
 // getKuramotoPhase/getOrbitPosition/getIntegratedSimSec/isWasmActive — диагностика.
+// sampleOuroboros/getOuroborosCount/isOuroborosWasmActive — отдельный optional ABI формы.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
 import { DeterministicPRNG } from '../core/prng';
 import type { SceneBufferSoA } from '../core/sceneBuffer';
+import { OUROBOROS_CAPACITY, OUROBOROS_STRIDE, fillOuroborosPoints, isValidOuroborosSample } from '../core/ouroborosModel';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ ABI И ЧИСЛЕННЫЕ КОНСТАНТЫ
 export interface RustWasmExports {
@@ -43,6 +45,11 @@ export interface RustWasmExports {
         x: number, y: number, lensX: number, lensY: number,
         lensRadius: number, revealIntensity: number
     ) => number;
+    // Отсутствие shape ABI не меняет валидность прежнего физического ABI v1.
+    get_ouroboros_abi_version?: () => number;
+    get_ouroboros_capacity?: () => number;
+    get_ouroboros_points_ptr?: () => number;
+    sample_ouroboros?: (seed: number, count: number, timeSec: number, morph: number, energy: number) => number;
 }
 
 export interface PhysicsStepTelemetry {
@@ -79,6 +86,12 @@ export class WasmPhysicsBridge {
     private baselineTotalEnergy = 0;
     private integratedSimSec = 0;
     private isInitialized = false;
+    private readonly ouroborosPoints = new Float32Array(OUROBOROS_CAPACITY * OUROBOROS_STRIDE);
+    private ouroborosCount = 0;
+    private ouroborosNativeActive = false;
+    private ouroborosNativeFailed = false;
+    private ouroborosMemoryBuffer: ArrayBufferLike | null = null;
+    private ouroborosMemoryView: Float32Array | null = null;
 
     // НАЧАЛО ФУНКЦИИ constructor
     constructor(initialSeed = 104729) {
@@ -171,6 +184,10 @@ export class WasmPhysicsBridge {
         if (!WasmPhysicsBridge.validateWasmExportsContract(exports)) return false;
         try {
             this.wasmExports = exports;
+            this.ouroborosNativeFailed = false;
+            this.ouroborosNativeActive = false;
+            this.ouroborosMemoryBuffer = null;
+            this.ouroborosMemoryView = null;
             this.uploadCurrentState();
             this.nativeActive = false;
             integrationRegistry.updateModuleStatus('wasm-physics', 'loading');
@@ -189,6 +206,10 @@ export class WasmPhysicsBridge {
         this.wasmPosView = this.wasmVelView = null;
         this.wasmPhaseView = this.wasmOmegaView = null;
         this.nativeActive = false;
+        this.ouroborosNativeActive = false;
+        this.ouroborosNativeFailed = false;
+        this.ouroborosMemoryBuffer = null;
+        this.ouroborosMemoryView = null;
         integrationRegistry.updateModuleStatus('wasm-physics', 'fallback');
     }
     // КОНЕЦ ФУНКЦИИ useTypescriptFallback
@@ -487,6 +508,77 @@ export class WasmPhysicsBridge {
         };
     }
     // КОНЕЦ ФУНКЦИИ stepSymplecticPhysics
+
+    // НАЧАЛО ПОДРАЗДЕЛА. OPTIONAL ABI ОБЪЁМНОЙ ФОРМЫ
+    // НАЧАЛО ФУНКЦИИ sampleOuroboros
+    /** Буфер принадлежит JS и сохраняет identity даже после memory.grow или отказа Rust. */
+    public sampleOuroboros(seed: number, count: number, timeSec: number, morph: number, energy: number): Float32Array {
+        if (!isValidOuroborosSample(seed, count, timeSec, morph, energy)) {
+            this.ouroborosCount = 0;
+            this.ouroborosNativeActive = false;
+            return this.ouroborosPoints;
+        }
+        const exports = this.wasmExports;
+        if (exports && !this.ouroborosNativeFailed) {
+            try {
+                if (typeof exports.get_ouroboros_abi_version !== 'function' ||
+                    typeof exports.get_ouroboros_capacity !== 'function' ||
+                    typeof exports.get_ouroboros_points_ptr !== 'function' ||
+                    typeof exports.sample_ouroboros !== 'function' ||
+                    exports.get_ouroboros_abi_version() !== 1 || exports.get_ouroboros_capacity() !== OUROBOROS_CAPACITY) {
+                    throw new Error('Optional shape ABI unavailable');
+                }
+                if (exports.sample_ouroboros(seed, count, timeSec, morph, energy) !== count) {
+                    throw new Error('WASM rejected shape sample');
+                }
+                const pointer = exports.get_ouroboros_points_ptr();
+                const buffer = exports.memory.buffer;
+                const length = OUROBOROS_CAPACITY * OUROBOROS_STRIDE;
+                if (!Number.isInteger(pointer) || pointer <= 0 || pointer % 4 !== 0 || pointer + length * 4 > buffer.byteLength) {
+                    throw new Error('Invalid shape memory range');
+                }
+                if (this.ouroborosMemoryBuffer !== buffer || this.ouroborosMemoryView?.byteOffset !== pointer) {
+                    this.ouroborosMemoryView = new Float32Array(buffer, pointer, length);
+                    this.ouroborosMemoryBuffer = buffer;
+                }
+                const view = this.ouroborosMemoryView!;
+                const used = count * OUROBOROS_STRIDE;
+                // Проверка всего активного диапазона предшествует первой записи в общий render-буфер.
+                for (let index = 0; index < used; index++) {
+                    if (!Number.isFinite(view[index])) throw new Error('Nonfinite shape sample');
+                }
+                for (let index = 0; index < used; index += OUROBOROS_STRIDE) {
+                    const kind = view[index + 7];
+                    const nx = view[index + 3], ny = view[index + 4], nz = view[index + 5];
+                    const normalLengthSq = nx * nx + ny * ny + nz * nz;
+                    if (!Number.isInteger(kind) || kind < 0 || kind > 2 || view[index + 6] <= 0 ||
+                        normalLengthSq < 0.999 || normalLengthSq > 1.001) throw new Error('Invalid shape point');
+                }
+                for (let index = 0; index < used; index++) this.ouroborosPoints[index] = view[index];
+                this.ouroborosCount = count;
+                this.ouroborosNativeActive = true;
+                return this.ouroborosPoints;
+            } catch {
+                // Ошибка графической формы не сбрасывает физические массивы и часы ABI v1.
+                this.ouroborosNativeFailed = true;
+                this.ouroborosMemoryView = null;
+                this.ouroborosMemoryBuffer = null;
+            }
+        }
+        this.ouroborosNativeActive = false;
+        this.ouroborosCount = fillOuroborosPoints(this.ouroborosPoints, seed, count, timeSec, morph, energy);
+        return this.ouroborosPoints;
+    }
+    // КОНЕЦ ФУНКЦИИ sampleOuroboros
+
+    // НАЧАЛО ФУНКЦИИ getOuroborosCount
+    public getOuroborosCount(): number { return this.ouroborosCount; }
+    // КОНЕЦ ФУНКЦИИ getOuroborosCount
+
+    // НАЧАЛО ФУНКЦИИ isOuroborosWasmActive
+    public isOuroborosWasmActive(): boolean { return this.ouroborosNativeActive; }
+    // КОНЕЦ ФУНКЦИИ isOuroborosWasmActive
+    // КОНЕЦ ПОДРАЗДЕЛА. OPTIONAL ABI ОБЪЁМНОЙ ФОРМЫ
 
     // НАЧАЛО ФУНКЦИИ getKuramotoPhase
     public getKuramotoPhase(index: number): number {

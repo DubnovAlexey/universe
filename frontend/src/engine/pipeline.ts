@@ -8,9 +8,9 @@
 //   РАЗДЕЛ 1. Интерфейс возможностей конвейера (RenderCapabilities).
 //   РАЗДЕЛ 2. Класс RenderPipeline:
 //     - Подраздел 2.1. Инициализация 2D-контекста с DPR-кэпом из QualityGovernor.
-//     - Подраздел 2.2. Честная проверка адаптера WebGPU (probeWebGpuSupport):
-//                      разделяет наличие адаптера и фактически рисующий бэкенд
-//                      Canvas2D-HighDPI (устраняет замечание Аудита P1 #15).
+//     - Подраздел 2.2. Проверка доступности адаптера WebGPU (probeWebGpuSupport):
+//                      обновляет capabilities основного Canvas2D-конвейера,
+//                      не подменяя состояние отдельного GPU-прохода Уробороса.
 //     - Подраздел 2.3. Генератор тайла дизеринга 64x64 (buildBlueNoiseDitherPattern)
 //                      и утилиты управления размером, качеством (syncQualityProfile) и цветами.
 // ============================================================================
@@ -86,16 +86,14 @@ export class RenderPipeline {
 
     // --- НАЧАЛО ФУНКЦИИ probeWebGpuSupport ---
     /**
-     * Проверяет наличие аппаратного адаптера WebGPU в браузере, но честно оставляет
-     * статус модуля 'webgpu-render' в режиме 'fallback', так как активная отрисовка
-     * сцены выполняется через высокоточный конвейер 'canvas2d-render'.
+     * Проверяет доступность адаптера для capabilities основного Canvas2D-конвейера.
+     * Статус webgpu-render публикует OuroborosEffect после реальной GPU-отрисовки;
+     * поздний результат этой проверки не меняет состояние GPU-прохода.
      */
     private async probeWebGpuSupport(): Promise<void> {
-        const t0 = performance.now();
         integrationRegistry.updateModuleStatus('canvas2d-render', 'ready', 0.8);
 
         if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
-            integrationRegistry.updateModuleStatus('webgpu-render', 'unsupported', 0);
             return;
         }
 
@@ -106,20 +104,10 @@ export class RenderPipeline {
                 }
             ).gpu;
             const adapter = await gpu.requestAdapter();
-            const loadMs = performance.now() - t0;
-
-            if (adapter) {
-                this.capabilities.webgpuAvailable = true;
-                integrationRegistry.updateModuleStatus('webgpu-render', 'fallback', loadMs);
-            } else {
-                integrationRegistry.updateModuleStatus('webgpu-render', 'unsupported', loadMs);
-            }
+            if (this.isDisposed) return;
+            this.capabilities.webgpuAvailable = Boolean(adapter);
         } catch {
-            integrationRegistry.updateModuleStatus(
-                'webgpu-render',
-                'fallback',
-                performance.now() - t0
-            );
+            if (!this.isDisposed) this.capabilities.webgpuAvailable = false;
         }
     }
     // --- КОНЕЦ ФУНКЦИИ probeWebGpuSupport ---

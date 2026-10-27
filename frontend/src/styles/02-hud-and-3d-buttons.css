@@ -560,4 +560,19 @@
     border-color: rgba(56, 189, 248, 0.38);
     color: var(--accent-ice);
 }
+
+/* Только подпись GitHub: медно-розовый свет с бордовой глубиной, без CSS-таймера. */
+#link-hud-github {
+    color: var(--github-ink-color, #ffd1ac);
+    /* Цвет уже меняется малыми шагами общего кадра и замирает сразу при паузе. */
+    transition-property: background-color, border-color, text-shadow;
+    text-shadow:
+            0 1px 3px rgba(24, 4, 13, 0.96),
+            0 0 8px rgba(166, 63, 87, 0.62);
+}
+
+#link-hud-github .glyph-reel-ink {
+    color: inherit;
+    text-shadow: inherit;
+}
 /* КОНЕЦ РАЗДЕЛА 5. ШКАЛА ФАЗ И НИЖНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ */

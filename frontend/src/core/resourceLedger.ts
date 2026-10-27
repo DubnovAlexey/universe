@@ -7,7 +7,7 @@
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
 //   2. ResourceLedgerManager: getCounters, setBaseline, trackAllocation, trackPageLifetimeAllocation,
-//      trackRelease, registerCycleDisposable, registerPageDisposable, getCycleAbortSignal,
+//      trackPageLifetimeRelease, trackRelease, registerCycleDisposable, registerPageDisposable, getCycleAbortSignal,
 //      disposeCycleResources, disposeAllPageResources.
 // ============================================================================
 
@@ -87,6 +87,19 @@ class ResourceLedgerManager {
         this.baseline[category] += amount;
     }
     // --- КОНЕЦ ФУНКЦИИ trackPageLifetimeAllocation (ResourceLedgerManager) ---
+
+    // --- НАЧАЛО ФУНКЦИИ trackPageLifetimeRelease (ResourceLedgerManager) ---
+    /** Освобождает ресурс страницы, сохраняя строгую границу для ресурсов цикла. */
+    public trackPageLifetimeRelease(category: ResourceCategory, delta = 1): void {
+        if (!Number.isFinite(delta) || delta <= 0) return;
+        const amount = Math.floor(delta);
+        const current = this.counters[category];
+        const baseline = this.baseline[category];
+        this.counters.underflowCount += Math.max(0, amount - current, amount - baseline);
+        this.counters[category] = Math.max(0, current - amount);
+        this.baseline[category] = Math.max(0, baseline - amount);
+    }
+    // --- КОНЕЦ ФУНКЦИИ trackPageLifetimeRelease (ResourceLedgerManager) ---
 
     // --- НАЧАЛО ФУНКЦИИ trackRelease (ResourceLedgerManager) ---
     public trackRelease(category: ResourceCategory, delta = 1): void {

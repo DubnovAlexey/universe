@@ -14,6 +14,7 @@
 pub mod breach_math;
 pub mod gravity;
 pub mod memory;
+pub mod ouroboros;
 pub mod prng;
 
 use std::sync::Mutex;

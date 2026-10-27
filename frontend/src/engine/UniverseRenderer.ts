@@ -18,6 +18,8 @@ import { integrationRegistry } from '../core/integrationRegistry';
 import { resourceLedger } from '../core/resourceLedger';
 import { publishVisualSignals } from '../core/visualSignals';
 import { BackgroundFields } from './backgroundFields';
+import { OuroborosEffect } from './ouroboros/OuroborosEffect';
+import { getVisualSignals } from '../core/visualSignals';
 import {
     renderBreathingLightEchoRings, renderSpiralDustAndCanyons,
     renderCurvedFieldSignals, renderCorticalHemispheresAndKeplerRings,
@@ -32,6 +34,7 @@ export class UniverseRenderer {
     // НАЧАЛО РАЗДЕЛА 1. СОСТОЯНИЕ, ИНИЦИАЛИЗАЦИЯ И ВВОД
     private readonly pipeline: RenderPipeline;
     private readonly simulation: VoidPhaseSimulation;
+    private readonly ouroboros: OuroborosEffect;
 
     private width = 1920;
     private height = 1080;
@@ -64,6 +67,7 @@ export class UniverseRenderer {
         this.lastTrackedAct = initialState.singularityAct;
 
         this.initProceduralBackgroundFields(initialState.seed);
+        this.ouroboros = new OuroborosEffect(canvas);
     }
     // --- КОНЕЦ ФУНКЦИИ constructor (UniverseRenderer) ---
 
@@ -214,6 +218,11 @@ export class UniverseRenderer {
         const phase = state.currentPhase;
         const act = state.singularityAct;
 
+        // Эпизод очищает GPU-слой при входе в Точку Нуля даже до раннего return.
+        if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
+            this.ouroboros.render(ctx, state, getVisualSignals(), w, h, this.pipeline.getCapabilities().dpr);
+        }
+
         // Короткий 0.45-секундный импульс максимального сжатия в Точке Нуля (Акт C)
         // непосредственно перед вылетом из неё визитки DUBNOV ALEXEY
         if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
@@ -335,6 +344,10 @@ export class UniverseRenderer {
             this.backgroundFields.nodes
         );
 
+        // Поле передаёт свои реальные координаты форме, не меняя физику и топологию.
+        ctx.save();
+        ctx.globalAlpha *= this.ouroboros.getFieldVisibility(state);
+
         // 8. Отрисовка 3 классов кривых Безье графа NEXUS и комет синаптических импульсов
         if (state.layers.layer3_topologyGraph || state.layers.layer5_truthXRayMode) {
             renderTopologyEdgesAndPulses(
@@ -359,11 +372,14 @@ export class UniverseRenderer {
         );
 
         ctx.restore();
+        ctx.restore();
 
         // 10. Квантовый одометр на холсте (разлёт символов из Точки Нуля в Акте D)
         if (isOdometerStage) {
             renderCipherOdometerStage(ctx, w, h, state);
         }
+
+        this.ouroboros.render(ctx, state, getVisualSignals(), w, h, this.pipeline.getCapabilities().dpr, particles);
 
         ctx.restore();
         integrationRegistry.recordModuleStep(

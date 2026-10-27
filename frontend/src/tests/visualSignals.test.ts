@@ -10,7 +10,7 @@ import { audioSync } from '../utils/audioSync';
 import { createVisualSignals, publishVisualSignals } from '../core/visualSignals';
 import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile,
     getOrderedGlyphState, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
-import { calmGlyphHover } from '../core/glyphHover';
+import { calmGlyphHover, fitGlyphInk } from '../core/glyphHover';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
 class HoverElement extends EventTarget {
@@ -70,6 +70,19 @@ function descendants(element: HoverElement, className: string): HoverElement[] {
     ]);
 }
 // КОНЕЦ ФУНКЦИИ descendants
+
+// НАЧАЛО ФУНКЦИИ symbolAngle
+function symbolAngle(symbol: HoverElement): number {
+    return Number(/^rotateY\((-?[\d.]+)deg\)$/.exec(symbol.styleValues.get('transform') ?? '')?.[1]);
+}
+// КОНЕЦ ФУНКЦИИ symbolAngle
+
+// НАЧАЛО ФУНКЦИИ visibleSymbols
+function visibleSymbols(track: HoverElement): HoverElement[] {
+    return descendants(track, 'glyph-reel-symbol').filter((node) =>
+        node.styleValues.get('visibility') === 'visible' && node.styleValues.get('opacity') === '1');
+}
+// КОНЕЦ ФУНКЦИИ visibleSymbols
 
 // НАЧАЛО РАЗДЕЛА 2. ПРОВЕРКИ CORE
 // НАЧАЛО ФУНКЦИИ runVisualSignalChecks
@@ -137,6 +150,39 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         GLYPH_FAMILIES.alchemical.includes('🜁') && getGlyphFontEpoch() === previousFontEpoch + 1,
         description: 'Curated runes, Egyptian signs, all 20 Mayan numerals and physical operators stay code-point safe; font arrival invalidates cached fallback' });
 
+    // Проверяем именно выносы начертания, а не только advanceWidth: египетские,
+    // наклонные и надстрочные знаки могут быть шире или выше своей наборной ячейки.
+    const inkSamples: Partial<TextMetrics>[] = [
+        { width: 16, actualBoundingBoxLeft: 4, actualBoundingBoxRight: 25,
+            actualBoundingBoxAscent: 21, actualBoundingBoxDescent: 7, fontBoundingBoxAscent: 15, fontBoundingBoxDescent: 4 },
+        { width: 9, actualBoundingBoxLeft: -2, actualBoundingBoxRight: 14,
+            actualBoundingBoxAscent: 4, actualBoundingBoxDescent: 12, fontBoundingBoxAscent: 11, fontBoundingBoxDescent: 3 },
+        { width: 8, actualBoundingBoxLeft: 3, actualBoundingBoxRight: 10,
+            actualBoundingBoxAscent: 24, actualBoundingBoxDescent: -3 },
+        { width: 22 }, {}, { width: Number.NaN, actualBoundingBoxAscent: Number.NaN },
+    ];
+    const slots = [{ width: 4, height: 16, font: 9 }, { width: 8, height: 17, font: 13 },
+        { width: 18, height: 26, font: 20 }];
+    checks.push({ passed: inkSamples.every((metrics) => slots.every(({ width, height, font }) =>
+        [0, 1.5, -1].every((tracking) => {
+            const fit = fitGlyphInk(metrics, width, height, font, tracking);
+            const left = fit.left + fit.inkLeft * fit.scale;
+            const right = fit.left + fit.inkRight * fit.scale;
+            const top = fit.top + (fit.baseline - fit.inkAscent) * fit.scale;
+            const bottom = fit.top + (fit.baseline + fit.inkDescent) * fit.scale;
+            return Number.isFinite(fit.scale) && fit.scale > 0 && fit.scale <= 1 &&
+                left >= 1 - 1e-8 && right <= width - 1 + 1e-8 &&
+                top >= 1 - 1e-8 && bottom <= height - 1 + 1e-8 &&
+                Math.abs((left + right) / 2 - width / 2) < 1e-8 &&
+                Math.abs((top + bottom) / 2 - height / 2) < 1e-8 &&
+                [0, 15, 45, 75, 90].every((degrees) => {
+                    const cosine = Math.cos(degrees * Math.PI / 180);
+                    return width / 2 + (left - width / 2) * cosine >= 0 &&
+                        width / 2 + (right - width / 2) * cosine <= width;
+                });
+        }))),
+        description: 'Uniform ink fitting contains wide, tall, negative-bearing and fallback glyphs with an inset at phone/desktop sizes; centered Y turns never cross neighboring cells' });
+
     publishVisualSignals(state, audio, stress);
     const mock = new HoverElement();
     const element = mock as unknown as HTMLElement;
@@ -159,34 +205,37 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const firstMeasure = descendants(mock, 'glyph-reel-measure')[0];
     const canonicalMeasure = firstMeasure.textContent;
     publishVisualSignals(state, audio, stress);
-    const motionAt50 = firstTrack.styleValues.get('transform') ?? '';
+    const firstSymbols = descendants(firstTrack, 'glyph-reel-symbol');
+    const motionAt50 = symbolAngle(firstSymbols[0]);
     publishVisualSignals(state, audio, stress);
-    const motionAt100 = firstTrack.styleValues.get('transform') ?? '';
-    const positiveMotion = /^translate3d\(([0-9.]+)%, 0, 0\)$/.exec(motionAt50);
-    const furtherMotion = /^translate3d\(([0-9.]+)%, 0, 0\)$/.exec(motionAt100);
+    const motionAt100 = symbolAngle(firstSymbols[0]);
     checks.push({ passed: shortCells.length === Array.from('01.VOID').length &&
         shortCells.every((cell, index) => Number(cell.dataset.glyphReel) === index) &&
-        !!positiveMotion && !!furtherMotion && Number(positiveMotion[1]) > 0 &&
-        Number(furtherMotion[1]) > Number(positiveMotion[1]) && Number(furtherMotion[1]) < 100 &&
+        motionAt50 > 0 && motionAt100 > motionAt50 && motionAt100 < 90 &&
+        firstTrack.styleValues.get('transform') === 'none' &&
+        visibleSymbols(firstTrack).length === 1 && visibleSymbols(firstTrack)[0] === firstSymbols[0] &&
+        shortCells.filter((cell) => cell.dataset.glyphState === 'rolling').every((cell) =>
+            descendants(cell, 'glyph-reel-ink').every((ink) => /^scale\([\d.]+\)$/.test(ink.styleValues.get('transform') ?? ''))) &&
         firstMeasure.textContent === canonicalMeasure && firstMeasure.styleValues.size === 0 &&
         shortCells.every((cell) => cell.styleValues.size === 0) && mock.getAttribute('aria-label') === '01.VOID',
-        description: 'Every position has an ordered reel window; strips move right on positive X with zero Y while canonical measurements and accessible names stay fixed' });
+        description: 'A whole outgoing glyph turns right on its own Y axis with zero X/Y translation; uniform ink scale, canonical measures and accessible names stay fixed' });
     const trackBeforeRestart = descendants(mock, 'glyph-reel-track')[0];
     calmGlyphHover.start(element, '01.VOID', 999);
     publishVisualSignals(state, audio, stress);
     checks.push({ passed: descendants(mock, 'glyph-reel-track')[0] === trackBeforeRestart &&
-        firstTrack.styleValues.get('transform') !== motionAt100,
+        symbolAngle(firstSymbols[0]) !== motionAt100,
         description: 'Repeated neighbor activation preserves the existing reel nodes and elapsed motion instead of restarting jitter' });
     calmGlyphHover.stop(element);
 
     calmGlyphHover.start(element, 'SLOW SYMBOLS');
     const holdTrack = descendants(mock, 'glyph-reel-track')[0];
     for (let frame = 0; frame < 6; frame++) publishVisualSignals(state, audio, stress);
-    const heldPosition = holdTrack.styleValues.get('transform');
+    const heldSymbol = visibleSymbols(holdTrack)[0];
+    const heldPosition = symbolAngle(heldSymbol);
     const heldSymbols = holdTrack.textContent;
     publishVisualSignals(state, audio, stress);
-    const holdsReadableGlyph = heldPosition === 'translate3d(100.000%, 0, 0)' &&
-        holdTrack.styleValues.get('transform') === heldPosition && holdTrack.textContent === heldSymbols;
+    const holdsReadableGlyph = heldPosition === 0 && visibleSymbols(holdTrack).length === 1 &&
+        visibleSymbols(holdTrack)[0] === heldSymbol && symbolAngle(heldSymbol) === heldPosition && holdTrack.textContent === heldSymbols;
     calmGlyphHover.stop(element);
     const delayedMock = new HoverElement();
     const delayedElement = delayedMock as unknown as HTMLElement;
@@ -194,11 +243,37 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     calmGlyphHover.start(delayedElement, 'DELAYED NEIGHBOR', 4);
     publishVisualSignals(state, audio, stress);
     checks.push({ passed: holdsReadableGlyph &&
-        descendants(mock, 'glyph-reel-track')[0].styleValues.get('transform') !== 'translate3d(0.000%, 0, 0)' &&
-        descendants(delayedMock, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0.000%, 0, 0)',
-        description: 'Each slow rightward glyph turn holds at positive 100% X with zero Y, and neighboring labels enter as a staggered wave' });
+        visibleSymbols(descendants(mock, 'glyph-reel-track')[0]).length === 1 &&
+        visibleSymbols(descendants(delayedMock, 'glyph-reel-track')[0]).length === 0,
+        description: 'Each slow Y turn holds one whole incoming glyph face-on; neighboring labels wait blank and enter in a staggered wave' });
     calmGlyphHover.stop(element);
     calmGlyphHover.stop(delayedElement);
+
+    publishVisualSignals(state, audio, stress);
+    calmGlyphHover.start(element, 'Ж');
+    const fullTurnTrack = descendants(mock, 'glyph-reel-track')[0];
+    const fullTurnSymbols = descendants(fullTurnTrack, 'glyph-reel-symbol');
+    let wholeGlyphAtEveryFrame = true;
+    let edgeIsBlank = false;
+    let incomingTurnsRight = false;
+    for (let frame = 1; frame <= 20; frame++) {
+        publishVisualSignals({ ...state, telemetry: { ...state.telemetry, frameTimeMs: 45 } }, audio, stress);
+        const visible = visibleSymbols(fullTurnTrack);
+        const outgoingAngle = symbolAngle(fullTurnSymbols[0]);
+        const incomingAngle = symbolAngle(fullTurnSymbols[1]);
+        wholeGlyphAtEveryFrame &&= visible.length <= 1 && outgoingAngle >= 0 && outgoingAngle <= 90 &&
+            incomingAngle >= -90 && incomingAngle <= 0 &&
+            fullTurnTrack.styleValues.get('transform') === 'none' &&
+            (visible[0] !== fullTurnSymbols[0] || outgoingAngle < 90) &&
+            (visible[0] !== fullTurnSymbols[1] || incomingAngle > -90);
+        if (frame === 3) edgeIsBlank = visible.length === 0 && outgoingAngle === 90 && incomingAngle === -90;
+        if (frame === 4) incomingTurnsRight = visible[0] === fullTurnSymbols[1] && incomingAngle > -90 && incomingAngle < 0;
+    }
+    checks.push({ passed: wholeGlyphAtEveryFrame && edgeIsBlank && incomingTurnsRight &&
+        descendants(mock, 'glyph-reel-cell')[0].dataset.glyphState === 'locked' &&
+        descendants(mock, 'glyph-reel-measure')[0].textContent === 'Ж' && calmGlyphHover.getVisualText(element) === 'Ж',
+        description: 'Both full turns expose at most one complete glyph, meet edge-on without two clipped halves, enter from the left and restore the unmodified canonical measure' });
+    calmGlyphHover.stop(element);
 
     calmGlyphHover.start(element, 'CALM HOVER BUTTON 𓂀');
     publishVisualSignals({ ...state, telemetry: { ...state.telemetry, simulationTimeSec: 0.05 } }, audio, stress);
@@ -215,7 +290,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     }
     const canonicalDwell = calmGlyphHover.getVisualText(element) === 'LATEST CANONICAL' && calmGlyphHover.isActive(element) &&
         dwellCells.every((cell, index) => cell.dataset.glyphState === 'locked' &&
-            descendants(cell, 'glyph-reel-track')[0].styleValues.get('transform') === 'translate3d(0.000%, 0, 0)' &&
+            descendants(cell, 'glyph-reel-track')[0].styleValues.get('transform') === 'none' &&
             descendants(cell, 'glyph-reel-symbol').map((node) => node.textContent).join('') === Array.from('LATEST CANONICAL')[index]);
     publishVisualSignals({ ...state, isPaused: true, telemetry: { ...state.telemetry, simulationTimeSec: 1.6 } }, audio, stress);
     const pausedRestored = !calmGlyphHover.isActive(element) && mock.textContent === 'LATEST CANONICAL';

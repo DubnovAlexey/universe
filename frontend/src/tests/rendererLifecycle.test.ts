@@ -44,6 +44,25 @@ function restartSnapshot(): string {
 
 // НАЧАЛО ФУНКЦИИ runRendererLifecycleChecks
 export function runRendererLifecycleChecks(check: (passed: boolean, description: string) => void): void {
+    const Ledger = resourceLedger.constructor as new () => typeof resourceLedger;
+    const lossLedger = new Ledger();
+    lossLedger.trackPageLifetimeAllocation('buffers', 2);
+    lossLedger.trackPageLifetimeAllocation('textures', 1);
+    lossLedger.trackPageLifetimeRelease('buffers', 2);
+    lossLedger.trackPageLifetimeRelease('textures', 1);
+    const cleanAfterLoss = lossLedger.disposeCycleResources().leakFree;
+    lossLedger.trackAllocation('buffers', 1);
+    check(cleanAfterLoss && !lossLedger.disposeCycleResources().leakFree && lossLedger.getCounters().underflowCount === 0,
+        'Releasing GPU page resources lowers their baseline, so a later unreleased cycle buffer remains detectable');
+    const guardLedger = new Ledger();
+    [Number.NaN, Infinity, -1, 0, 0.4].forEach((delta) => guardLedger.trackPageLifetimeRelease('textures', delta));
+    const ignoredInvalidRelease = guardLedger.getCounters().underflowCount === 0 && guardLedger.getCounters().textures === 0;
+    guardLedger.trackPageLifetimeAllocation('textures', 1);
+    guardLedger.trackAllocation('textures', 1);
+    guardLedger.trackPageLifetimeRelease('textures', 2);
+    check(ignoredInvalidRelease && guardLedger.getCounters().textures === 0 && guardLedger.getCounters().underflowCount === 1 &&
+        !guardLedger.disposeCycleResources().leakFree,
+        'Page release ignores invalid amounts and reports baseline underflow even when a cycle allocation keeps the live count sufficient');
     const singletonTargets = [integrationRegistry, qualityGovernor, resourceLedger, universeStore,
         stressStore, audioSync, wasmPhysicsBridge, nexusGraphEngine];
     const savedSingletons = singletonTargets.map((target) => ({ target, descriptors: Object.getOwnPropertyDescriptors(target) }));

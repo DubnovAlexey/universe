@@ -3,7 +3,7 @@
 // НАЗНАЧЕНИЕ: Отчётливые символьные барабаны на общем кадре без дрожания вёрстки.
 // РАЗДЕЛЫ: 1. Контракты/метрики; 2. Канонический текст; 3. Барабаны;
 //          4. Жизненный цикл общего кадра.
-// ФУНКЦИИ: ease, symbolFit, ensureTextNodes, setCanonical, setVisualText,
+// ФУНКЦИИ: ease, fitGlyphInk, symbolFit, setSymbol, setTurn, ensureTextNodes, setCanonical, setVisualText,
 // getVisualText, isActive, createReels, updateReels, start, stop, stopAll, update.
 // ============================================================================
 
@@ -20,8 +20,11 @@ interface GlyphReelCell {
     track: HTMLElement;
     outgoing: HTMLElement;
     incoming: HTMLElement;
+    outgoingInk: HTMLElement;
+    incomingInk: HTMLElement;
     turn: number;
     progress: number;
+    fitEpoch: number;
     state: 'waiting' | 'rolling' | 'locked';
 }
 interface HoverSession {
@@ -41,7 +44,17 @@ const REEL_HOLD_MS = 120;
 const SLOT_WAVE_MS = 90;
 const MAX_WAVE_MS = 1700;
 let metricsContext: CanvasRenderingContext2D | null | undefined;
-const fitCache = new Map<string, number>();
+export interface GlyphInkFit {
+    readonly scale: number;
+    readonly left: number;
+    readonly top: number;
+    readonly baseline: number;
+    readonly inkLeft: number;
+    readonly inkRight: number;
+    readonly inkAscent: number;
+    readonly inkDescent: number;
+}
+const fitCache = new Map<string, GlyphInkFit>();
 let fitCacheEpoch = -1;
 
 // НАЧАЛО ФУНКЦИИ ease
@@ -51,10 +64,43 @@ function ease(value: number): number {
 }
 // КОНЕЦ ФУНКЦИИ ease
 
+// НАЧАЛО ФУНКЦИИ fitGlyphInk
+/** Вписывает полное начертание вместе с выносами, сохраняя пропорции и базовую линию. */
+export function fitGlyphInk(metrics: Partial<TextMetrics>, width: number, height: number,
+    fontPx: number, tracking = 0): GlyphInkFit {
+    const font = Number.isFinite(fontPx) && fontPx > 0 ? fontPx : 16;
+    const w = Number.isFinite(width) && width > 0 ? width : font;
+    const h = Number.isFinite(height) && height > 0 ? height : font * 1.3;
+    const advance = Number.isFinite(metrics.width) && metrics.width! > 0 ? metrics.width! : font;
+    const hasHorizontalInk = Number.isFinite(metrics.actualBoundingBoxLeft) &&
+        Number.isFinite(metrics.actualBoundingBoxRight) &&
+        metrics.actualBoundingBoxLeft! + metrics.actualBoundingBoxRight! > 0;
+    const hasVerticalInk = Number.isFinite(metrics.actualBoundingBoxAscent) &&
+        Number.isFinite(metrics.actualBoundingBoxDescent) &&
+        metrics.actualBoundingBoxAscent! + metrics.actualBoundingBoxDescent! > 0;
+    const inkLeft = hasHorizontalInk ? -metrics.actualBoundingBoxLeft! : 0;
+    const inkRight = hasHorizontalInk ? metrics.actualBoundingBoxRight! : advance;
+    const inkAscent = hasVerticalInk ? metrics.actualBoundingBoxAscent! : font * 0.9;
+    const inkDescent = hasVerticalInk ? metrics.actualBoundingBoxDescent! : font * 0.3;
+    const fontAscent = Number.isFinite(metrics.fontBoundingBoxAscent) ? metrics.fontBoundingBoxAscent! : font * 0.8;
+    const fontDescent = Number.isFinite(metrics.fontBoundingBoxDescent) ? metrics.fontBoundingBoxDescent! : font * 0.2;
+    const baseline = (font - fontAscent - fontDescent) / 2 + fontAscent;
+    const inset = Math.min(1.5, Math.max(0, (w - 0.5) / 2), Math.max(0, (h - 0.5) / 2));
+    const spacing = Number.isFinite(tracking) ? Math.abs(tracking) : 0;
+    const scale = Math.min(1, (w - inset * 2) / Math.max(advance + spacing, inkRight - inkLeft + spacing),
+        (h - inset * 2) / (inkAscent + inkDescent));
+    return {
+        scale, baseline, inkLeft, inkRight, inkAscent, inkDescent,
+        left: w / 2 - (inkLeft + inkRight) * scale / 2,
+        top: h / 2 + ((inkAscent - inkDescent) / 2 - baseline) * scale,
+    };
+}
+// КОНЕЦ ФУНКЦИИ fitGlyphInk
+
 // НАЧАЛО ФУНКЦИИ symbolFit
-/** Широкий исторический знак вписывается в локальное окно, не растягивая кнопку. */
-function symbolFit(element: HTMLElement, glyph: string): number {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return 1;
+/** CSS-размеры локального окна не зависят от внешнего 3D-поворота всей кнопки. */
+function symbolFit(element: HTMLElement, glyph: string): GlyphInkFit {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return fitGlyphInk({}, 16, 20.8, 16);
     const fontEpoch = getGlyphFontEpoch();
     if (fontEpoch !== fitCacheEpoch) {
         // Новые начертания не оставляют в памяти измерения прежнего поколения шрифтов.
@@ -63,24 +109,61 @@ function symbolFit(element: HTMLElement, glyph: string): number {
     }
     const style = window.getComputedStyle(element);
     const fontPx = Number.parseFloat(style.fontSize) || 16;
-    const rowWidth = Number.parseFloat(style.width);
-    const availableWidth = Number.isFinite(rowWidth) && rowWidth > 0 ? rowWidth : fontPx * 1.15;
-    const font = style.fontStyle + ' ' + style.fontWeight + ' ' + fontPx + 'px ' + GLYPH_FONT_STACK;
-    const key = fontEpoch + ':' + font + ':' + availableWidth.toFixed(3) + ':' + glyph;
+    const slotStyle = window.getComputedStyle(element.parentElement!);
+    const availableWidth = Number.parseFloat(slotStyle.width) || fontPx;
+    const availableHeight = Number.parseFloat(slotStyle.height) || fontPx * 1.3;
+    const tracking = Number.parseFloat(style.letterSpacing) || 0;
+    const font = style.fontStyle + ' ' + style.fontWeight + ' ' + fontPx + 'px ' + style.fontFamily;
+    const key = fontEpoch + ':' + font + ':' + availableWidth.toFixed(3) + ':' +
+        availableHeight.toFixed(3) + ':' + tracking + ':' + glyph;
     const cached = fitCache.get(key);
     if (cached !== undefined) return cached;
     if (metricsContext === undefined) {
         try { metricsContext = document.createElement('canvas').getContext('2d'); }
         catch { metricsContext = null; }
     }
-    if (!metricsContext) return 1;
-    metricsContext.font = font;
-    const width = metricsContext.measureText(glyph).width;
-    const fit = width > 0 ? Math.min(1, availableWidth / width) : 1;
+    let metrics: Partial<TextMetrics> = {};
+    if (metricsContext) {
+        metricsContext.font = font;
+        metricsContext.textBaseline = 'alphabetic';
+        metricsContext.textAlign = 'left';
+        metricsContext.direction = 'ltr';
+        metrics = metricsContext.measureText(glyph);
+    }
+    const fit = fitGlyphInk(metrics, availableWidth, availableHeight, fontPx, tracking);
     fitCache.set(key, fit);
     return fit;
 }
 // КОНЕЦ ФУНКЦИИ symbolFit
+
+// НАЧАЛО ФУНКЦИИ setSymbol
+/** Отдельный ink-слой центрируется по начертанию; слой поворота остаётся размером с ячейку. */
+function setSymbol(ink: HTMLElement, glyph: string, canonical: string): void {
+    ink.textContent = glyph;
+    const isCanonical = glyph === canonical;
+    ink.style.setProperty('font-family', isCanonical ? 'inherit' : GLYPH_FONT_STACK);
+    ink.style.setProperty('font-size', isCanonical ? 'inherit' : 'max(1em, 13px)');
+    ink.style.setProperty('letter-spacing', isCanonical ? 'inherit' : '0px');
+    const fit = symbolFit(ink, glyph);
+    ink.style.setProperty('left', fit.left.toFixed(5) + 'px');
+    ink.style.setProperty('top', fit.top.toFixed(5) + 'px');
+    ink.style.setProperty('transform', 'scale(' + fit.scale.toFixed(6) + ')');
+}
+// КОНЕЦ ФУНКЦИИ setSymbol
+
+// НАЧАЛО ФУНКЦИИ setTurn
+/** Поворот слева направо показывает только одну целую грань, без сдвига и среза знака. */
+function setTurn(cell: GlyphReelCell, progress: number): void {
+    const outgoingVisible = progress < 0.5;
+    const incomingVisible = progress > 0.5;
+    cell.outgoing.style.setProperty('transform', 'rotateY(' + Math.min(90, progress * 180).toFixed(3) + 'deg)');
+    cell.incoming.style.setProperty('transform', 'rotateY(' + Math.max(-90, (progress - 1) * 180).toFixed(3) + 'deg)');
+    cell.outgoing.style.setProperty('visibility', outgoingVisible ? 'visible' : 'hidden');
+    cell.incoming.style.setProperty('visibility', incomingVisible ? 'visible' : 'hidden');
+    cell.outgoing.style.setProperty('opacity', outgoingVisible ? '1' : '0');
+    cell.incoming.style.setProperty('opacity', incomingVisible ? '1' : '0');
+}
+// КОНЕЦ ФУНКЦИИ setTurn
 // КОНЕЦ РАЗДЕЛА 1
 
 class CalmGlyphHover {
@@ -156,7 +239,7 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ isActive
     // КОНЕЦ РАЗДЕЛА 2
 
-    // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ОКНА И ЛЕНТЫ СЛЕВА НАПРАВО
+    // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ЯЧЕЙКИ И ПЕРЕЛИСТЫВАНИЕ СЛЕВА НАПРАВО
     // НАЧАЛО ФУНКЦИИ createReels
     private createReels(element: HTMLElement, canonical: string): GlyphReelCell[] {
         const characters = splitGlyphText(canonical);
@@ -170,6 +253,8 @@ class CalmGlyphHover {
             const track = document.createElement('span');
             const outgoing = document.createElement('span');
             const incoming = document.createElement('span');
+            const outgoingInk = document.createElement('span');
+            const incomingInk = document.createElement('span');
             cell.className = 'glyph-reel-cell';
             cell.dataset.glyphReel = String(index);
             measure.className = 'glyph-reel-measure';
@@ -177,14 +262,17 @@ class CalmGlyphHover {
             windowEl.className = 'glyph-reel-window';
             track.className = 'glyph-reel-track';
             outgoing.className = incoming.className = 'glyph-reel-symbol';
-            outgoing.textContent = incoming.textContent = GLYPH_WAITING_SPACE;
+            outgoingInk.className = incomingInk.className = 'glyph-reel-ink';
+            outgoingInk.textContent = incomingInk.textContent = GLYPH_WAITING_SPACE;
+            outgoing.replaceChildren(outgoingInk);
+            incoming.replaceChildren(incomingInk);
             track.replaceChildren(outgoing, incoming);
             windowEl.replaceChildren(track);
             cell.replaceChildren(measure, windowEl);
             nodes.push(cell);
             cell.dataset.glyphState = 'waiting';
-            cells.push({ index, canonical: characters[index], node: cell, track, outgoing, incoming,
-                turn: -1, progress: -1, state: 'waiting' });
+            cells.push({ index, canonical: characters[index], node: cell, track, outgoing, incoming, outgoingInk, incomingInk,
+                turn: -1, progress: -1, fitEpoch: -1, state: 'waiting' });
         }
         this.ensureTextNodes(element).visual.replaceChildren(...nodes);
         return cells;
@@ -207,7 +295,8 @@ class CalmGlyphHover {
             if (front.state === 'waiting') {
                 characters[cell.index] = GLYPH_WAITING_SPACE;
                 if (cell.progress !== 0) {
-                    cell.track.style.setProperty('transform', 'translate3d(0.000%, 0, 0)');
+                    cell.track.style.setProperty('transform', 'none');
+                    setTurn(cell, 0.5);
                     cell.progress = 0;
                 }
                 continue;
@@ -215,12 +304,10 @@ class CalmGlyphHover {
             if (front.state === 'locked') {
                 // Закрепление меняет настоящий DOM, а не только логическую строку.
                 if (cell.turn !== REEL_TURNS) {
-                    cell.outgoing.textContent = cell.canonical;
-                    cell.incoming.textContent = '';
-                    cell.outgoing.style.setProperty('font-family', 'inherit');
-                    cell.outgoing.style.setProperty('font-size', 'inherit');
-                    cell.outgoing.style.setProperty('transform', 'scaleX(1)');
-                    cell.track.style.setProperty('transform', 'translate3d(0.000%, 0, 0)');
+                    cell.outgoingInk.textContent = cell.canonical;
+                    cell.incomingInk.textContent = '';
+                    cell.track.style.setProperty('transform', 'none');
+                    setTurn(cell, 0);
                     cell.turn = REEL_TURNS;
                 }
                 characters[cell.index] = cell.canonical;
@@ -232,26 +319,22 @@ class CalmGlyphHover {
             const from = mutable ? pickGlyph(signals.phase, cell.index + session.offset, turn, signals.seed) : cell.canonical;
             const to = !mutable || turn === REEL_TURNS - 1 ? cell.canonical :
                 pickGlyph(signals.phase, cell.index + session.offset, turn + 1, signals.seed);
-            if (turn !== cell.turn) {
+            const fitEpoch = getGlyphFontEpoch();
+            const refreshSymbols = turn !== cell.turn || fitEpoch !== cell.fitEpoch;
+            if (refreshSymbols) {
                 cell.turn = turn;
-                cell.outgoing.textContent = from;
-                cell.incoming.textContent = to;
-                cell.outgoing.style.setProperty('font-family', from === cell.canonical ? 'inherit' : GLYPH_FONT_STACK);
-                cell.incoming.style.setProperty('font-family', to === cell.canonical ? 'inherit' : GLYPH_FONT_STACK);
-                if (from === cell.canonical) cell.outgoing.style.setProperty('font-size', 'inherit');
-                else cell.outgoing.style.removeProperty('font-size');
-                if (to === cell.canonical) cell.incoming.style.setProperty('font-size', 'inherit');
-                else cell.incoming.style.removeProperty('font-size');
-                cell.outgoing.style.setProperty('transform', 'scaleX(' + (from === cell.canonical ? 1 : symbolFit(cell.outgoing, from)).toFixed(3) + ')');
-                cell.incoming.style.setProperty('transform', 'scaleX(' + (to === cell.canonical ? 1 : symbolFit(cell.incoming, to)).toFixed(3) + ')');
+                cell.fitEpoch = fitEpoch;
+                setSymbol(cell.outgoingInk, from, cell.canonical);
+                setSymbol(cell.incomingInk, to, cell.canonical);
             }
             const rollMs = localMs - turn * (session.rollMs + REEL_HOLD_MS);
             const progress = ease(rollMs / session.rollMs);
-            if (progress !== cell.progress) {
+            if (progress !== cell.progress || refreshSymbols) {
                 cell.progress = progress;
-                cell.track.style.setProperty('transform', 'translate3d(' + (100 * progress).toFixed(3) + '%, 0, 0)');
+                cell.track.style.setProperty('transform', 'none');
+                setTurn(cell, progress);
             }
-            characters[cell.index] = progress > 0 ? to : from;
+            characters[cell.index] = progress > 0.5 ? to : from;
         }
         session.logicalText = characters.join('');
     }

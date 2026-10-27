@@ -1,7 +1,7 @@
 /* noinspection CssUnusedSymbol */
 /* ============================================================================
  * ФАЙЛ: frontend/src/styles/03-glyph-reels.css
- * НАЗНАЧЕНИЕ: Глубина символов, окна и ленты барабанов, скрытый доступный текст.
+ * НАЗНАЧЕНИЕ: Глубина и целые поворачивающиеся глифы в неподвижных ячейках.
  * РАЗДЕЛЫ:
  *   1. ЛОКАЛЬНАЯ ГЛУБИНА АКТИВНЫХ СИМВОЛОВ.
  *   2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ.
@@ -20,7 +20,7 @@
 /* КОНЕЦ РАЗДЕЛА 1. ЛОКАЛЬНАЯ ГЛУБИНА АКТИВНЫХ СИМВОЛОВ */
 
 /* НАЧАЛО РАЗДЕЛА 2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ */
-/* Барабан двигает только знак внутри окна; скрытая мера сохраняет ширину текста. */
+/* Мера сохраняет наборную геометрию; две грани поочерёдно поворачиваются вокруг Y. */
 
 .glyph-reel-cell {
     position: relative;
@@ -31,45 +31,56 @@
     visibility: hidden;
 }
 
+.glyph-reel-cell[data-glyph-state="locked"] .glyph-reel-measure {
+    visibility: visible;
+}
+
+.glyph-reel-cell[data-glyph-state="locked"] .glyph-reel-window {
+    display: none;
+}
+
 .glyph-reel-window {
     position: absolute;
     left: 50%;
     top: 50%;
-    /* Соседние наборные окна не перекрываются; широкий глиф вписывает symbolFit. */
+    /* Размер ячейки неизменен; выносы и высоту начертания вписывает symbolFit. */
     width: 100%;
     height: max(1.3em, 16px);
     transform: translate(-50%, -50%);
-    overflow: hidden;
+    overflow: visible;
     pointer-events: none;
     background: radial-gradient(ellipse, rgba(2, 5, 14, 0.65), transparent 78%);
 }
 
 .glyph-reel-track {
     position: absolute;
-    /* Текущий знак находится в окне, входящий — слева; лента движется вправо. */
-    display: flex;
-    flex-direction: row-reverse;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    will-change: transform;
+    /* Ортографический поворот не раздувает проекцию за границы соседних ячеек. */
+    transform-style: preserve-3d;
 }
 
 .glyph-reel-symbol {
-    display: flex;
-    flex: 0 0 100%;
-    align-items: center;
-    justify-content: center;
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 100%;
     height: 100%;
-    min-height: 100%;
+    transform-origin: center center;
+    backface-visibility: hidden;
+    visibility: hidden;
+    will-change: transform;
+}
+
+.glyph-reel-ink {
+    position: absolute;
+    display: block;
     line-height: 1;
     white-space: pre;
-    font-family: var(--font-mono), monospace;
-    font-size: max(1em, 13px);
+    transform-origin: 0 0;
     color: var(--accent-pearl);
-    text-shadow: 0 0 7px rgba(125, 211, 252, 0.8), 0 2px 4px rgba(2, 3, 8, 0.95);
 }
 
 .glyph-reel-static {

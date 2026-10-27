@@ -4,7 +4,7 @@
 // РАЗДЕЛЫ: 1. Оси/контракт; 2. Привязка и освобождение; 3. Движение общего кадра.
 // ФУНКЦИИ: easeC2, formatCssNumber, createAxis, constructor, mount, dispose,
 // setInteracting, updateReadTarget, setHeld, snapFront, publishAngle, publishShadow,
-// updateSceneSpeed, update.
+// publishGithubAccent, updateSceneSpeed, update.
 // Host сохраняет геометрию и доступность; rotate3d получает только вложенное тело.
 // Новых RAF и таймеров нет. Наведение, keyboard focus и текущая фаза задают читаемую грань.
 // ============================================================================
@@ -20,7 +20,8 @@ const SHADOW_PROPERTIES = [
     '--button-shadow-opacity', '--button-shadow-scale-x', '--button-shadow-scale-y',
 ] as const;
 const BUTTON_PROPERTIES = ['--button-axis-x', '--button-axis-y', '--button-axis-z', '--button-spin-angle', ...SHADOW_PROPERTIES] as const;
-type ButtonProperty = typeof BUTTON_PROPERTIES[number];
+const GITHUB_INK_PROPERTY = '--github-ink-color';
+type ButtonProperty = typeof BUTTON_PROPERTIES[number] | typeof GITHUB_INK_PROPERTY;
 interface ButtonPose {
     readonly element: HTMLElement;
     readonly direction: 1 | -1;
@@ -30,6 +31,7 @@ interface ButtonPose {
     readonly originalMarker: string | undefined;
     readonly originalPhaseEmphasis: string | undefined;
     readonly phaseId: string | undefined;
+    readonly githubAccent: boolean;
     cleanup: () => void;
     hovered: boolean;
     keyboardFocused: boolean;
@@ -43,11 +45,14 @@ interface ButtonPose {
     shadowElapsedSec: number;
     lastShadowAngle: number | null;
     lastShadowValues: readonly string[];
+    accentElapsedSec: number;
+    lastAccentColor: string;
 }
 const ALIGN_DURATION_SEC = 0.65;
 const RELEASE_DURATION_SEC = 0.9;
 const SHADOW_INTERVAL_SEC = 1 / 12;
 const SHADOW_PHASE_STEP = 0.618033988749895;
+const GITHUB_ACCENT_PERIOD_SEC = 48;
 const PHASE_SPEED: Readonly<Record<VisualSignalSnapshot['phase'], number>> = Object.freeze({
     '01_VOID': 0.94, '02_GENESIS': 1.015, '03_EVOLUTION': 1.04,
     '04_COLLAPSE': 0.985, '05_SINGULARITY': 0.92,
@@ -103,23 +108,27 @@ export class ButtonMotionController {
         this.currentPhase = null;
         this.buttons = Array.from(new Set(elements)).map((element, index) => {
             const axis = createAxis(index, element.dataset.buttonSolidKind === 'status');
+            const githubAccent = element.id === 'link-hud-github';
+            const properties: readonly ButtonProperty[] = githubAccent ? [...BUTTON_PROPERTIES, GITHUB_INK_PROPERTY] : BUTTON_PROPERTIES;
             const pose: ButtonPose = {
                 element,
                 direction: index % 4 === 0 || index % 4 === 3 ? 1 : -1,
                 baseSpeed: 13 + (index * 0.371) % 5,
                 axis,
-                originalStyles: BUTTON_PROPERTIES.map((property) => ({
+                originalStyles: properties.map((property) => ({
                     property, value: element.style.getPropertyValue(property),
                     priority: element.style.getPropertyPriority(property),
                 })),
                 originalMarker: element.dataset.buttonMotion,
                 originalPhaseEmphasis: element.dataset.buttonPhaseEmphasis,
                 phaseId: element.dataset.phaseId,
+                githubAccent,
                 cleanup: () => {}, hovered: false, keyboardFocused: element.matches(':focus-visible'),
                 held: false,
                 angle: 0, alignFrom: 0, alignTarget: 0,
                 alignElapsedSec: 0, releaseElapsedSec: 0, lastAngle: '',
                 shadowElapsedSec: 0, lastShadowAngle: null, lastShadowValues: [],
+                accentElapsedSec: 0, lastAccentColor: '',
             };
             element.style.setProperty('--button-axis-x', formatCssNumber(axis[0]));
             element.style.setProperty('--button-axis-y', formatCssNumber(axis[1]));
@@ -145,6 +154,7 @@ export class ButtonMotionController {
             element.dataset.buttonMotion = '1';
             this.publishAngle(pose);
             this.publishShadow(pose, true);
+            this.publishGithubAccent(pose);
             // Разнесённые фазы не собирают перерисовку всех мягких теней в один кадр.
             pose.shadowElapsedSec = SHADOW_INTERVAL_SEC * ((index * SHADOW_PHASE_STEP) % 1);
             return pose;
@@ -280,6 +290,18 @@ export class ButtonMotionController {
     }
     // КОНЕЦ ФУНКЦИИ publishShadow
 
+    // НАЧАЛО ФУНКЦИИ publishGithubAccent
+    /** Светлая медь и пыльная роза сохраняют контраст на синей грани; полный перелив длится 48 секунд. */
+    private publishGithubAccent(pose: ButtonPose): void {
+        if (!pose.githubAccent) return;
+        const mix = 0.5 - Math.cos(pose.accentElapsedSec * Math.PI * 2 / GITHUB_ACCENT_PERIOD_SEC) * 0.5;
+        const color = `rgb(255 ${Math.round(209 - mix)} ${Math.round(172 + 48 * mix)})`;
+        if (color === pose.lastAccentColor) return;
+        pose.element.style.setProperty(GITHUB_INK_PROPERTY, color);
+        pose.lastAccentColor = color;
+    }
+    // КОНЕЦ ФУНКЦИИ publishGithubAccent
+
     // НАЧАЛО ФУНКЦИИ updateSceneSpeed
     /** Изображение сцены и звук меняют только скорость; знак и накопленный угол сохраняются. */
     private updateSceneSpeed(signals: Readonly<VisualSignalSnapshot>, dt: number): void {
@@ -315,6 +337,10 @@ export class ButtonMotionController {
         if (dt === 0) return;
         this.updateSceneSpeed(signals, dt);
         this.buttons.forEach((pose) => {
+            if (pose.githubAccent) {
+                pose.accentElapsedSec = (pose.accentElapsedSec + dt) % GITHUB_ACCENT_PERIOD_SEC;
+                this.publishGithubAccent(pose);
+            }
             pose.shadowElapsedSec = Math.min(SHADOW_INTERVAL_SEC, pose.shadowElapsedSec + dt);
             let alignedNow = false;
             if (pose.held) {

@@ -9,6 +9,7 @@ import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSigna
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ HOST И КАДР
 class MotionButton extends EventTarget {
+    public id = '';
     public dataset: Record<string, string> = {};
     public textContent = 'CANONICAL BUTTON';
     public focusVisible = false;
@@ -40,7 +41,7 @@ class MotionButton extends EventTarget {
     };
 }
 // НАЧАЛО ФУНКЦИИ makeHarness
-function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds: readonly string[] = []) {
+function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds: readonly string[] = [], githubIndex = -1) {
     const shared: { listener: ((frame: Readonly<VisualSignalSnapshot>) => void) | null; subscriptions: number; releases: number } = {
         listener: null, subscriptions: 0, releases: 0,
     };
@@ -52,6 +53,11 @@ function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds:
         const button = new MotionButton();
         if (statusIndices.includes(index)) button.dataset.buttonSolidKind = 'status';
         if (phaseIds[index]) button.dataset.phaseId = phaseIds[index];
+        if (index === githubIndex) {
+            button.id = 'link-hud-github';
+            button.values.set('--github-ink-color', 'rgb(190 150 130)');
+            button.priorities.set('--github-ink-color', 'important');
+        }
         return button;
     });
     if (buttons[2]) {
@@ -386,6 +392,51 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
         h.buttons.every((button, index) => button.writes === disposedWrites[index]),
         'Disposal removes handlers and the shared subscription once, restores previous axis/angle/shadow priorities and marker, and preserves geometry-owned data');
     reduced.binding.dispose();
+
+    const github = makeHarness(3, [], [], 1);
+    const accentProperty = '--github-ink-color';
+    const firstAccent = github.buttons[1].values.get(accentProperty);
+    let previousChannels = [255, 209, 172];
+    let warmAndReadable = true;
+    const accentColors = new Set<string>();
+    // НАЧАЛО ФУНКЦИИ luminance
+    const luminance = (channels: readonly number[]): number => channels.reduce((sum, channel, index) => {
+        const value = channel / 255;
+        return sum + (value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4)) *
+            [0.2126, 0.7152, 0.0722][index];
+    }, 0);
+    // КОНЕЦ ФУНКЦИИ luminance
+    for (let frame = 0; frame < 960; frame++) {
+        github.step(1, { simTimeSec: frame % 2 ? 1000 : -1000 });
+        const color = github.buttons[1].values.get(accentProperty)!;
+        const channels = color.match(/\d+/g)!.map(Number);
+        accentColors.add(color);
+        warmAndReadable &&= channels[0] === 255 && channels[1] >= 208 && channels[1] <= 209 &&
+            channels[2] >= 172 && channels[2] <= 220 &&
+            channels.every((channel, index) => Math.abs(channel - previousChannels[index]) <= 1) &&
+            (luminance(channels) + 0.05) / (luminance([56, 92, 121]) + 0.05) >= 5;
+        previousChannels = channels;
+    }
+    check(warmAndReadable && accentColors.size > 40 && github.buttons[1].values.get(accentProperty) === firstAccent &&
+        !github.buttons[0].values.has(accentProperty) && !github.buttons[2].values.has(accentProperty) &&
+        github.shared.subscriptions === 1 && github.binding.listenerCount === 15,
+        'Only the GitHub label cycles subtly through warm copper/rose over 48 active seconds, without phase-clock jumps or another scheduler, and retains 5:1 contrast on the brightest blue face');
+    github.step(80);
+    const accentBeforePause = github.buttons[1].values.get(accentProperty);
+    github.step(40, { isPaused: true });
+    const pausedAccent = github.buttons[1].values.get(accentProperty) === accentBeforePause;
+    github.step(1, { reducedMotion: true });
+    const reducedAccentWrites = github.buttons[1].writes;
+    github.step(40, { reducedMotion: true });
+    const reducedAccent = github.buttons[1].values.get(accentProperty) === accentBeforePause &&
+        github.buttons[1].writes === reducedAccentWrites;
+    github.step(80, { frameDtSec: 0 });
+    check(pausedAccent && reducedAccent && github.buttons[1].values.get(accentProperty) === accentBeforePause,
+        'GitHub accent holds its current readable color while paused, hidden, reduced-motion or zero-delta, with no repeated reduced-motion writes');
+    github.binding.dispose();
+    check(github.buttons[1].values.get(accentProperty) === 'rgb(190 150 130)' &&
+        github.buttons[1].priorities.get(accentProperty) === 'important' && github.shared.releases === 1,
+        'GitHub accent disposal restores its original custom color and priority through the existing controller lifecycle');
 
     const remounted = makeHarness(1);
     const nextBinding = remounted.controller.mount(remounted.buttons as unknown as HTMLElement[]);

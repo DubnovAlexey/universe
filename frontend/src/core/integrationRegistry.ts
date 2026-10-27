@@ -102,7 +102,7 @@ class IntegrationRegistryManager {
                 id: 'webgpu-render',
                 language: 'WGSL/WebGPU',
                 sourceTag: 'RENDERER',
-                ownerFile: 'frontend/src/engine/webgpu/illusion.wgsl',
+                ownerFile: 'frontend/src/engine/webgpu/ouroboros.wgsl',
                 status: 'fallback',
                 version: '2.5.0',
                 loadMs: 0,

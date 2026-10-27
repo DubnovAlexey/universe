@@ -3,9 +3,11 @@
 // НАЗНАЧЕНИЕ: Проверить реальный Rust/WASM ABI и его связь с видимой сценой.
 // РАЗДЕЛЫ: 1. Артефакт и SSR; 2. Паритет/жизненный цикл; 3. Геометрия сцены;
 //          4. Скалярный эталон BREACH при фиксированных stress=0.25/time=0.
+//          5. Optional ABI объёмного Уробороса: паритет, память и изоляция физики.
 // ФУНКЦИИ: instantiate — отдельный экземпляр WASM; step — общий сценарий шага;
 // compare — сравнение провайдеров; sampleScene — сквозная публикация геометрии.
 // verifyLensRefractionMagnitude — эталон длины смещения; runtime-оптика остаётся TS.
+// verifyOuroborosGeometry — реальный Rust sampling и независимый TS fallback.
 // ============================================================================
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -95,6 +97,111 @@ function verifyLensRefractionMagnitude(exports, stressStore) {
     }
 }
 // КОНЕЦ ФУНКЦИИ verifyLensRefractionMagnitude
+
+// НАЧАЛО ФУНКЦИИ verifyOuroborosGeometry
+async function verifyOuroborosGeometry(WasmPhysicsBridge, SceneBufferSoA, fillOuroborosPoints) {
+    const raw = await instantiate();
+    const names = ['get_ouroboros_abi_version', 'get_ouroboros_capacity', 'get_ouroboros_points_ptr', 'sample_ouroboros'];
+    for (const name of names) assert.equal(typeof raw[name], 'function', `New artifact exports ${name}`);
+    assert.equal(raw.get_abi_version(), 1, 'Physics ABI remains v1');
+    assert.equal(raw.get_ouroboros_abi_version(), 1);
+    assert.equal(raw.get_ouroboros_capacity(), 3072);
+    raw.init_bodies(104729, 64);
+    assert.equal(raw.step_verlet_nbody(0.016, 1, 1), 1);
+    const physicalTime = raw.get_integrated_time();
+    const physicalCount = raw.get_active_count();
+    const physicalPointers = [raw.get_positions_ptr(), raw.get_velocities_ptr(), raw.get_phases_ptr(), raw.get_omegas_ptr()];
+    const physicalLengths = [3072, 3072, 1024, 1024];
+    const physicalBefore = physicalPointers.map((pointer, index) =>
+        new Float32Array(raw.memory.buffer, pointer, physicalLengths[index]).slice());
+    const pointer = raw.get_ouroboros_points_ptr();
+    assert.ok(pointer > 0 && pointer % 4 === 0 && pointer + 3072 * 8 * 4 <= raw.memory.buffer.byteLength);
+    const expected = new Float32Array(3072 * 8);
+    let samples = 0;
+    let maximumError = 0;
+    for (const seed of [0, 104729, 0xffffffff]) {
+        for (const count of [0, 1, 3072]) {
+            for (const time of [0, 17, 108]) {
+                for (const morph of [0, 0.5, 1]) {
+                    for (const energy of [0, 1]) {
+                        assert.equal(fillOuroborosPoints(expected, seed, count, time, morph, energy), count);
+                        assert.equal(raw.sample_ouroboros(seed, count, time, morph, energy), count);
+                        assert.equal(raw.get_ouroboros_points_ptr(), pointer);
+                        const actual = new Float32Array(raw.memory.buffer, pointer, 3072 * 8);
+                        for (let index = 0; index < count * 8; index++) {
+                            assert.ok(Number.isFinite(actual[index]), `finite geometry ${index}`);
+                            const error = Math.abs(actual[index] - expected[index]);
+                            maximumError = Math.max(maximumError, error);
+                            if (index % 8 === 7) assert.equal(actual[index], expected[index], 'kind parity');
+                            else assert.ok(error <= 2e-6, `geometry parity ${index}: ${error}`);
+                        }
+                        samples++;
+                    }
+                }
+            }
+        }
+    }
+    for (let index = 0; index < physicalPointers.length; index++) {
+        assert.deepEqual(new Float32Array(raw.memory.buffer, physicalPointers[index], physicalLengths[index]), physicalBefore[index]);
+    }
+    assert.equal(raw.get_integrated_time(), physicalTime, 'Shape sampling never advances physics');
+    assert.equal(raw.get_active_count(), physicalCount);
+    const validShape = new Float32Array(raw.memory.buffer, pointer, 3072 * 8).slice();
+    for (const [count, time, morph, energy] of [[3073, 0, 1, 0], [1, NaN, 1, 0],
+        [1, -1, 1, 0], [1, 0, -0.1, 0], [1, 0, 1, Infinity]]) {
+        assert.equal(raw.sample_ouroboros(104729, count, time, morph, energy) >>> 0, 0xffffffff);
+        assert.deepEqual(new Float32Array(raw.memory.buffer, pointer, 3072 * 8), validShape, 'Rejected shape sample is atomic');
+    }
+
+    const geometry = new WasmPhysicsBridge(104729);
+    const exports = await instantiate();
+    assert.ok(geometry.attachWasmExports(exports));
+    const stable = geometry.sampleOuroboros(104729, 3072, 17, 0.8, 0.5);
+    assert.equal(geometry.isOuroborosWasmActive(), true);
+    assert.equal(geometry.getOuroborosCount(), 3072);
+    exports.memory.grow(1);
+    assert.equal(geometry.sampleOuroboros(104729, 3072, 17, 0.8, 0.5), stable);
+    assert.equal(geometry.isOuroborosWasmActive(), true, 'memory.grow refreshes only the native view');
+    assert.notEqual(stable.buffer, exports.memory.buffer, 'Render data is JS-owned');
+    const saved = stable.slice();
+    assert.equal(geometry.sampleOuroboros(104729, 3073, 17, 1, 0), stable);
+    assert.deepEqual(stable, saved, 'Invalid bridge inputs do not partially modify render data');
+    assert.equal(geometry.getOuroborosCount(), 0);
+
+    const legacy = { ...await instantiate() };
+    for (const name of names) delete legacy[name];
+    assert.ok(geometry.attachWasmExports(legacy), 'Physics-only v1 artifacts remain supported');
+    assert.equal(geometry.sampleOuroboros(104729, 3072, 17, 0.8, 0.5), stable);
+    assert.equal(geometry.isOuroborosWasmActive(), false);
+    fillOuroborosPoints(expected, 104729, 3072, 17, 0.8, 0.5);
+    assert.deepEqual(stable, expected, 'Missing optional ABI selects the exact TS geometry');
+
+    for (const defect of ['trap', 'pointer', 'version', 'capacity', 'count', 'nan']) {
+        const actual = await instantiate();
+        const altered = { ...actual };
+        if (defect === 'trap') altered.sample_ouroboros = () => { throw new Error('Injected shape trap'); };
+        else if (defect === 'pointer') altered.get_ouroboros_points_ptr = () => 3;
+        else if (defect === 'version') altered.get_ouroboros_abi_version = () => 2;
+        else if (defect === 'capacity') altered.get_ouroboros_capacity = () => 3071;
+        else if (defect === 'count') altered.sample_ouroboros = () => 3071;
+        else altered.sample_ouroboros = (...args) => {
+            const written = actual.sample_ouroboros(...args);
+            new Float32Array(actual.memory.buffer, actual.get_ouroboros_points_ptr(), 8)[0] = NaN;
+            return written;
+        };
+        assert.ok(geometry.attachWasmExports(altered));
+        const scene = new SceneBufferSoA(1024, 104729);
+        assert.equal(geometry.stepSymplecticPhysics(scene, 64, 0.016, 0, 480, 270, 960, 540, 1.2).isWasmNative, true);
+        const integrated = geometry.getIntegratedSimSec();
+        assert.equal(geometry.sampleOuroboros(104729, 3072, 17, 0.8, 0.5), stable);
+        assert.equal(geometry.isOuroborosWasmActive(), false, `shape fallback after ${defect}`);
+        assert.deepEqual(stable, expected);
+        assert.equal(geometry.isWasmActive(), true, 'Shape failure does not disable native physics');
+        assert.equal(geometry.getIntegratedSimSec(), integrated);
+    }
+    return { samples, maximumError };
+}
+// КОНЕЦ ФУНКЦИИ verifyOuroborosGeometry
 
 try {
     const { WasmPhysicsBridge, wasmPhysicsBridge } = await server.ssrLoadModule('/src/bridge/wasmBridge.ts');
@@ -229,6 +336,11 @@ try {
     const optical = verifyLensRefractionMagnitude(await instantiate(), stressStore);
     console.log(`[PASS] Actual WASM BREACH magnitude: ${optical.samples} normalized samples, stress=0.25/time=0, max error ${optical.maximumError.toExponential(2)} px; Canvas vector optics remain TS`); passed++;
     // КОНЕЦ РАЗДЕЛА 4
+    // НАЧАЛО РАЗДЕЛА 5. OPTIONAL ABI ОБЪЁМНОГО УРОБОРОСА
+    const { fillOuroborosPoints } = await server.ssrLoadModule('/src/core/ouroborosModel.ts');
+    const shape = await verifyOuroborosGeometry(WasmPhysicsBridge, SceneBufferSoA, fillOuroborosPoints);
+    console.log(`[PASS] Actual WASM Ouroboros: ${shape.samples} samples, max Float32 error ${shape.maximumError.toExponential(2)}; stable memory, atomic rejection and isolated fallback`); passed++;
+    // КОНЕЦ РАЗДЕЛА 5
     console.log(`WASM runtime verification: ${passed}/${passed} PASSED (${bytes.length} bytes, ABI v1, no imports)`);
 } finally {
     await server.close();

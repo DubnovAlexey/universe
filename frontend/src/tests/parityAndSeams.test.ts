@@ -57,6 +57,9 @@ import { runWaterfallLifecycleChecks } from './waterfallLifecycle.test';
 import { runBackgroundFieldsChecks } from './backgroundFields.test';
 import { runKeyboardShortcutChecks } from './keyboardShortcuts.test';
 import { runRendererLifecycleChecks } from './rendererLifecycle.test';
+import { runOuroborosModelChecks } from './ouroborosModel.test';
+import { runOuroborosEpisodeChecks } from './ouroborosEpisode.test';
+import { runOuroborosFieldMorphChecks } from './ouroborosFieldMorph.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -984,6 +987,9 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     runBackgroundFieldsChecks(check);
     runKeyboardShortcutChecks(check);
     runRendererLifecycleChecks(check);
+    runOuroborosModelChecks(check);
+    runOuroborosEpisodeChecks(check);
+    runOuroborosFieldMorphChecks(check);
 
     return {
         passed: passedChecks === totalChecks,
