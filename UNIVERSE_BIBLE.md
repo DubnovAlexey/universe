@@ -16,7 +16,7 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 
 | Фаза | Кодовое имя | Интервал (с) | Длительность | Цель в метаданных | Главный визуальный и математический процесс |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| **`01_VOID`** | `MASTER_01 // RS_PUPPIS_ECHO` | `0.0 – 17.0` | `17.0 с` | `680` | Дышащая Точка Нуля, 7 деформируемых колец светового эха по мотивам цефеиды `RS Кормы` (по 120 угловых сегментов с FBM-модуляцией) и 8 криволинейных сигналов `RK2 Curl-Noise`. |
+| **`01_VOID`** | `MASTER_01 // RS_PUPPIS_ECHO` | `0.0 – 17.0` | `17.0 с` | `680` | Дышащая Точка Нуля, 7 деформируемых колец светового эха по мотивам цефеиды `RS Кормы` (по 120 угловых сегментов с FBM-модуляцией) и 8 криволинейных сигналов с шумовым поворотом. |
 | **`02_GENESIS`** | `MASTER_02 // ANDROMEDA_SPIRAL` | `17.0 – 39.0` | `22.0 с` | `760` | Наклонный 3D-диск (`-0.17 рад`) с 4 логарифмическими рукавами, 2 барицентрами со световым мостом, 48 пылевыми облаками `M31` и синхронизацией Курамото `r(t)`. |
 | **`03_EVOLUTION`** | `MASTER_03 // COGNITIVE_NEXUS` | `39.0 – 64.0` | `25.0 с` | `820` | C²-морфинг рукавов в два полушария Мозга вокруг 5 встречных кеплеровских колец. Синтез 3 классов рёбер (`MST`, `Gabriel`, `Murray`) и до 92 синаптических комет. |
 | **`04_COLLAPSE`** | `MASTER_04 // BREACH_LENS_STORM` | `64.0 – 79.0` | `15.0 с` | `820` | 3 гравитационные аномалии на кольцах, авто-раскрытие (на `66.0–71.5 с`) или ручное управление мембраной `BREACH LENS`, микротрещины, сетка рентгена и слой `Z4`. |
@@ -108,7 +108,19 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       │   └── cipherOdometerEngine.ts    # CipherOdometerEngine (CANONICAL_FINALE_LINES, 3D-барабаны одометра)
     │       ├── engine/
     │       │   ├── pipeline.ts                # RenderPipeline (High-DPI Canvas2D, probeWebGpuSupport, Blue-Noise 64x64)
-    │       │   ├── renderer.ts                # UniverseRenderer (отрисовка всех 5 фаз, Z4, цикл RAF, bootstrapUniverseV2)
+    │       │   ├── renderer.ts                # Публичный фасад: CSS, именованные/default-экспорты и автозапуск
+    │       │   ├── UniverseRenderer.ts        # Симуляция, единственный RAF и порядок Canvas-проходов в renderFrame()
+    │       │   ├── bootstrap.ts               # Активный экземпляр, getUniverseRenderer(), bootstrapUniverseV2()
+    │       │   ├── backgroundFields.ts        # BackgroundFields: reset()/step(), облака, сигналы и сеть Z4
+    │       │   ├── math/noise2d.ts            # clamp(), lerp(), hash2D(), valueNoise2D(), fbm2D()
+    │       │   ├── hud/hudDomOrchestrator.ts   # Канонический текст, syncHudDomWithState(), bindHudDockLayout()
+    │       │   ├── hud/keyboardShortcuts.ts    # bindUniverseKeyboardShortcuts(): клавиши управления и освобождение обработчика
+    │       │   ├── passes/
+    │       │   │   ├── cosmosPass.ts          # Световое эхо, пылевые облака, сигналы и когнитивные полушария
+    │       │   │   ├── nexusPass.ts           # Рёбра графа, импульсы и частицы разных эшелонов
+    │       │   │   ├── breachPass.ts          # Мембрана BREACH, рефракция и глубинная сеть Z4
+    │       │   │   ├── singularityPass.ts     # Корона, Точка Нуля и начальный Canvas-одометр
+    │       │   │   └── nodeCallout.ts         # Общая отрисовка выносок узлов
     │       │   └── webgpu/*.wgsl              # Шейдерные спецификации WGSL (illusion.wgsl, truth.wgsl, breach.wgsl)
     │       ├── layers/
     │       │   ├── Layer2_Metrics.tsx         # Нативная фабрика React.createElement, динамический тег физики, LAYER_02
@@ -118,6 +130,9 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       ├── utils/audioSync.ts             # AudioSyncEngine (Web Audio API, iOS audioSession, снятие слушателей с 1-го тапа)
     │       └── tests/
     │           ├── parityAndSeams.test.ts     # runUniverseVerificationSuite() — Регрессионные проверки ядра и DOM lifecycle
+    │           ├── backgroundFields.test.ts   # Детерминированные поля, порядок PRNG, продвижение и повторный reset
+    │           ├── keyboardShortcuts.test.ts  # Клавиатурный выбор фаз, управление слоями и освобождение обработчика
+    │           ├── rendererLifecycle.test.ts  # Пауза и скрытие во время restart, нулевой шаг и страничная текстура
     │           ├── buttonMotion.test.ts       # Полные обороты, индивидуальные тени, взаимодействия и очистка
     │           ├── buttonSolid.test.ts        # Шесть граней, доступные подписи, размеры и восстановление DOM
     │           ├── finaleComposition.test.ts # Размещение визитки, зазор над ореолом и плавный подъём
@@ -141,12 +156,12 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 | Подсистема | Файл и класс | Статус на GitHub Pages | Что именно делает в реальности |
 | :--- | :--- | :---: | :--- |
 | **Оболочка Astro** | `frontend/src/pages/index.astro` | `[РЕАЛИЗОВАНО В RUNTIME]` | Отдаёт статический HTML/CSS каркас с `base: '/universe'` в production и `'/'` в dev. |
-| **Хранилище и часы** | `frontend/src/store/universeState.ts` (`UniverseStore`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Управляет монотонным временем `0..108 с`, 5 фазами, 4 подактами финала и `SceneBufferSoA`. |
-| **Рендерер Canvas 2D** | `frontend/src/engine/renderer.ts` (`UniverseRenderer`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Активный графический движок (`Canvas2D-HighDPI`), рисующий все 5 фаз, дизеринг `Blue-Noise`, линзу `BREACH` и эшелон `Z4`. |
+| **Хранилище и часы** | `frontend/src/store/universeState.ts` (`UniverseStore`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Управляет временем сценария, 5 фазами, 4 подактами финала и `SceneBufferSoA`. Выбор фазы переводит часы к её началу, а restart обнуляет их. |
+| **Рендерер Canvas 2D** | `frontend/src/engine/UniverseRenderer.ts`, `engine/passes/` | `[РЕАЛИЗОВАНО В RUNTIME]` | Активный графический движок (`Canvas2D-HighDPI`), рисующий все 5 фаз, дизеринг `Blue-Noise`, линзу `BREACH` и эшелон `Z4`; публичная точка подключения — `engine/renderer.ts`. |
 | **Проверка WebGPU** | `frontend/src/engine/pipeline.ts` (`probeWebGpuSupport`) | `[ПРОВЕРКА ПОДДЕРЖКИ / PROBE]` | Вызывает `navigator.gpu.requestAdapter()` и выставляет статус `fallback` / `unsupported`. Файлы `*.wgsl` — спецификации; активный рендер остаётся Canvas 2D. |
 | **Физический provider** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[RUST/WASM / TS FALLBACK]` | Default async raw ABI v1; после валидного шага — `WASM_ACTIVE`, при `?wasm=0` или отказе — TS. Kuramoto влияет на видимые цели; отдельные `REF64` орбиты дают энергию. CI собирает и проверяет реальный WASM до Astro. |
 | **Графовый движок NEXUS** | `frontend/src/bridge/simulationWorker.ts` (`NexusGraphEngine`) | `[РЕЗЕРВ / FALLBACK]` | Вызывается синхронно из `01_void.ts` каждые `0.12 с` симуляционного времени. Статус в реестре — `FALLBACK`, метка в UI — `[ts/graph_engine]`. |
-| **Нативные DOM/SVG слои** | `frontend/src/layers/Layer2..Layer5.tsx` | `[РЕАЛИЗОВАНО В RUNTIME]` | Собственная легковесная фабрика `React.createElement` (без пакета React). Монтирует DOM один раз и обновляет числа через `data-bind`, а контуры и одометр — на `60 FPS`. |
+| **Нативные DOM/SVG слои** | `frontend/src/layers/Layer2..Layer5.tsx` | `[РЕАЛИЗОВАНО В RUNTIME]` | Собственная легковесная фабрика `React.createElement` (без пакета React). Монтирует DOM один раз и обновляет числа через `data-bind`; контуры и одометр используют общий кадр, а квантовая строка — ритм `18–26 Гц`. |
 | **Звуковой движок** | `frontend/src/utils/audioSync.ts` (`AudioSyncEngine`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Запрашивает воспроизведение при загрузке; при запрете автозапуска использует пользовательский жест. Спектральные огибающие имеют временно-независимое сглаживание. `audioSession.type = 'playback'` задаётся при наличии API, но поведение зависит от платформы. |
 | **Ядро Python 3** | `backend/main.py`, `backend/core/*.py` | `[ОФЛАЙН-ИНСТРУМЕНТ / CI VERIFIER]` | Реализует локальный HTTP/Binary сервер (`/api/health`, `/api/topology`, `/api/frame.bin`), CLI-верификатор (`--verify`) и проверки `unittest`. На статическом GitHub Pages Python-сервер не запущен (`CLIENT_ONLY`), а `PythonSocketClient` служит подготовленным и протестированным валидатором бинарных пакетов `'UNVS'`. |
 | **Крейт Rust** | `physics_engine/src/*.rs` | `[WASM PROVIDER / NATIVE TESTS]` | Raw ABI v1, Kuramoto, контрольный Velocity Verlet и `breach_math`; native-тесты и интеграции реального WASM. |
@@ -205,7 +220,8 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 
     [el: 14.05 .. 29.0 с] -> ACT_D_GITHUB_CARD (Длительность 14.95 с)
        • Взводится флаг finaleReachedOnce = true.
-       • githubCardAssemblyProgress = clamp((el - 14.05) / 4.5, 0, 1).
+       • При первом показе: githubCardAssemblyProgress = clamp((el - 14.05) / 4.5, 0, 1).
+         В следующих циклах и при повторном входе собранная карточка сохраняет прогресс 1.0.
        • Из центральной Точки Нуля разворачивается DOM-визитка DUBNOV ALEXEY (Layer5_CipherFinale.tsx),
          а частицы фона мягко расходятся в широкий космический ореол (ringFrac = 0.27..0.48).
 
@@ -259,6 +275,9 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 ### 8.1. Графический конвейер и дизеринг `Blue-Noise`
 * `RenderPipeline` (`frontend/src/engine/pipeline.ts`) создаёт 2D-контекст с ограничением `dpr = min(maxDpr, window.devicePixelRatio)` из `QualityGovernor` (`2.0` для HIGH, `1.5` для MEDIUM, `1.25` для LOW) и генерирует тайл дизеринга `64×64` (`buildBlueNoiseDitherPattern`).
 * `syncQualityProfile()` применяет изменившийся DPR на общем кадре без ожидания resize; неизменный профиль не изменяет размеры холста.
+* `UniverseRenderer` из `frontend/src/engine/UniverseRenderer.ts` сохраняет один RAF и определяет порядок проходов в `renderFrame()`. `passes/cosmosPass.ts`, `nexusPass.ts`, `breachPass.ts`, `singularityPass.ts` и `nodeCallout.ts` выполняют отрисовку без собственных кадровых циклов.
+* `BackgroundFields` (`engine/backgroundFields.ts`) хранит процедурное состояние и предоставляет `reset(seed)`/`step()`. Облака, сигналы и узлы создаются одним PRNG в порядке `48 → 8 → 136 → соседи и изгибы`, а проходы читают `clouds`, `signals` и `nodes`. Шумовые функции находятся в `engine/math/noise2d.ts`.
+* `engine/renderer.ts` подключает CSS и сохраняет публичные экспорты с автозапуском; `engine/bootstrap.ts` владеет активным экземпляром и привязкой управления. DOM-функции HUD находятся в `engine/hud/hudDomOrchestrator.ts`.
 
 ### 8.2. Аудио-конвейер и мгновенное снятие слушателей (`frontend/src/utils/audioSync.ts`)
 * Файл: `frontend/public/audio/cosmic_ambient.mp3` (`~16.46 МБ`).
@@ -282,11 +301,11 @@ Renderer публикует неизменяемый `VisualSignalSnapshot`: в�
 
 `buttonSolid.ts` монтирует внутри неподвижного элемента замкнутый CSS-кубоид из шести непрозрачных граней. Подпись находится на передней грани, скрытый измеритель в обычном потоке сохраняет размеры host. `ResizeObserver` следит за layout border box; обновление размеров учитывает только изменившиеся значения. Тело помечено `aria-hidden`, а доступный канон хранится отдельно или в native `aria-label`. `setSolidButtonLabel()` обновляет подпись и измеритель, сохраняя геометрию тела. Атрибут `data-button-solid="1"` обозначает смонтированную геометрию; информационные строки имеют вид `status` и сохраняют семантику текста и заголовков.
 
-`buttonMotion.ts` использует общий кадр и четыре CSS-параметра вращения: компоненты фиксированной нормированной оси и накопленный угол. Вложенное тело совершает полные обороты вокруг собственного неподвижного центра; элементы имеют разные направления и скорости. Фаза и её прогресс, Курамото, stress и музыка плавно влияют на угловую скорость. Наведение или видимый клавиатурный фокус переводит выбранное тело к ближайшему углу, кратному полному обороту, с C²-выравниванием передней грани. Остальные тела продолжают вращаться. После отпускания выбранный элемент плавно разгоняется от достигнутой позы.
+`buttonMotion.ts` использует общий кадр и четыре CSS-параметра вращения: компоненты фиксированной нормированной оси и накопленный угол. Вложенное тело совершает полные обороты вокруг собственного неподвижного центра; элементы имеют разные направления и скорости. Фаза и её прогресс, Курамото, stress и музыка плавно влияют на угловую скорость. Наведение или видимый клавиатурный фокус переводит выбранное тело к ближайшему углу, кратному полному обороту, с C²-выравниванием передней грани. Тела, не удерживаемые для чтения, продолжают вращаться. Освобождённый элемент плавно разгоняется от достигнутой позы; в шкале фаз действует приоритет текущей кнопки, описанный ниже.
 
 Каждая кнопка имеет отдельную тень с тёмной серединой и холодным полутоном в `::before` неподвижного host. Шесть дополнительных CSS-параметров задают смещение, размытие, прозрачность и форму тени по текущей ориентации тела; обновление ограничено 12 Гц общего кадра. Размытие применяется только к тени и сохраняет шесть объёмных граней корпуса. При чтении тело и тень увеличиваются вместе; тень становится мягче. Верхняя мобильная плашка компактна и центрирована. На экранах до 600px нижние меню занимают почти полную ширину с полями; интервалы между рядами и нижний отступ оставляют место вращению и теням. Настольная компоновка сохраняется.
 
-`finaleComposition.ts` согласует геометрию фотонного ореола Canvas и положение DOM-визитки в CSS-пикселях, учитывая дыхание карточки, HUD и свободную высоту экрана. `bindHudDockLayout()` в renderer измеряет верхнее меню и нижний док через `ResizeObserver` и публикует `--hud-top-inset` и `--hud-bottom-inset`; карточка резервирует его фактическую высоту при переносе увеличенных кнопок.
+`finaleComposition.ts` согласует геометрию фотонного ореола Canvas и положение DOM-визитки в CSS-пикселях, учитывая дыхание карточки, HUD и свободную высоту экрана. `bindHudDockLayout()` из `engine/hud/hudDomOrchestrator.ts` измеряет верхнее меню и нижний док через `ResizeObserver` и публикует `--hud-top-inset` и `--hud-bottom-inset`; карточка резервирует его фактическую высоту при переносе увеличенных кнопок.
 
 В строках визитки канонический текст generic `p/span` доступен в отдельном span, а декоративное представление имеет `aria-hidden`. Кнопки, ссылки и заголовки сохраняют доступное имя. Центральная квантовая строка из 25 ячеек использует отдельный диапазон `18–26 Гц`; цифровой водопад сохраняет собственное символьное представление.
 
@@ -307,7 +326,7 @@ Renderer публикует неизменяемый `VisualSignalSnapshot`: в�
 | `ts-core` | `TypeScript` | `frontend/src/store/universeState.ts` | `READY` | На каждом шаге физики в режиме `TS_FALLBACK` (`wasmBridge.ts`). |
 | `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `LOADING` → `READY` / `FALLBACK` | Default async raw ABI v1; первый валидный native-шаг даёт `WASM_ACTIVE` без утверждения SIMD. `?wasm=0` или ошибка выбирают TS fallback. |
 | `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/illusion.wgsl` | `FALLBACK` | Вызывает только `probeWebGpuSupport()`; WGSL-спецификации не запускаются, текущий рендер выполняется через Canvas 2D. |
-| `canvas2d-render` | `Canvas2D` | `frontend/src/engine/renderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`. |
+| `canvas2d-render` | `Canvas2D` | `frontend/src/engine/UniverseRenderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`; рисунок формируют модули `engine/passes/`. |
 | `pyodide-graph` | `Python` | `backend/core/graph_logic.py` | `FALLBACK` | Остаётся в `FALLBACK` при работе локального TS-движка графа. |
 | `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Офлайн HTTP/Binary инструмент и подготовленный `PythonSocketClient`; текущие HTTP и WebSocket протоколы не образуют рабочее браузерное подключение. |
 | `web-audio` | `WebAudio` | `frontend/src/utils/audioSync.ts` | `LOADING` | Переходит в `READY` при старте `cosmic_ambient.mp3` (`updateRealtimeModulation`). |

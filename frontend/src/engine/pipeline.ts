@@ -160,7 +160,7 @@ export class RenderPipeline {
 
         tileCtx.putImageData(imgData, 0, 0);
         this.ditherPattern = this.ctx.createPattern(tile, 'repeat');
-        resourceLedger.trackAllocation('textures', 1);
+        resourceLedger.trackPageLifetimeAllocation('textures', 1);
     }
     // --- КОНЕЦ ФУНКЦИИ buildBlueNoiseDitherPattern ---
 

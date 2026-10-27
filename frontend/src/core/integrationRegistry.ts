@@ -116,7 +116,7 @@ class IntegrationRegistryManager {
                 id: 'canvas2d-render',
                 language: 'Canvas2D',
                 sourceTag: 'RENDERER',
-                ownerFile: 'frontend/src/engine/renderer.ts',
+                ownerFile: 'frontend/src/engine/UniverseRenderer.ts',
                 status: 'ready',
                 version: '2.5.0',
                 loadMs: 0,

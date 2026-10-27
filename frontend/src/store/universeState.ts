@@ -754,7 +754,7 @@ class UniverseStore {
         this.state.camera.driftY = Math.cos(simSec * 0.11) * CAMERA_DRIFT_Y_AMPLITUDE;
 
         if (this.state.singularityAct === 'RESTART_COLLAPSE') {
-            this.state.restartElapsedSec += dtSec > 0 ? dtSec : 0.016;
+            this.state.restartElapsedSec += dtSec;
             const collapseProg = Math.min(1.0, this.state.restartElapsedSec / 1.45);
             this.state.singularityActProgress = smootherstep(0.0, 1.0, collapseProg);
             this.state.githubCardAssemblyProgress = this.state.finaleReachedOnce

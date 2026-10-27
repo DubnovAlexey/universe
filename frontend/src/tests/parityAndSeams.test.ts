@@ -54,6 +54,9 @@ import { runFinaleCompositionChecks } from './finaleComposition.test';
 import { runButtonMotionChecks } from './buttonMotion.test';
 import { runButtonSolidChecks } from './buttonSolid.test';
 import { runWaterfallLifecycleChecks } from './waterfallLifecycle.test';
+import { runBackgroundFieldsChecks } from './backgroundFields.test';
+import { runKeyboardShortcutChecks } from './keyboardShortcuts.test';
+import { runRendererLifecycleChecks } from './rendererLifecycle.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -978,6 +981,9 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     runFinaleCompositionChecks(check);
     runButtonMotionChecks(check);
     runButtonSolidChecks(check);
+    runBackgroundFieldsChecks(check);
+    runKeyboardShortcutChecks(check);
+    runRendererLifecycleChecks(check);
 
     return {
         passed: passedChecks === totalChecks,
