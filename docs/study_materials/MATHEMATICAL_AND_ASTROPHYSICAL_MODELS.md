@@ -4,9 +4,9 @@
 * **Часть I:** русское научно-популярное и математическое руководство.
 * **Part II:** English mathematical specification.
 
-**Область применения:** Rust/WASM и TS рассчитывают общие фазы Курамото и отдельный контрольный ансамбль REF64. Художественная композиция остаётся хореографией; она не является полной N-body симуляцией. NEXUS исполняется в TypeScript, Python предоставляет независимые эталоны, WGSL содержит спецификации графических проходов. [Архитектурные контракты](../ARCHITECTURE.md).
+**Область применения:** Rust/WASM и TS рассчитывают общие фазы Курамото, отдельный контрольный ансамбль REF64 и декоративную объёмную геометрию Уробороса. Художественная композиция остаётся хореографией; она не является полной N-body симуляцией. NEXUS исполняется в TypeScript, Python предоставляет независимые эталоны. Основные пять фаз рисует Canvas 2D, отдельный WebGPU-проход исполняет `ouroboros.wgsl`; `illusion.wgsl`, `truth.wgsl` и `breach.wgsl` остаются спецификациями. [Архитектурные контракты](../ARCHITECTURE.md).
 
-The static application uses Rust/WASM with a TypeScript fallback, a synchronous TS graph engine and Canvas 2D. Python provides independent numerical references. Kuramoto phases affect artistic targets; energy telemetry belongs to the separate REF64 reference ensemble.
+The static application uses Rust/WASM with a TypeScript fallback, a synchronous TS graph engine and Canvas 2D for the five main phases. A separate transparent WebGPU pass executes `ouroboros.wgsl` on shared Rust/TS decorative geometry, with a Canvas fallback. The other WGSL files remain specifications. Python provides independent numerical references. Kuramoto phases affect artistic targets; energy telemetry belongs to the separate REF64 reference ensemble.
 
 ---
 
@@ -295,9 +295,25 @@ $$\text{radiusEnvelope}(p_{\text{ActB}}) = \left(1.0 - S_5(0.05, \; 0.98, \; p_{
 
 Словарь хранит полные Unicode code point и фазовые профили, отбраковывает отсутствующие начертания и использует базовый fallback. Кириллический текст, исторические письмена и математические знаки не разрываются на отдельные UTF-16 code units. Доступный канон отделён от декоративного представления.
 
-Прокрутка знаков в фиксированных ячейках имеет собственные плавные огибающие и удержания, сохраняя размеры строки. Автономный одометр остаётся отдельным потребителем с частотой $18–26$ Гц.
+Статические строки собираются слева направо через состояния waiting/rolling/locked. При наведении DOM-глиф перелистывается целиком: исходящий слой поворачивается вокруг Y от $0$ до $90^\circ$, затем входящий — от $-90^\circ$ до $0$. Одновременно виден только один слой; каждый знак проходит два оборота с удержанием. Равномерный масштаб учитывает ширину и высоту начертания, выносы и базовую линию без расширения ячейки и скользящего обрезания. Закрепление возвращает исходную наборную меру с точными интервалами; resize завершает активный перебор до изменения геометрии. Автономная квантовая строка из 25 ячеек сохраняет собственное представление и частоту $18–26$ Гц.
 
-Подъём фоновой визитки задаётся $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ для $0\le u\le1$. Величина $D$ определяется геометрией карточки, защищённой центральной светящейся областью, HUD и доступным местом сверху. Пауза сохраняет $t$, reduced motion выбирает статичное положение. Радиальная тональная подложка и тени текста поддерживают читаемость без жёсткой рамки.
+Полная сборка визитки запускает общие часы `finaleRiseElapsedSec`. Подъём задаётся $y(t)=-D\,S(t/12)$, где $S(u)=6u^5-15u^4+10u^3$ для $0\le u\le1$, а $t$ ограничено диапазоном $0..12$ секунд. Величина $D$ определяется геометрией карточки, защищённой центральной светящейся областью, HUD и доступным местом сверху. Пауза сохраняет $t$, reduced motion сразу выбирает статичное верхнее положение. Радиальная тональная подложка и тени текста поддерживают читаемость без жёсткой рамки.
+
+### 7.5. Декоративная 3D-геометрия Уробороса и передача поля
+
+`physics_engine/src/ouroboros.rs` и `frontend/src/core/ouroborosModel.ts` рассчитывают параметрическую объёмную дугу с головой и хвостом, пылевое окружение и световые спутники. Это художественная геометрия, а не дополнительная N-body модель. Отдельный optional ABI версии 1 возвращает до 3072 записей по восемь `f32`: $(x,y,z,n_x,n_y,n_z,size,kind)$, то есть 32 байта на точку. Нормали и материалы проверяются host до использования; отказ графического ABI не сбрасывает состояние физического provider.
+
+Во время первого подъёма параметр сборки $m=S(t/4)$ достигает единицы за четыре активные секунды. В начале следующей первой фазы он убывает как $m=1-S(a/3.6)$, где $a$ — время первой фазы; пылевой свет затухает отдельно между $3.8$ и $5$ секундами. Аргументы $S$ ограничены $[0,1]$. Повторные финалы используют время подакта из `evaluateOuroborosEpisode()`. Эпизод не добавляет шестую фазу и сохраняет 108-секундный таймлайн.
+
+`applyOuroborosFieldMorph()` получает уже рассчитанную форму и связывает её с реальными экранными источниками. Для центра $(c_x,c_y)$ и масштаба $L$ обратная проекция источника задаётся как
+$$\vec p_{\text{source}}=\left(\frac{x_s-c_x}{L},\frac{c_y-y_s}{L},0\right),\qquad q=S(m),\qquad \vec p=(1-q)\vec p_{\text{source}}+q\vec p_{\text{form}}.$$
+При $m=0$ источник совпадает со своей экранной частицей; при $m=1$ исходные f32-биты формы сохраняются. Размер меняется непрерывно, нормаль проходит по устойчивой дуге без нулевого вектора. Particle-объекты физики, NEXUS и `SceneBufferSoA` не изменяются.
+
+Для допустимого диапазона глубины применяется перспективный коэффициент $P=3/(3+z)$ и экранная проекция
+$$x_{\text{screen}}=c_x+LxP,\qquad y_{\text{screen}}=c_y-LyP.$$
+WebGPU рисует billboard-ядра с depth buffer, освещением по нормалям и отдельным мягким светом. Canvas читает те же позиции и нормали, сортирует точки по глубине и использует световой атлас; попиксельное равенство исполнителей не заявляется. `READY` GPU-прохода требует компиляции WGSL, offscreen draw/readback и первой проверенной отправки. При отказе действует Canvas fallback. Пауза сохраняет время и энергетический снимок; reduced motion фиксирует форму и её центр.
+
+Проверки модели и морфинга входят в `npm test`; интеграции настоящего модуля — в `npm run verify:wasm`. `npm run verify:graphics` проверяет GPU lifecycle, кеш кадров и освобождение ресурсов на настоящих классах с управляемым WebGPU mock. Компиляция драйвером и изображение проверяются отдельно в браузере.
 
 ---
 
@@ -380,3 +396,13 @@ Drift starts at zero; a later zero-duration step preserves the existing drift. T
 
 
 Python `sample_endless_cipher_stream` is an independent offline reference for deterministic glyph/color selection and discrete time buckets. The browser odometer uses its own 18–26 Hz rhythm.
+
+## 4. Finale Rise, Whole-Glyph Turns and the Ouroboros Pass
+
+Full card assembly starts the shared `finaleRiseElapsedSec` clock. Its vertical displacement is $y(t)=-D\,S(t/12)$, with clamped $t\in[0,12]$ and the quintic smootherstep $S$. Pause preserves the clock; reduced motion selects a stationary raised card.
+
+Hover text keeps fixed layout cells and a left-to-right waiting/rolling/locked front. A whole outgoing glyph turns $0\to90^\circ$ around Y, followed by the incoming glyph at $-90\to0^\circ$, exposing at most one layer. Uniform fitting includes actual ink width/height, bearings and baseline; locking restores the original canonical measure and tracking. Resize restores canonical text before viewport geometry changes. The independent 25-cell quantum stream retains its original presentation.
+
+Rust and TypeScript provide up to 3072 decorative 3D points with position, normal, size and material in eight `f32` fields. The field handoff uses $q=S(m)$ and $\vec p=(1-q)\vec p_{\text{source}}+q\vec p_{\text{form}}$, with source $y=(c_y-y_s)/L$ matching the screen projection $y_s=c_y-LyP$, $P=3/(3+z)$. Gathering follows the card rise; dispersion starts in the next first phase without adding a phase or extending the 108-second timeline. The handoff does not modify physics, NEXUS or SoA.
+
+The active `ouroboros.wgsl` pass renders depth-tested lit cores and soft light on a transparent WebGPU canvas. The Canvas fallback consumes the same geometry with simpler lighting. GPU readiness requires shader compilation, an offscreen pixel readback and an initial validated submission. `npm run verify:graphics` exercises the real renderer/coordinator with controlled WebGPU mocks for asynchronous disposal, failures and submission caching; it does not replace browser shader/image validation.

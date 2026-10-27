@@ -56,7 +56,7 @@ Rust/WASM загружается асинхронно. Успешный native-�
 
 `OuroborosEffect` выбирает WebGPU или Canvas fallback на общем кадре. GPU-инициализация проверяет компиляцию шейдера, настоящий offscreen draw с чтением пикселей и первую отправку на холст; только после этого реестр получает `READY`. `probeWebGpuSupport()` обновляет возможности основного конвейера и не подменяет статус отдельного прохода. Ошибка устройства или инициализации скрывает GPU-холст и переводит эпизод на Canvas. `?gpu=0` принудительно выбирает Canvas, `?ouroboros=0` отключает эпизод.
 
-`renderer.ts` подключает CSS, сохраняет именованные и default-экспорты и запускает клиентскую инициализацию. `bootstrap.ts` хранит активный экземпляр, предоставляет `getUniverseRenderer()` и связывает слои с управлением. `UniverseRenderer.ts` владеет симуляцией и единственным RAF; его `renderFrame()` определяет последовательность Canvas-проходов. Модули `cosmosPass`, `nexusPass`, `breachPass`, `singularityPass` и `nodeCallout` получают необходимые данные для отрисовки и не создают собственных кадровых циклов.
+`renderer.ts` подключает CSS, сохраняет именованные и default-экспорты и запускает клиентскую инициализацию. `bootstrap.ts` хранит активный экземпляр, предоставляет `getUniverseRenderer()` и связывает слои с управлением. Его `createUniverseResizeHandler()` завершает активный перебор каноническим текстом до пересчёта viewport, сохраняя один resize-слушатель. `UniverseRenderer.ts` владеет симуляцией и единственным RAF; его `renderFrame()` определяет последовательность Canvas-проходов. Модули `cosmosPass`, `nexusPass`, `breachPass`, `singularityPass` и `nodeCallout` получают необходимые данные для отрисовки и не создают собственных кадровых циклов.
 
 `BackgroundFields` владеет изменяемым состоянием процедурного фона: `reset(seed)` создаёт 48 облаков, затем 8 сигналов, затем 136 узлов Z4 и их соседей; `step()` продвигает поля. Проходы читают `clouds`, `signals` и `nodes`. Порядок обращений к одному PRNG при создании полей сохраняет рисунок для заданного seed. Геометрия проходов задаётся в CSS-пикселях, а DPR применяется в `RenderPipeline`.
 
@@ -120,11 +120,13 @@ rustup target add wasm32-unknown-unknown
 npm run verify:all
 ```
 
-Нужны Node.js `>=22.23.4`, Python `3.11+` и Rust. Зависимости устанавливаются по lock-файлу. Общая команда выполняет проверку полноты исходников, Python verifier/unittest, native Rust, TypeScript, сборку и интеграции реального WASM, Astro и проверку Pages-артефакта.
+Нужны Node.js `>=22.23.4`, Python `3.11+` и Rust. Зависимости устанавливаются по lock-файлу. Общая команда выполняет проверку полноты исходников, Python verifier/unittest, native Rust, TypeScript, графический lifecycle harness, сборку и интеграции реального WASM, Astro и проверку Pages-артефакта.
 
-Отдельные команды: `npm run typecheck`, `npm test`, `npm run test:python`, `npm run test:rust`, `npm run build:wasm`, `npm run verify:wasm`, `npm run build`, `npm run verify:pages-artifact`.
+Отдельные команды: `npm run typecheck`, `npm test`, `npm run test:python`, `npm run test:rust`, `npm run verify:graphics`, `npm run build:wasm`, `npm run verify:wasm`, `npm run build`, `npm run verify:pages-artifact`.
 
 Численные проверки охватывают PRNG, бинарный протокол, NEXUS, шаг времени, перенос состояния и fallback, оптический reference и связь native-фаз с публикуемой геометрией. Общие fixtures описывают конкретные входы; они не являются доказательством эквивалентности всех возможных графов. DOM-регрессии проверяют доступность, восстановление текста и жизненный цикл анимации.
+
+`frontend/scripts/verify-graphics-runtime.mjs` исполняет настоящие `OuroborosGpuRenderer` и `OuroborosEffect` с управляемым WebGPU mock. Он проверяет отложенную готовность, ошибки, освобождение во время асинхронной инициализации, изменение поля при фиксированных часах, повтор неудавшейся отправки, паузу/reduced motion и освобождение Canvas-атласа. Проверка не компилирует WGSL драйвером и не заменяет браузерную проверку изображения на настоящем GPU.
 
 Визуальная приёмка включает последовательность фаз, повтор цикла, размер viewport, управление с клавиатуры и указателя, паузу/reduced motion, загрузку/отказ WASM и политику автозапуска звука. Производительность сравнивается на одинаковом устройстве, seed и профиле после прогрева.
 

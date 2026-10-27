@@ -60,6 +60,7 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │   ├── scripts/
     │   │   ├── build-wasm.mjs                 # Сборка реального модуля и проверка ABI
     │   │   ├── verify-wasm-runtime.mjs        # Проверки реального WASM
+    │   │   ├── verify-graphics-runtime.mjs    # Реальные GPU-классы с controlled WebGPU mock: async, fallback, cache и cleanup
     │   │   ├── verify-pages-artifact.mjs      # Статическая проверка Pages-артефакта
     │   │   └── verify-repository.mjs          # Отслеживаемые исходники и npm entry scripts
     │   ├── public/
@@ -114,7 +115,7 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       │   ├── pipeline.ts                # RenderPipeline (High-DPI Canvas2D, probeWebGpuSupport, Blue-Noise 64x64)
     │       │   ├── renderer.ts                # Публичный фасад: CSS, именованные/default-экспорты и автозапуск
     │       │   ├── UniverseRenderer.ts        # Симуляция, единственный RAF и порядок Canvas-проходов в renderFrame()
-    │       │   ├── bootstrap.ts               # Активный экземпляр, getUniverseRenderer(), bootstrapUniverseV2()
+    │       │   ├── bootstrap.ts               # Активный экземпляр, getUniverseRenderer(), createUniverseResizeHandler(), bootstrapUniverseV2()
     │       │   ├── backgroundFields.ts        # BackgroundFields: reset()/step(), облака, сигналы и сеть Z4
     │       │   ├── math/noise2d.ts            # clamp(), lerp(), hash2D(), valueNoise2D(), fbm2D()
     │       │   ├── hud/hudDomOrchestrator.ts   # Канонический текст, syncHudDomWithState(), bindHudDockLayout()
@@ -354,7 +355,7 @@ GPU-проход проверяет компиляцию WGSL, реальную 
 
 ## 10. Проверки
 
-Полная команда из корня репозитория — `npm run verify:all`. Она проверяет отслеживаемые исходники и точки запуска, Python reference, native Rust, TypeScript, настоящий WASM-модуль и статический Pages-артефакт.
+Полная команда из корня репозитория — `npm run verify:all`. Она проверяет отслеживаемые исходники и точки запуска, Python reference, native Rust, TypeScript, графический lifecycle с управляемым WebGPU mock, настоящий WASM-модуль и статический Pages-артефакт.
 
 | Команда | Назначение |
 |---|---|
@@ -363,10 +364,13 @@ GPU-проход проверяет компиляцию WGSL, реальную 
 | `npm run test:python` | Python-регрессии |
 | `npm run test:rust` | Нативные проверки Rust |
 | `npm run typecheck` / `npm test` | Типы и регрессии TypeScript |
+| `npm run verify:graphics` | Асинхронная готовность, отказы и освобождение настоящих GPU-классов с управляемым WebGPU mock |
 | `npm run build:wasm` / `npm run verify:wasm` | Сборка, ABI, перенос состояния и численный стык WASM |
 | `npm run build` / `npm run verify:pages-artifact` | Статическая сборка и ресурсы публикации |
 
 Реальные WASM-проверки охватывают шаги разной длительности, рост памяти, active count, seed/reset, позднюю загрузку, trap/ABI/pointer fallback, влияние native-фазы на геометрию и скалярный оптический reference. DOM-проверки охватывают общий кадр, доступный канон, паузу и освобождение подписок.
+
+Проверки геометрии Уробороса охватывают детерминизм, нормали, материалы, стабильные индексы качества и передачу экранных источников с правильным знаком Y. `verify:graphics` отдельно проверяет реальный renderer/coordinator через mock: поздние асинхронные результаты, потерю устройства, повтор после неудавшейся отправки, кеш неизменного кадра, обновление изменившихся точек при фиксированных часах и освобождение атласа. Настоящая компиляция WGSL и пиксельный результат драйвера проверяются в браузере; Node harness не подтверждает их сам по себе.
 
 Визуальное качество проверяется отдельно на разных viewport и способах ввода. Численные fixtures имеют явную область входов; их успешное прохождение не доказывает тождества всех возможных состояний.
 
