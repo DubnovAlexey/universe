@@ -172,8 +172,8 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
             const top = fit.top + (fit.baseline - fit.inkAscent) * fit.scale;
             const bottom = fit.top + (fit.baseline + fit.inkDescent) * fit.scale;
             return Number.isFinite(fit.scale) && fit.scale > 0 && fit.scale <= 1 &&
-                left >= 1 - 1e-8 && right <= width - 1 + 1e-8 &&
-                top >= 1 - 1e-8 && bottom <= height - 1 + 1e-8 &&
+                left >= 0.4 - 1e-8 && right <= width - 0.4 + 1e-8 &&
+                top >= 0.4 - 1e-8 && bottom <= height - 0.4 + 1e-8 &&
                 Math.abs((left + right) / 2 - width / 2) < 1e-8 &&
                 Math.abs((top + bottom) / 2 - height / 2) < 1e-8 &&
                 [0, 15, 45, 75, 90].every((degrees) => {
@@ -183,6 +183,30 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
                 });
         }))),
         description: 'Uniform ink fitting contains wide, tall, negative-bearing and fallback glyphs with an inset at phone/desktop sizes; centered Y turns never cross neighboring cells' });
+
+    const narrowInk = fitGlyphInk({ width: 18, actualBoundingBoxLeft: 3, actualBoundingBoxRight: 23,
+        actualBoundingBoxAscent: 20, actualBoundingBoxDescent: 5 }, 4, 16, 13);
+    checks.push({ passed: (narrowInk.inkRight - narrowInk.inkLeft) * narrowInk.scale >= 3 &&
+        narrowInk.left + narrowInk.inkLeft * narrowInk.scale >= 0.4,
+        description: 'Narrow canonical slots reserve a proportional antialias inset instead of shrinking historical signs to a one-pixel sliver' });
+
+    const assemblyHeading = new HoverElement('h1');
+    const assemblyElement = assemblyHeading as unknown as HTMLElement;
+    calmGlyphHover.setCanonical(assemblyElement, 'IWABC');
+    calmGlyphHover.setVisualText(assemblyElement, '𓅓∑𝋳AB');
+    const assemblyCells = descendants(assemblyHeading, 'glyph-fitted-cell');
+    const assemblyMeasures = descendants(assemblyHeading, 'glyph-reel-measure');
+    const assemblyInks = descendants(assemblyHeading, 'glyph-reel-ink');
+    const firstAssembly = calmGlyphHover.getVisualText(assemblyElement) === '𓅓∑𝋳AB' &&
+        assemblyHeading.getAttribute('aria-label') === 'IWABC' && assemblyCells.length === 5 &&
+        assemblyMeasures.map(node => node.textContent).join('') === 'IWABC' &&
+        assemblyInks.slice(0, 3).every(ink => /^scale\([\d.]+\)$/.test(ink.styleValues.get('transform') ?? ''));
+    calmGlyphHover.setVisualText(assemblyElement, 'IA𓂀BC');
+    const reusedAssembly = descendants(assemblyHeading, 'glyph-fitted-cell').every((cell, index) => cell === assemblyCells[index]);
+    calmGlyphHover.setVisualText(assemblyElement, 'IWABC');
+    checks.push({ passed: firstAssembly && reusedAssembly && assemblyHeading.textContent === 'IWABC' &&
+        descendants(assemblyHeading, 'glyph-fitted-cell').length === 0,
+        description: 'Initial DOM assembly fits wide Egyptian/Mayan symbols inside stable canonical slots, reuses their nodes and restores the original heading without changing its accessible name' });
 
     publishVisualSignals(state, audio, stress);
     const mock = new HoverElement();

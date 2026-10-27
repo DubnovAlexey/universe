@@ -22,9 +22,16 @@
 /* НАЧАЛО РАЗДЕЛА 2. ОКНА, ЛЕНТЫ И СИМВОЛЫ БАРАБАНОВ */
 /* Мера сохраняет наборную геометрию; две грани поочерёдно поворачиваются вокруг Y. */
 
-.glyph-reel-cell {
+.glyph-reel-cell,
+.glyph-fitted-cell {
     position: relative;
     display: inline;
+}
+
+/* Бесконечная сетка тоже вписывает полное начертание, не меняя размер 25 ячеек. */
+.finale-quantum-cell {
+    position: relative;
+    overflow: visible;
 }
 
 .glyph-reel-measure {
@@ -33,6 +40,15 @@
 
 .glyph-reel-cell[data-glyph-state="locked"] .glyph-reel-measure {
     visibility: visible;
+}
+
+/* Первичная сборка использует тот же канонический размер, что и hover-барабаны. */
+.glyph-fitted-cell[data-glyph-static="canonical"] .glyph-reel-measure {
+    visibility: visible;
+}
+
+.glyph-fitted-cell:is([data-glyph-static="canonical"], [data-glyph-static="waiting"]) .glyph-reel-window {
+    display: none;
 }
 
 .glyph-reel-cell[data-glyph-state="locked"] .glyph-reel-window {

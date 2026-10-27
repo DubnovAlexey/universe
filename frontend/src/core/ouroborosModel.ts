@@ -42,10 +42,11 @@ export function fillOuroborosPoints(
     if (!isValidOuroborosSample(seed, count, timeSec, morph, energy) ||
         !(target instanceof Float32Array) || target.length < count * OUROBOROS_STRIDE) return -1;
 
-    // Ограниченные наклоны сохраняют читаемую плоскость тела при полном обороте.
-    const ax = 0.38 + 0.22 * Math.sin(timeSec * 0.21);
-    const ay = -0.32 + 0.22 * Math.sin(timeSec * 0.17);
-    const az = 0.12 + timeSec * 0.13;
+    // Голова направлена к убывающему theta: отрицательный оборот ведёт пастью вперёд.
+    // Ограниченное покачивание трёх осей сохраняет читаемую плоскость тела.
+    const ax = 0.38 + 0.24 * Math.sin(timeSec * 0.21);
+    const ay = -0.32 + 0.24 * Math.sin(timeSec * 0.17);
+    const az = 0.12 - timeSec * 0.13 + 0.07 * Math.sin(timeSec * 0.11);
     const sx = Math.sin(ax), cx = Math.cos(ax);
     const sy = Math.sin(ay), cy = Math.cos(ay);
     const sz = Math.sin(az), cz = Math.cos(az);
@@ -82,14 +83,18 @@ export function fillOuroborosPoints(
             size = 0.4 + h4;
             kind = OUROBOROS_KIND_DUST;
         } else {
-            // Две устойчивые яркие точки лежат на передней поверхности головы.
+            // Стабильные ориентиры: глаза0/1, противоположные губы2/3, конец хвоста4/5.
             const eye = i < 2;
-            const u = eye ? 0.035 : i < 34 ? (i % 2 === 0 ? 0.016 : 0.05) + h0 * 0.018 : h0;
-            const theta = 0.055 + u * (TAU - 0.11);
-            const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.55 : 0.55) : h1 * TAU;
+            const lip = i === 2 || i === 3;
+            const u = eye ? 0.035 : lip ? 0 : i === 4 ? 1 : i === 5 ? 0.975 :
+                i < 34 ? (i % 2 === 0 ? 0.016 : 0.05) + h0 * 0.018 : h0;
+            // Дуга хвоста проходит через вход пасти и заканчивается внутри объёма головы.
+            const theta = -0.06 + u * (TAU + 0.20);
+            const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.55 : 0.55) :
+                lip ? (i - 2) * Math.PI : h1 * TAU;
             const c = Math.cos(theta), s = Math.sin(theta);
             const cp = Math.cos(phi), sp = Math.sin(phi);
-            // Одна голова у начала дуги, тонкий хвост у её конца и узкий зазор у рта.
+            // Полая поверхность челюстей окружает тонкий хвост, заходящий за плоскость губ.
             const headDistance = (u - 0.045) / 0.032;
             const head = Math.exp(-headDistance * headDistance);
             const jawDistance = (u - 0.012) / 0.020;

@@ -1,6 +1,6 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/buttonSolid.test.ts
-// НАЗНАЧЕНИЕ: Регрессии шести граней, доступных подписей и восстановления DOM HUD.
+// НАЗНАЧЕНИЕ: Шесть граней, две читаемые подписи, доступность и восстановление DOM HUD.
 // РАЗДЕЛЫ: 1. Минимальный layout/DOM/RO; 2. Геометрия и подписи; 3. Освобождение.
 // ФУНКЦИИ: descendants, makeHarness, runButtonSolidChecks; методы SolidNode.
 // ============================================================================
@@ -170,6 +170,8 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
     const binding = manager.mount([button, generic, phase, button] as unknown as HTMLElement[]);
     const body = button.childNodes.find((node) => node.className === 'solid-button-body')!;
     const faces = body.childNodes;
+    const backFace = faces.find((node) => node.dataset.solidFace === 'back')!;
+    const backLabel = backFace.childNodes[0];
     check(faces.length === 6 && new Set(faces.map((face) => face.dataset.solidFace)).size === 6 &&
         ['front', 'back', 'top', 'bottom', 'left', 'right'].every((faceName) => faces.some((face) => face.dataset.solidFace === faceName)) &&
         body.getAttribute('aria-hidden') === 'true' && descendants(faces[0]).includes(visual) &&
@@ -177,17 +179,28 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
         descendants(button).filter((node) => node.getAttribute('id') === 'original-visual-id').length === 1,
         'Closed button bodies contain six distinct faces, reuse the original front visual and retain one native accessible name without duplicate IDs');
 
+    check(backLabel.textContent === 'AUDIO: ON' && backLabel.hasAttribute('inert') && !descendants(backFace).includes(visual) &&
+        descendants(backFace).every(node => node.getAttribute('id') === null && !node.hasAttribute('data-glyph-visual') &&
+            !node.hasAttribute('data-glyph-canonical') && !node.hasAttribute('tabindex') && !node.matches('button, a')),
+        'The back face carries a separate canonical label without duplicate IDs, glyph bindings or interactive descendants');
+
     const phaseBody = phase.childNodes.find((node) => node.className === 'solid-button-body')!;
+    const phaseBack = phaseBody.childNodes.find((node) => node.dataset.solidFace === 'back')!;
     setSolidButtonLabel(phase as unknown as HTMLElement, '01.VOID');
     check(descendants(phaseBody).includes(number) && descendants(phaseBody).includes(name) &&
-        number.textContent === '01.' && name.textContent === 'VOID' && phase.getAttribute('aria-label') === '01.VOID',
-        'Phase number/name nodes and their responsive typography survive mounting and unchanged label synchronization');
+        number.textContent === '01.' && name.textContent === 'VOID' && phase.getAttribute('aria-label') === '01.VOID' &&
+        descendants(phaseBack).some(node => node.className === 'phase-number' && node.textContent === '01.') &&
+        descendants(phaseBack).some(node => node.className === 'phase-name' && node.textContent === 'VOID'),
+        'Both faces preserve phase number/name structure and responsive typography while the original front nodes remain intact');
 
     setSolidButtonLabel(generic as unknown as HTMLElement, 'НОВАЯ ФАЗА 𓂀');
+    const genericBody = generic.childNodes.find((node) => node.className === 'solid-button-body')!;
+    const genericBack = genericBody.childNodes.find((node) => node.dataset.solidFace === 'back')!;
     check(canonical.parentNode === generic && canonical.textContent === 'НОВАЯ ФАЗА 𓂀' &&
         genericVisual.textContent === canonical.textContent && generic.dataset.buttonSolidKind === 'status' &&
-        generic.getAttribute('aria-label') === null && generic.getAttribute('role') === null,
-        'Generic status text keeps its canonical accessible span outside the hidden body while visible Unicode labels update in place');
+        generic.getAttribute('aria-label') === null && generic.getAttribute('role') === null &&
+        genericBack.textContent === canonical.textContent,
+        'Generic status retains one accessible canonical span while front/back Unicode labels update together');
 
     const replaceCount = button.replacements;
     const sameFaces = faces.slice();
@@ -197,8 +210,9 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
     check(button.replacements === replaceCount && body.childNodes.every((face, index) => face === sameFaces[index]) &&
         descendants(body).includes(visual) && measurer.textContent === 'AUDIO: MUTED 𓂀' &&
         measurer.getAttribute('aria-hidden') === 'true' && measurer.hasAttribute('inert') &&
-        button.values.get('--solid-width') === '156px' && button.getAttribute('aria-label') === 'AUDIO: MUTED 𓂀',
-        'Dynamic labels preserve host/body/face identity and refresh the normal-flow measurer and untransformed geometry');
+        button.values.get('--solid-width') === '156px' && button.getAttribute('aria-label') === 'AUDIO: MUTED 𓂀' &&
+        backLabel.textContent === 'AUDIO: MUTED 𓂀',
+        'Dynamic labels update both readable faces and the normal-flow measurer without replacing host, body or faces');
 
     const writesBeforeStableResize = button.writes + generic.writes + phase.writes;
     observer.callbacks[0]();

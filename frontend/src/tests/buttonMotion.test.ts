@@ -421,14 +421,14 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
         maxAccentLuminance = Math.max(maxAccentLuminance, accentLuminance);
         warmAndReadable &&= channels.every(channel => channel >= 0 && channel <= 255) &&
             channels.every((channel, index) => Math.abs(channel - previousChannels[index]) <= 3) &&
-            (luminance(channels) + 0.05) / (luminance([56, 92, 121]) + 0.05) >= 4.5;
+            (luminance(channels) + 0.05) / (luminance([56, 92, 121]) + 0.05) >= 5;
         previousChannels = channels;
     }
     check(warmAndReadable && sawHotAmber && sawCoolMetal && maxAccentLuminance / minAccentLuminance >= 1.18 &&
         accentColors.size > 100 && github.buttons[1].values.get(accentProperty) === firstAccent &&
         !github.buttons[0].values.has(accentProperty) && !github.buttons[2].values.has(accentProperty) &&
         github.shared.subscriptions === 1 && github.binding.listenerCount === 15,
-        'Only GitHub cycles through visibly lighter/darker hot amber/coral and cool metal over18 active seconds with smooth steps, independent phase-clock jumps and at least4.5:1 text contrast');
+        'Only GitHub cycles through brighter hot amber/coral and cool metal over18 active seconds with smooth light/dark steps, independent phase-clock jumps and at least5:1 text contrast');
     github.step(80);
     const accentBeforePause = github.buttons[1].values.get(accentProperty);
     github.step(40, { isPaused: true });

@@ -13,8 +13,9 @@ import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES, smootherstep, universeStore,
 } from '../store/universeState';
 import { CANONICAL_FINALE_LINES, CipherOdometerEngine, formatFinaleStaticLine, getFinaleLineAssemblyProgress } from '../bridge/cipherOdometerEngine';
-import { GLYPH_WAITING_SPACE, getOrderedGlyphState, splitGlyphText } from '../core/glyphGrammar';
+import { GLYPH_WAITING_SPACE, getOrderedGlyphState, invalidateGlyphFontCache, splitGlyphText } from '../core/glyphGrammar';
 import { bindFinaleQuantumCells, updateFinaleQuantumCells } from '../layers/Layer5_CipherFinale';
+import { drawFittedCipherGlyph } from '../engine/passes/singularityPass';
 
 const PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
 
@@ -35,11 +36,28 @@ function makeLayout(width: number, height: number, cardHeight = 300): FinaleCard
 // НАЧАЛО ФУНКЦИИ makeQuantumLine
 function makeQuantumLine(): {
     line: HTMLElement;
-    state: { children: HTMLElement[]; replacements: number; styles: Map<string, string> };
+    state: { children: HTMLElement[]; replacements: number; inkWrites: number; styles: Map<string, string> };
 } {
-    const state = { children: [] as HTMLElement[], replacements: 0, styles: new Map<string, string>() };
+    const state = { children: [] as HTMLElement[], replacements: 0, inkWrites: 0, styles: new Map<string, string>() };
+    const makeNode = (): HTMLElement => {
+        let text = '';
+        const children: HTMLElement[] = [];
+        const styles = new Map<string, string>();
+        const node = { className: '', dataset: {}, parentElement: null as HTMLElement | null,
+            clientWidth: 13, clientHeight: 24,
+            style: { setProperty: (name: string, value: string): void => { styles.set(name, value); state.inkWrites++; },
+                getPropertyValue: (name: string): string => styles.get(name) ?? '' },
+            get textContent(): string { return children.length ? children.map(child => child.textContent ?? '').join('') : text; },
+            set textContent(value: string) { children.length = 0; text = value; },
+            replaceChildren: (...next: HTMLElement[]): void => {
+                children.splice(0, children.length, ...next);
+                next.forEach(child => { Object.defineProperty(child, 'parentElement', { value: node, writable: true }); });
+            },
+        };
+        return node as unknown as HTMLElement;
+    };
     const line = {
-        ownerDocument: { createElement: () => ({ className: '', dataset: {}, textContent: '' }) },
+        ownerDocument: { createElement: makeNode },
         style: { setProperty: (name: string, value: string): void => { state.styles.set(name, value); } },
         replaceChildren: (...children: HTMLElement[]): void => { state.children = children; state.replacements++; },
     };
@@ -98,6 +116,41 @@ function runFinaleRiseClockChecks(check: (passed: boolean, description: string) 
 // НАЧАЛО ФУНКЦИИ runFinaleCompositionChecks
 export function runFinaleCompositionChecks(check: (passed: boolean, description: string) => void): void {
     runFinaleRiseClockChecks(check);
+    // Проверяем тот же draw helper, который рисует основную букву и два ghost-знака.
+    const canvasMetrics = [
+        { width: 22, actualBoundingBoxLeft: 5, actualBoundingBoxRight: 25, actualBoundingBoxAscent: 29, actualBoundingBoxDescent: 8 },
+        { width: 11, actualBoundingBoxLeft: -3, actualBoundingBoxRight: 17, actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 16 },
+    ];
+    let wholeCanvasGlyphs = true;
+    for (const [metricIndex, metrics] of canvasMetrics.entries()) {
+        for (const [width, height] of [[320, 568], [1920, 1080]]) {
+            for (const rollAxis of ['x', 'y'] as const) for (const rollScale of [0.12, 0.65, 1.1]) {
+                for (const stepWidthPx of [4, 8, 18]) for (const edge of [3, width / 2, width - 3]) {
+                    for (const offset of [-40, 0, 40]) {
+                        let x = 0, y = 0, scaleX = 1, scaleY = 1, drawn = '';
+                        const context = { font: `700 13px Fixture-${metricIndex}`,
+                            save(): void {}, restore(): void {}, measureText: (): Partial<TextMetrics> => metrics,
+                            translate: (dx: number, dy: number): void => { x = dx; y = dy; },
+                            scale: (sx: number, sy: number): void => { scaleX = sx; scaleY = sy; },
+                            fillText: (glyph: string): void => { drawn = glyph; },
+                        } as unknown as CanvasRenderingContext2D;
+                        const cell = { currentX: edge, currentY: edge === 3 ? 3 : height - 3,
+                            rollAxis, rollScale, fontSizePx: 13, stepWidthPx };
+                        drawFittedCipherGlyph(context, '𓅓', cell, width, height, offset, offset);
+                        const rx = rollAxis === 'x' ? rollScale : 1, ry = rollAxis === 'y' ? rollScale : 1;
+                        const left = cell.currentX + rx * (x - metrics.actualBoundingBoxLeft * scaleX);
+                        const right = cell.currentX + rx * (x + metrics.actualBoundingBoxRight * scaleX);
+                        const top = cell.currentY + ry * (y - metrics.actualBoundingBoxAscent * scaleY);
+                        const bottom = cell.currentY + ry * (y + metrics.actualBoundingBoxDescent * scaleY);
+                        wholeCanvasGlyphs &&= drawn === '𓅓' && scaleX > 0 && scaleX <= 1 && scaleX === scaleY &&
+                            left >= 2 - 1e-8 && right <= width - 2 + 1e-8 && top >= 2 - 1e-8 && bottom <= height - 2 + 1e-8;
+                    }
+                }
+            }
+        }
+    }
+    check(wholeCanvasGlyphs,
+        'The actual Canvas primary/ghost draw uniformly fits wide and tall historical signs and retains their complete ink inside phone/desktop edges throughout X/Y turns');
     const initialEngine = new CipherOdometerEngine();
     const halfwayCells = initialEngine.evaluateCells(1920, 1080, 0.4, false, 0);
     check(halfwayCells.every((cell) =>
@@ -139,8 +192,21 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
         quantum.state.replacements === 1 && mountedNodes.every((node, index) => node === quantum.state.children[index]) &&
         quantum.state.children.map((node) => node.textContent).join('') === CANONICAL_FINALE_LINES[2].replace(/\s/gu, '') &&
         supplementaryCells.length === 4 && supplementaryCells.map((cell) => cell.node.dataset.quantumIndex).join(',') === '0,2,4,6' &&
-        supplementary.state.children.map((node) => node.textContent).join('') === 'A𓂀𝋳∇',
+        supplementary.state.children.map((node) => node.textContent).join('') === 'A𓂀𝋳∇' &&
+        cells.every(cell => cell.ink.parentElement === cell.node && /^scale\([\d.]+\)$/.test(cell.ink.style.getPropertyValue('transform'))),
         'Quantum glyph changes preserve 25 mounted grid cells and fixed column counts; supplementary signs remain whole and reduced motion restores canonical cells');
+
+    const beforeStill = quantum.state.inkWrites;
+    updateFinaleQuantumCells(cells, [], 141, true);
+    const unchangedDoesNotWrite = quantum.state.inkWrites === beforeStill;
+    Object.defineProperty(cells[0].node, 'clientWidth', { value: 8, writable: true });
+    updateFinaleQuantumCells(cells, [], 141, true);
+    const afterResize = quantum.state.inkWrites;
+    invalidateGlyphFontCache();
+    updateFinaleQuantumCells(cells, [], 141, true);
+    check(unchangedDoesNotWrite && afterResize > beforeStill && quantum.state.inkWrites > afterResize &&
+        mountedNodes.every((node, index) => node === quantum.state.children[index]),
+        'Stationary quantum cells refit after a viewport/font change without advancing the symbol clock, remounting nodes or writing unchanged ink');
 
     const radii = getSingularityPhotonRadii(900);
     check(Math.abs(radii.shadowRadius - 61.2) < 1e-10 &&

@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/engine/passes/singularityPass.ts
 // НАЗНАЧЕНИЕ: Отрисовка короны сингулярности, Точки Нуля и начального Canvas-одометра.
 // РАЗДЕЛЫ: 1. КОРОНА NGC 6543 И ЧЁРНАЯ ДЫРА; 2. МИКРО-ТОЧКА ИМПУЛЬСА В АКТЕ C; 3. CANVAS-ОДОМЕТР И ПЕРЕДАЧА ТЕКСТА DOM-ВИЗИТКЕ.
-// ФУНКЦИИ: renderSingularityCoronaAndBlackHole, renderZeroSilenceActC, renderCipherOdometerStage.
+// ФУНКЦИИ: renderSingularityCoronaAndBlackHole, renderZeroSilenceActC, drawFittedCipherGlyph, renderCipherOdometerStage.
 // Порядок вызовов и общий жизненный цикл кадра задаёт UniverseRenderer.
 // ============================================================================
 
@@ -10,7 +10,8 @@ import { smootherstep, universeStore, type SingularityAct, type UniverseState } 
 import { RenderPipeline } from '../pipeline';
 import { cipherOdometerEngine, type OdometerGlyphCellState } from '../../bridge/cipherOdometerEngine';
 import type { AudioModulationSnapshot } from '../../utils/audioSync';
-import { GLYPH_FONT_STACK } from '../../core/glyphGrammar';
+import { getGlyphFontEpoch, GLYPH_FONT_STACK } from '../../core/glyphGrammar';
+import { fitGlyphInk, type GlyphInkFit } from '../../core/glyphHover';
 import { getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP } from '../../core/finaleComposition';
 import { TAU, clamp } from '../math/noise2d';
 
@@ -209,6 +210,44 @@ export function renderZeroSilenceActC(
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. CANVAS-ОДОМЕТР И ПЕРЕДАЧА ТЕКСТА DOM-ВИЗИТКЕ
+const cipherInkFits = new Map<string, GlyphInkFit>();
+let cipherFontEpoch = -1;
+
+// НАЧАЛО ФУНКЦИИ drawFittedCipherGlyph
+/** Полное начертание остаётся в своей ячейке и viewport, включая движущиеся ghost-знаки. */
+export function drawFittedCipherGlyph(ctx: CanvasRenderingContext2D, glyph: string,
+    cell: Pick<OdometerGlyphCellState, 'currentX' | 'currentY' | 'rollAxis' | 'rollScale' | 'fontSizePx' | 'stepWidthPx'>,
+    width: number, height: number, offsetX = 0, offsetY = 0): void {
+    if (/^\s*$/u.test(glyph)) return;
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const epoch = getGlyphFontEpoch();
+    if (epoch !== cipherFontEpoch || cipherInkFits.size >= 4096) {
+        cipherInkFits.clear();
+        cipherFontEpoch = epoch;
+    }
+    const key = `${ctx.font}:${cell.stepWidthPx.toFixed(3)}:${glyph}`;
+    let fit = cipherInkFits.get(key);
+    if (!fit) {
+        const fontPx = Math.max(0.1, Number(cell.fontSizePx.toFixed(1)));
+        fit = fitGlyphInk(ctx.measureText(glyph), cell.stepWidthPx, Math.max(2, fontPx * 1.5), fontPx);
+        cipherInkFits.set(key, fit);
+    }
+    const halfWidth = (fit.inkRight - fit.inkLeft) * fit.scale / 2;
+    const halfHeight = (fit.inkAscent + fit.inkDescent) * fit.scale / 2;
+    const rollX = cell.rollAxis === 'x' ? cell.rollScale : 1;
+    const rollY = cell.rollAxis === 'y' ? cell.rollScale : 1;
+    const centerX = clamp(offsetX, (2 - cell.currentX) / rollX + halfWidth, (width - 2 - cell.currentX) / rollX - halfWidth);
+    const centerY = clamp(offsetY, (2 - cell.currentY) / rollY + halfHeight, (height - 2 - cell.currentY) / rollY - halfHeight);
+    ctx.translate(centerX - (fit.inkLeft + fit.inkRight) * fit.scale / 2,
+        centerY + (fit.inkAscent - fit.inkDescent) * fit.scale / 2);
+    ctx.scale(fit.scale, fit.scale);
+    ctx.fillText(glyph, 0, 0);
+    ctx.restore();
+}
+// КОНЕЦ ФУНКЦИИ drawFittedCipherGlyph
+
 // НАЧАЛО ФУНКЦИИ renderCipherOdometerStage
 /**
  * Отрисовывает атмосферную подложку и 3D-разлёт символов квантового одометра
@@ -284,8 +323,9 @@ export function renderCipherOdometerStage(
             ctx.globalAlpha = 0.28 * breathAlpha;
             ctx.fillStyle =
                 ghostTonePool[(c.charIndex + c.lineIndex) % ghostTonePool.length];
-            ctx.fillText(
+            drawFittedCipherGlyph(ctx,
                 c.upperChar,
+                c, w, h,
                 horizontalRoll ? ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
                 horizontalRoll ? 0 : -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
             );
@@ -293,8 +333,9 @@ export function renderCipherOdometerStage(
             ctx.globalAlpha = 0.22 * breathAlpha;
             ctx.fillStyle =
                 ghostTonePool[(c.charIndex + c.lineIndex + 2) % ghostTonePool.length];
-            ctx.fillText(
+            drawFittedCipherGlyph(ctx,
                 c.lowerChar,
+                c, w, h,
                 horizontalRoll ? -ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
                 horizontalRoll ? 0 : ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
             );
@@ -313,8 +354,9 @@ export function renderCipherOdometerStage(
             ctx.fillStyle = c.colorHex;
         }
 
-        ctx.fillText(
+        drawFittedCipherGlyph(ctx,
             c.primaryChar,
+            c, w, h,
             horizontalRoll && !c.isLocked ? c.wheelPhaseFrac * c.fontSizePx * 0.44 : 0,
             horizontalRoll || c.isLocked ? 0 : -c.wheelPhaseFrac * c.fontSizePx * 0.44
         );

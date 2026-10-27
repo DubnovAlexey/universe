@@ -54,7 +54,7 @@ const SHADOW_INTERVAL_SEC = 1 / 12;
 const SHADOW_PHASE_STEP = 0.618033988749895;
 const GITHUB_ACCENT_PERIOD_SEC = 18;
 const GITHUB_HEAT_COLORS = [
-    [255, 221, 156], [255, 198, 164], [255, 229, 224], [193, 217, 255],
+    [255, 230, 166], [255, 210, 174], [255, 236, 230], [204, 228, 255],
 ] as const;
 const PHASE_SPEED: Readonly<Record<VisualSignalSnapshot['phase'], number>> = Object.freeze({
     '01_VOID': 0.94, '02_GENESIS': 1.015, '03_EVOLUTION': 1.04,
@@ -294,7 +294,7 @@ export class ButtonMotionController {
     // КОНЕЦ ФУНКЦИИ publishShadow
 
     // НАЧАЛО ФУНКЦИИ publishGithubAccent
-    /** Раскалённый металл: янтарь, коралл, розовый свет и холодный отблеск без потери контраста. */
+    /** Более яркий раскалённый металл: янтарь, коралл, розовый свет и холодный отблеск. */
     private publishGithubAccent(pose: ButtonPose): void {
         if (!pose.githubAccent) return;
         const phase = pose.accentElapsedSec / GITHUB_ACCENT_PERIOD_SEC * GITHUB_HEAT_COLORS.length;

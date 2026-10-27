@@ -212,6 +212,7 @@
     border-radius: 0;
     background-color: #10243a;
     backface-visibility: hidden;
+    overflow: visible;
     pointer-events: none;
 }
 
@@ -224,7 +225,8 @@
 .solid-button-face--back {
     transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--solid-depth) / 2));
     background-color: #081524;
-    background-image: repeating-linear-gradient(135deg, transparent 0 7px, rgba(136, 181, 213, 0.12) 7px 8px);
+    background-image: linear-gradient(165deg, rgba(40, 69, 95, 0.78), rgba(11, 24, 41, 0.9) 70%),
+        repeating-linear-gradient(135deg, transparent 0 7px, rgba(136, 181, 213, 0.12) 7px 8px);
     box-shadow: inset 0 0 0 3px #0e2438;
 }
 
@@ -271,6 +273,7 @@
     line-height: inherit;
     text-align: inherit;
     pointer-events: none;
+    overflow: visible;
 }
 
 /* Широкие информационные тела имеют собственный локальный центр вращения. */
@@ -280,7 +283,7 @@
     --solid-pad-y: 0.24rem;
     perspective: 1200px;
     padding: 0.24rem 0.45rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.66rem;
 }
 
 .brand-card .solid-button-label {
@@ -351,8 +354,8 @@
 }
 
 .brand-card {
-    padding: 0.65rem 1.05rem;
-    max-width: 455px;
+    padding: 0.75rem 1.25rem;
+    max-width: 475px;
     background: radial-gradient(
             ellipse at 24% 34%,
             rgba(6, 13, 30, 0.68) 0%,
@@ -438,7 +441,7 @@
 }
 
 .phase-timeline-dock {
-    padding: 0.65rem 0.9rem;
+    padding: 0.75rem 1.1rem;
     max-width: 100%;
     display: flex;
     flex-direction: column;
@@ -473,7 +476,7 @@
 
 .phase-buttons-row {
     display: flex;
-    gap: 0.5rem;
+    gap: 1rem;
     flex-wrap: wrap;
 }
 
@@ -507,12 +510,12 @@
 }
 
 .controls-dock {
-    padding: 0.65rem 0.9rem;
+    padding: 0.75rem 1.1rem;
     max-width: 100%;
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
     border-radius: 18px 26px 16px 24px;
     background: radial-gradient(
@@ -563,12 +566,12 @@
 
 /* Только подпись GitHub: перелив лавы и раскалённого металла на общем кадре. */
 #link-hud-github {
-    color: var(--github-ink-color, #ffd1ac);
+    color: var(--github-ink-color, #ffe6a6);
     /* Цвет уже меняется малыми шагами общего кадра и замирает сразу при паузе. */
     transition-property: background-color, border-color, text-shadow;
     text-shadow:
             0 1px 3px rgba(24, 4, 13, 0.96),
-            0 0 8px rgba(166, 63, 87, 0.62);
+            0 0 9px rgba(189, 80, 101, 0.68);
 }
 
 #link-hud-github .glyph-reel-ink {

@@ -41,10 +41,11 @@ pub fn fill_ouroboros_points(
     {
         return None;
     }
-    // Ограниченные наклоны сохраняют читаемую плоскость тела при полном обороте.
-    let ax = 0.38 + 0.22 * (time_sec * 0.21).sin();
-    let ay = -0.32 + 0.22 * (time_sec * 0.17).sin();
-    let az = 0.12 + time_sec * 0.13;
+    // Голова направлена к убывающему theta: отрицательный оборот ведёт пастью вперёд.
+    // Ограниченное покачивание трёх осей сохраняет читаемую плоскость тела.
+    let ax = 0.38 + 0.24 * (time_sec * 0.21).sin();
+    let ay = -0.32 + 0.24 * (time_sec * 0.17).sin();
+    let az = 0.12 - time_sec * 0.13 + 0.07 * (time_sec * 0.11).sin();
     let (sx, cx) = (ax.sin(), ax.cos());
     let (sy, cy) = (ay.sin(), ay.cos());
     let (sz, cz) = (az.sin(), az.cos());
@@ -80,9 +81,14 @@ pub fn fill_ouroboros_points(
             kind = 1.0;
         } else {
             let eye = i < 2;
-            let u = if eye { 0.035 } else if i < 34 { (if i % 2 == 0 { 0.016 } else { 0.05 }) + h0 * 0.018 } else { h0 };
-            let theta = 0.055 + u * (TAU - 0.11);
-            let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.55 } else { 0.55 } } else { h1 * TAU };
+            let lip = i == 2 || i == 3;
+            // Глаза0/1, губы2/3 и конец хвоста4/5 сохраняются при любом качестве.
+            let u = if eye { 0.035 } else if lip { 0.0 } else if i == 4 { 1.0 } else if i == 5 { 0.975 }
+                else if i < 34 { (if i % 2 == 0 { 0.016 } else { 0.05 }) + h0 * 0.018 } else { h0 };
+            // Хвост пересекает плоскость губ и заканчивается внутри объёма головы.
+            let theta = -0.06 + u * (TAU + 0.20);
+            let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.55 } else { 0.55 } }
+                else if lip { (i - 2) as f64 * std::f64::consts::PI } else { h1 * TAU };
             let (c, s) = (theta.cos(), theta.sin());
             let (cp, sp) = (phi.cos(), phi.sin());
             let head_distance = (u - 0.045) / 0.032;

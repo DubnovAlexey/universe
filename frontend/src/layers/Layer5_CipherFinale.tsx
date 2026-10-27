@@ -30,8 +30,8 @@ import {
     smootherstep, universeStore, type UniverseState,
 } from '../store/universeState';
 import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
-import { getRenderableGlyphPool } from '../core/glyphGrammar';
-import { calmGlyphHover } from '../core/glyphHover';
+import { getGlyphFontEpoch, getRenderableGlyphPool } from '../core/glyphGrammar';
+import { calmGlyphHover, setFittedGlyph } from '../core/glyphHover';
 import { getFinaleCardPlacement } from '../core/finaleComposition';
 
 const FINALE_PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
@@ -39,8 +39,11 @@ const FINALE_PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) 
 // НАЧАЛО РАЗДЕЛА 0. ПОСТОЯННЫЕ ЯЧЕЙКИ КВАНТОВОЙ СТРОКИ
 interface FinaleQuantumCell {
     readonly node: HTMLElement;
+    readonly ink: HTMLElement;
     readonly sourceIndex: number;
     readonly canonical: string;
+    glyph: string;
+    fitKey: string;
 }
 
 // --- НАЧАЛО ФУНКЦИИ bindFinaleQuantumCells ---
@@ -53,8 +56,11 @@ export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = CAN
         const node = line.ownerDocument.createElement('span');
         node.className = 'finale-quantum-cell';
         node.dataset.quantumIndex = String(sourceIndex);
-        node.textContent = character;
-        cells.push({ node, sourceIndex, canonical: character });
+        const ink = line.ownerDocument.createElement('span');
+        ink.className = 'glyph-reel-ink';
+        ink.textContent = character;
+        node.replaceChildren(ink);
+        cells.push({ node, ink, sourceIndex, canonical: character, glyph: '', fitKey: '' });
     });
     line.style.setProperty('--quantum-columns', String(cells.length));
     line.style.setProperty('--quantum-compact-columns', String(Math.ceil(cells.length / 2)));
@@ -72,7 +78,12 @@ export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], gl
         const charTick = Math.floor((step + index * 7) / slotStride);
         const glyphIndex = (index * 19 + charTick * 7 + (index % 5) * 13) % glyphPool.length;
         const glyph = reducedMotion || !glyphPool.length ? cell.canonical : glyphPool[glyphIndex];
-        if (cell.node.textContent !== glyph) cell.node.textContent = glyph;
+        const fitKey = `${getGlyphFontEpoch()}:${cell.node.clientWidth}:${cell.node.clientHeight}`;
+        if (cell.glyph !== glyph || cell.fitKey !== fitKey) {
+            cell.glyph = glyph;
+            cell.fitKey = fitKey;
+            setFittedGlyph(cell.ink, glyph, cell.canonical);
+        }
     }
 }
 // --- КОНЕЦ ФУНКЦИИ updateFinaleQuantumCells ---
@@ -104,6 +115,7 @@ class FinaleCardDomAnimator {
     private accumulatedAssemblyPhase = 0;
     private lfoClockSec = 0;
     private lastQuantumStep = -1;
+    private lastQuantumFontEpoch = -1;
     private ambientRiseDistancePx = 0;
     private ambientLayoutKey = '';
     private breathHeartbeat = 0.35;
@@ -132,6 +144,7 @@ class FinaleCardDomAnimator {
         this.line1El = root.querySelector<HTMLElement>('[data-bind="l5-line-1"]');
         this.quantumCells = bindFinaleQuantumCells(root.querySelector<HTMLElement>('[data-bind="l5-line-2"]'));
         this.lastQuantumStep = -1;
+        this.lastQuantumFontEpoch = -1;
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
@@ -354,8 +367,11 @@ class FinaleCardDomAnimator {
             }
 
             const qStep = Math.floor(this.accumulatedQuantumPhase);
-            if (this.quantumCells.length && (state.reducedMotion || qStep !== this.lastQuantumStep)) {
+            const fontEpoch = getGlyphFontEpoch();
+            if (this.quantumCells.length && (state.reducedMotion || qStep !== this.lastQuantumStep ||
+                this.layoutDirty || fontEpoch !== this.lastQuantumFontEpoch)) {
                 this.lastQuantumStep = qStep;
+                this.lastQuantumFontEpoch = fontEpoch;
                 updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion);
             }
         }

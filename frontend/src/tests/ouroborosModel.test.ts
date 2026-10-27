@@ -116,6 +116,37 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
         eyeDistance > 0.05 && eyeDistance < 0.4 && validPoints(points, 512),
         'Two distinct larger luminous eye cores remain part of the head and keep valid normals at reduced quality');
 
+    const nextPose = new Float32Array(512 * OUROBOROS_STRIDE);
+    const position = (buffer: Float32Array, index: number): number[] =>
+        Array.from(buffer.subarray(index * OUROBOROS_STRIDE, index * OUROBOROS_STRIDE + 3));
+    const midpoint = (a: readonly number[], b: readonly number[]): number[] => a.map((v, i) => (v + b[i]) / 2);
+    const project = (v: readonly number[]): number[] => [v[0] * 3 / (3 + v[2]), -v[1] * 3 / (3 + v[2])];
+    let tailInsideMouth = true, headLeads = true, minNormalZ = Infinity, maxNormalZ = -Infinity;
+    for (const seed of [0, 104729, 0xffffffff]) {
+        for (let time = 0; time <= 216; time += 3) {
+            fillOuroborosPoints(prefix, seed, 512, time, 1, 0.5);
+            fillOuroborosPoints(nextPose, seed, 512, time + 0.05, 1, 0.5);
+            const mouth = midpoint(position(prefix, 2), position(prefix, 3));
+            const head = midpoint(position(prefix, 0), position(prefix, 1));
+            const axis = head.map((v, i) => v - mouth[i]);
+            const tail = position(prefix, 4).map((v, i) => v - mouth[i]);
+            const depth = tail.reduce((sum, v, i) => sum + v * axis[i], 0) / axis.reduce((sum, v) => sum + v * v, 0);
+            const radialOffset = Math.hypot(...tail.map((v, i) => v - depth * axis[i]));
+            const lipRadius = Math.hypot(...position(prefix, 2).map((v, i) => v - position(prefix, 3)[i])) / 2;
+            tailInsideMouth &&= depth > 0.25 && depth < 1 && radialOffset < lipRadius && prefix[4 * 8 + 7] === 0;
+            const screenMouth = project(mouth), screenHead = project(head);
+            const nextMouth = project(midpoint(position(nextPose, 2), position(nextPose, 3)));
+            const forwardTravel = nextMouth.reduce((sum, v, i) => sum + (v - screenMouth[i]) * (screenMouth[i] - screenHead[i]), 0);
+            headLeads &&= forwardTravel > 0;
+            minNormalZ = Math.min(minNormalZ, prefix[5]);
+            maxNormalZ = Math.max(maxNormalZ, prefix[5]);
+        }
+    }
+    check(tailInsideMouth,
+        'The tapered tail enters behind the lips and stays within the mouth volume across seeds, quality prefixes and two cycles');
+    check(headLeads && maxNormalZ - minNormalZ > 0.12,
+        'Projected motion always leads mouth-first rather than tail-first, while normals confirm gentle spatial rocking');
+
     const guard = new Float32Array(16).fill(19);
     const invalid = [[-1, 1, 0, 1, 0], [0, 1.5, 0, 1, 0], [0, 3073, 0, 1, 0],
         [0, 1, Number.NaN, 1, 0], [0, 1, -1, 1, 0], [0, 1, 0, -0.1, 0], [0, 1, 0, 1, Infinity]];
