@@ -79,15 +79,18 @@ pub fn fill_ouroboros_points(
             size = 0.4 + h4;
             kind = 1.0;
         } else {
-            let u = h0;
+            let eye = i < 2;
+            let u = if eye { 0.035 } else if i < 34 { (if i % 2 == 0 { 0.016 } else { 0.05 }) + h0 * 0.018 } else { h0 };
             let theta = 0.055 + u * (TAU - 0.11);
-            let phi = h1 * TAU;
+            let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.55 } else { 0.55 } } else { h1 * TAU };
             let (c, s) = (theta.cos(), theta.sin());
             let (cp, sp) = (phi.cos(), phi.sin());
             let head_distance = (u - 0.045) / 0.032;
             let head = (-head_distance * head_distance).exp();
+            let jaw_distance = (u - 0.012) / 0.020;
+            let jaw = (-jaw_distance * jaw_distance).exp();
             let tail = 0.13 + 0.87 * smooth((1.0 - u) / 0.17);
-            let tube = (0.088 + 0.012 * (theta * 3.0 + 0.35).sin() + 0.012 * energy) * tail + 0.105 * head;
+            let tube = (0.088 + 0.012 * (theta * 3.0 + 0.35).sin() + 0.012 * energy) * tail + 0.105 * head + 0.05 * jaw;
             let radius = 0.85 + 0.022 * (theta * 2.0 + time_sec * 0.11).sin() * (0.4 + energy * 0.6);
             let body_x = (radius + tube * cp) * c;
             let body_y = (radius + tube * cp) * s;
@@ -99,7 +102,8 @@ pub fn fill_ouroboros_points(
             nx = dust_angle.cos() * (1.0 - materialize) + cp * c * materialize;
             ny = dust_angle.sin() * (1.0 - materialize) + cp * s * materialize;
             nz = 0.12 * (1.0 - materialize) + sp / 0.82 * materialize;
-            size = (0.4 + h4) + (0.8 + h4 * 0.8 + head * 0.35 - (0.4 + h4)) * materialize;
+            let core_size = if eye { 3.6 } else { 1.0 + h4 * 0.9 + head * 0.65 };
+            size = (0.4 + h4) + (core_size - (0.4 + h4)) * materialize;
             kind = if materialize < 0.5 { 1.0 } else { 0.0 };
         }
         let length = (nx * nx + ny * ny + nz * nz).sqrt();

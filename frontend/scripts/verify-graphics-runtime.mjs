@@ -283,8 +283,14 @@ try {
                 const stillState = { ...state, cycleCount: 2, reducedMotion: true };
                 const stillSignals = { ...signals, reducedMotion: true };
                 let firstPoints, firstCenter;
-                for (const elapsed of [0, 6, 12]) {
+                // Нулевая граница ещё не видна; сравниваем только активные кадры формы.
+                stillState.finaleRiseElapsedSec = 0;
+                stillState.telemetry = { ...stillState.telemetry, phaseElapsedSec: 18.55 };
+                effect.render(context, stillState, stillSignals, 1000, 800, 1, [{ x: 100, y: 200, radius: 1 }]);
+                assert.equal(submitted, 0);
+                for (const elapsed of [0.5, 6, 12]) {
                     stillState.finaleRiseElapsedSec = elapsed;
+                    stillState.telemetry = { ...stillState.telemetry, phaseElapsedSec: 18.55 + elapsed };
                     effect.render(context, stillState, stillSignals, 1000, 800, 1, [{ x: 100, y: 200, radius: 1 }]);
                     const points = effect.frame.points.subarray(0, effect.frame.count * 8);
                     firstPoints ??= points.slice();

@@ -55,7 +55,7 @@ export function renderOuroborosCanvas(
         const kind = Math.max(0, Math.min(2, Math.round(points[offset + 7])));
         const light = Math.max(0, points[offset + 3] * -0.35 + points[offset + 4] * 0.6 + points[offset + 5] * -0.55);
         const depthFade = Math.max(0.2, Math.min(1, 0.76 - z * 0.16));
-        const strength = kind === 0 ? (0.38 + 0.62 * u.morph) * (0.38 + light * 0.62) : kind === 1 ? 0.58 : 0.94;
+        const strength = kind === 0 ? (0.48 + 0.52 * u.morph) * (0.5 + light * 0.5) : kind === 1 ? 0.58 : 0.94;
         const radius = Math.max(0.3, points[offset + 6] * perspective * sizeFactor) * (kind === 2 ? 2.2 : 3);
         const x = u.centerX + points[offset] * u.scale * perspective;
         const y = u.centerY - points[offset + 1] * u.scale * perspective;

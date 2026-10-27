@@ -8,7 +8,7 @@
 //   2. Функции модуля: smootherstep.
 //   3. UniverseStore: constructor, syncViewportLayoutMode, parseUrlParameters, formatTimestamp,
 //      startPhaseWatchdog, reportRendererError, getState, getSceneBuffer, getQualityGovernor, subscribe,
-//      notifyListeners, setFinaleCardHovered, setPhase, togglePause, setTabHidden, toggleAutoCycle,
+//      notifyListeners, setFinaleCardHovered, captureOuroborosRelease, setPhase, togglePause, setTabHidden, toggleAutoCycle,
 //      setAudioEnabled, setAudioVolume, setInspectionLevel, toggleLayer, addTerminalLog, emitEvent,
 //      emitEventOnce, appendLogEvent, triggerUniverseRestart, completeRestartToVoid, updateTelemetry.
 // ============================================================================
@@ -103,6 +103,8 @@ export interface UniverseState {
     finaleReachedOnce: boolean;
     /** null до начала подъёма; активные секунды [0..12], сохраняемые между фазами и циклами. */
     finaleRiseElapsedSec: number | null;
+    /** Снимок видимого эпизода при входе в VOID; null исключает появление формы из ничего. */
+    ouroborosRelease: { readonly ageSec: number; readonly timeSec: number } | null;
     timeScale: number;
     gravityMultiplier: number;
     audioEnabled: boolean;
@@ -268,6 +270,7 @@ class UniverseStore {
             isFinaleCardHovered: false,
             finaleReachedOnce: false,
             finaleRiseElapsedSec: null,
+            ouroborosRelease: null,
             timeScale: 1.0,
             gravityMultiplier: 1.0,
             audioEnabled: true,
@@ -478,6 +481,18 @@ class UniverseStore {
     }
     // --- КОНЕЦ ФУНКЦИИ setFinaleCardHovered (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ captureOuroborosRelease (UniverseStore) ---
+    private captureOuroborosRelease(): UniverseState['ouroborosRelease'] {
+        const state = this.state;
+        if (state.currentPhase !== '05_SINGULARITY' || state.finaleRiseElapsedSec === null ||
+            (state.singularityAct !== 'ACT_D_GITHUB_CARD' && state.singularityAct !== 'RESTART_COLLAPSE')) return null;
+        const ageSec = Math.max(0, Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55));
+        const cycleTime = state.singularityAct === 'RESTART_COLLAPSE'
+            ? Math.min(108, state.telemetry.simulationTimeSec) : state.telemetry.simulationTimeSec;
+        return { ageSec, timeSec: cycleTime + Math.max(0, state.cycleCount - 1) * 108 };
+    }
+    // --- КОНЕЦ ФУНКЦИИ captureOuroborosRelease (UniverseStore) ---
+
     // --- НАЧАЛО ФУНКЦИИ setPhase (UniverseStore) ---
     public setPhase(phase: PhaseId): void {
         if (
@@ -492,6 +507,7 @@ class UniverseStore {
         if (this.state.finaleReachedOnce && this.state.finaleRiseElapsedSec === null) {
             this.state.finaleRiseElapsedSec = 0;
         }
+        this.state.ouroborosRelease = phase === '01_VOID' ? this.captureOuroborosRelease() : null;
         const meta = UNIVERSE_PHASES[phase];
         this.state.currentPhase = phase;
         this.state.phaseMeta = meta;
@@ -694,6 +710,7 @@ class UniverseStore {
 
     // --- НАЧАЛО ФУНКЦИИ completeRestartToVoid (UniverseStore) ---
     public completeRestartToVoid(): void {
+        this.state.ouroborosRelease = this.captureOuroborosRelease();
         this.state.cycleCount += 1;
         this.emittedEventKeys.clear();
         const voidMeta = UNIVERSE_PHASES['01_VOID'];

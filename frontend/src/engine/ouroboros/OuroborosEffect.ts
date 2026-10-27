@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/engine/ouroboros/OuroborosEffect.ts
 // НАЗНАЧЕНИЕ: Общий эпизод Rust/TS-геометрии, WebGPU и резервного Canvas.
 // РАЗДЕЛЫ: 1. Состояние; 2. Общий кадр; 3. GPU и освобождение; 4. Диагностика.
-// ФУНКЦИИ: constructor, getFieldVisibility, hasSameGpuPoints, render, initializeGpu,
+// ФУНКЦИИ: constructor, hasSameGpuPoints, render, initializeGpu,
 // failGpu, releaseAtlas, dispose, publishDiagnostics.
 // ============================================================================
 import { smootherstep, type UniverseState } from '../../store/universeState';
@@ -64,14 +64,6 @@ export class OuroborosEffect {
     // КОНЕЦ РАЗДЕЛА 1
 
     // НАЧАЛО РАЗДЕЛА 2. ОБЩИЙ КАДР
-    // НАЧАЛО ФУНКЦИИ getFieldVisibility
-    /** Частицы передают свет общей форме и возвращают его после распыления. */
-    public getFieldVisibility(state: Readonly<UniverseState>): number {
-        if (this.disposed || this.disabled || !this.overlay || !this.fieldLinked) return 1;
-        return 1 - 0.94 * Math.min(1, evaluateOuroborosEpisode(state, this.preview).opacity / 0.76);
-    }
-    // КОНЕЦ ФУНКЦИИ getFieldVisibility
-
     // НАЧАЛО ФУНКЦИИ hasSameGpuPoints
     /** Фиксированные часы не скрывают изменение источников при resize или смене поля. */
     private hasSameGpuPoints(): boolean {
@@ -138,7 +130,7 @@ export class OuroborosEffect {
                     this.lastGpuMorph = u.morph;
                     this.lastGpuEnergy = u.energy;
                     this.lastGpuCenterY = u.centerY;
-                    for (let i = 0; i < this.frame.count * 8; i++) this.lastGpuPoints[i] = this.frame.points[i];
+                    this.lastGpuPoints.set(this.frame.points.subarray(0, this.frame.count * 8));
                 }
             } else submitted = true;
             this.overlay.style.visibility = submitted ? 'visible' : 'hidden';

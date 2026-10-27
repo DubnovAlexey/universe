@@ -347,6 +347,7 @@ export class CipherOdometerEngine {
                 }
                 const excitedUntil = this.hoverExcitedUntilMs.get(globalIdx) ?? 0;
                 const hoverRemainingMs = Math.max(0, excitedUntil - nowMs);
+                if (excitedUntil > 0 && hoverRemainingMs === 0) this.hoverExcitedUntilMs.delete(globalIdx);
                 const isHoverSpinning = hoverRemainingMs > 0;
 
                 const isLocked =

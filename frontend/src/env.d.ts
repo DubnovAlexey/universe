@@ -1,10 +1,11 @@
+/// <reference types="vite/client" />
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/env.d.ts
-// НАЗНАЧЕНИЕ: Глобальные амбиентные декларации типов CSS/WGSL/WASM и JSX (v2.0)
+// НАЗНАЧЕНИЕ: Клиентские типы Vite, глобальные декларации CSS/WGSL/WASM и JSX.
 // ЗАДАЧИ ФАЙЛА:
 // 1. Разрешить side-effect импорт таблиц стилей (*.css) и шейдеров (*.wgsl) без ошибки TS2882.
-// 2. Описать глобальные переменные окружения ImportMetaEnv (BASE_URL, PUBLIC_WS_URL).
+// 2. Подключить import.meta.glob и базовое окружение Vite, добавить PUBLIC_WS_URL.
 // 3. Согласовать тип JSX.Element со стандартным DOM Element для слоёв Layer2-Layer5.tsx.
 // ВАЖНО: Файл не должен содержать top-level export {}, чтобы оставаться глобальным!
 // ============================================================================
@@ -34,12 +35,7 @@ declare module '*.wasm' {
 
 // РАЗДЕЛ 2. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ IMPORTMETA
 interface ImportMetaEnv {
-    readonly BASE_URL: string;
     readonly PUBLIC_WS_URL?: string;
-}
-
-interface ImportMeta {
-    readonly env: ImportMetaEnv;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace

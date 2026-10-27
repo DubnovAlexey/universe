@@ -43,6 +43,7 @@ async function requireFile(relativePath, description) {
 const html = await readFile(htmlPath, 'utf8');
 const requiredHooks = [
     ['universe-canvas', 'main canvas'],
+    ['ouroboros-canvas', 'volumetric overlay canvas'],
     ['ui-audio-unlock-banner', 'audio fallback control'],
     ['layer5-finale-root', 'finale-card mount point'],
     ['btn-toggle-audio', 'audio toggle'],
@@ -99,6 +100,22 @@ if (WebAssembly.Module.imports(wasmModule).length !== 0) {
     throw new Error('Published Rust physics artifact must run without JavaScript imports or glue.');
 }
 const wasmInstance = await WebAssembly.instantiate(wasmModule, {});
+for (const exportName of ['get_ouroboros_abi_version', 'get_ouroboros_capacity', 'get_ouroboros_points_ptr', 'sample_ouroboros']) {
+    if (typeof wasmInstance.exports[exportName] !== 'function') {
+        throw new Error(`Published Rust geometry artifact is missing: ${exportName}`);
+    }
+}
+if (wasmInstance.exports.get_ouroboros_abi_version() !== 1 || wasmInstance.exports.get_ouroboros_capacity() !== 3072 ||
+    wasmInstance.exports.sample_ouroboros(104729, 8, 0, 1, 0.5) !== 8) {
+    throw new Error('Published Ouroboros geometry must implement ABI v1 and produce a valid sample.');
+}
+const geometryPointer = wasmInstance.exports.get_ouroboros_points_ptr();
+if (!(wasmInstance.exports.memory instanceof WebAssembly.Memory) || !Number.isInteger(geometryPointer) ||
+    geometryPointer < 0 || geometryPointer % 4 !== 0 ||
+    geometryPointer + 8 * 32 > wasmInstance.exports.memory.buffer.byteLength ||
+    !new Float32Array(wasmInstance.exports.memory.buffer, geometryPointer, 8 * 8).every(Number.isFinite)) {
+    throw new Error('Published Ouroboros geometry points outside valid memory or contains non-finite values.');
+}
 if (
     typeof wasmInstance.exports.get_abi_version !== 'function' ||
     wasmInstance.exports.get_abi_version() !== 1

@@ -344,10 +344,6 @@ export class UniverseRenderer {
             this.backgroundFields.nodes
         );
 
-        // Поле передаёт свои реальные координаты форме, не меняя физику и топологию.
-        ctx.save();
-        ctx.globalAlpha *= this.ouroboros.getFieldVisibility(state);
-
         // 8. Отрисовка 3 классов кривых Безье графа NEXUS и комет синаптических импульсов
         if (state.layers.layer3_topologyGraph || state.layers.layer5_truthXRayMode) {
             renderTopologyEdgesAndPulses(
@@ -371,7 +367,6 @@ export class UniverseRenderer {
             audioSnap
         );
 
-        ctx.restore();
         ctx.restore();
 
         // 10. Квантовый одометр на холсте (разлёт символов из Точки Нуля в Акте D)

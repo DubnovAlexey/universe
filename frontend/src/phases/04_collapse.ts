@@ -1,10 +1,10 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/phases/04_collapse.ts
-// НАЗНАЧЕНИЕ: MASTER 04 v2.0 — TENSION / BREACH: 3 аномалии и натяжение колец (61–79 с)
+// НАЗНАЧЕНИЕ: MASTER 04 — TENSION / BREACH: 3 аномалии и натяжение колец (64–79 с)
 // ЗАДАЧИ ФАЙЛА:
 // 1. Сохранять 5 встречных колец и полушария мозга в центре экрана как носители натяжения (D-3).
-// 2. На 61–66 с по очереди проводить три разных жеста пространства:
+// 2. На 64–69.25 с по очереди проводить три разных жеста пространства:
 //    - Аномалия 1 изгибает дальние филаменты (Z2/Z3);
 //    - Аномалия 2 упруго натягивает аксонные магистрали (Z1);
 //    - Аномалия 3 преломляет ближние звёзды (Z0/Z1).
@@ -37,13 +37,13 @@ export function computeCollapseStormTarget(
     const baseAngle =
         ((p.id * 1.6180339) % (Math.PI * 2)) + simTimeSec * (0.42 + ringGroup * 0.08) * spinDir;
 
-    // 2. Три последовательные аномалии на 61–66 с (phaseProgress 0.00 .. 0.35):
+    // 2. Три последовательные аномалии на 64–69.25 с (phaseProgress 0.00 .. 0.35):
     // у каждой есть приближение, пик и упругое затухание
     const env1 = Math.exp(-Math.pow((phaseProgress - 0.08) / 0.09, 2)); // Дальние филаменты
     const env2 = Math.exp(-Math.pow((phaseProgress - 0.19) / 0.10, 2)); // Аксонные магистрали
     const env3 = Math.exp(-Math.pow((phaseProgress - 0.31) / 0.10, 2)); // Ближние звёзды
 
-    let anomalyDisplacement = 0;
+    let anomalyDisplacement: number;
     if (p.depthTier === 'BACKGROUND' || p.depthTier === 'DEEP_LAYER') {
         anomalyDisplacement = Math.sin(baseAngle * 2.0 - simTimeSec * 3.0) * 0.15 * env1;
     } else if (p.id % 3 === 0) {

@@ -13,7 +13,7 @@
 // миграция; tryLoadWasmModule — асинхронная загрузка; useTypescriptFallback — отказ;
 // refreshMemoryViewsIfNeeded — указатели; stepSymplecticPhysics — расчёт;
 // getKuramotoPhase/getOrbitPosition/getIntegratedSimSec/isWasmActive — диагностика.
-// sampleOuroboros/getOuroborosCount/isOuroborosWasmActive — отдельный optional ABI формы.
+// trySampleNativeOuroboros/sampleOuroboros/getOuroborosCount/isOuroborosWasmActive — optional ABI формы.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -372,37 +372,35 @@ export class WasmPhysicsBridge {
         if (this.wasmExports) {
             try {
                 const expectedTime = this.integratedSimSec + (count > 0 ? safeDt : 0);
-                if (this.wasmExports.step_verlet_nbody(safeDt, 1.0, safeCoupling) !== 1) {
-                    throw new Error('WASM rejected physics step');
+                if (this.wasmExports.step_verlet_nbody(safeDt, 1.0, safeCoupling) === 1 && this.refreshMemoryViewsIfNeeded()) {
+                    const drift = this.wasmExports.get_energy_drift();
+                    const order = this.wasmExports.get_kuramoto_r();
+                    const integratedTime = this.wasmExports.get_integrated_time();
+                    if (this.wasmPosView!.every(Number.isFinite) && this.wasmVelView!.every(Number.isFinite) &&
+                        this.wasmPhaseView!.every(Number.isFinite) && Number.isFinite(drift) && drift >= 0 &&
+                        Number.isFinite(order) && order >= 0 && order <= 1 &&
+                        Number.isFinite(integratedTime) && Math.abs(integratedTime - expectedTime) <= 1e-8) {
+                        // Зеркала обновляются целиком только после проверки всех результатов.
+                        this.kuramotoPhases.set(this.wasmPhaseView!);
+                        for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
+                            this.verletOrbitPos[i * 2] = this.wasmPosView![i * 3];
+                            this.verletOrbitPos[i * 2 + 1] = this.wasmPosView![i * 3 + 1];
+                            this.verletOrbitVel[i * 2] = this.wasmVelView![i * 3];
+                            this.verletOrbitVel[i * 2 + 1] = this.wasmVelView![i * 3 + 1];
+                        }
+                        this.integratedSimSec = integratedTime;
+                        this.nativeActive = true;
+                        const dur = performance.now() - startMs;
+                        integrationRegistry.updateModuleStatus('wasm-physics', 'ready');
+                        integrationRegistry.recordModuleStep('wasm-physics', dur, 24, 1024 * 4 + 64 * 4 * 4);
+                        return { energyDriftRatio: drift, kuramotoOrderR: Number(order.toFixed(4)),
+                            barycenter1: [b1x, b1y], barycenter2: [b2x, b2y], stepDurationMs: dur, isWasmNative: true };
+                    }
                 }
-                if (!this.refreshMemoryViewsIfNeeded()) throw new Error('WASM memory changed incompatibly');
-                const drift = this.wasmExports.get_energy_drift();
-                const order = this.wasmExports.get_kuramoto_r();
-                const integratedTime = this.wasmExports.get_integrated_time();
-                if (!this.wasmPosView!.every(Number.isFinite) || !this.wasmVelView!.every(Number.isFinite) ||
-                    !this.wasmPhaseView!.every(Number.isFinite) || !Number.isFinite(drift) || drift < 0 ||
-                    !Number.isFinite(order) || order < 0 || order > 1 ||
-                    !Number.isFinite(integratedTime) || Math.abs(integratedTime - expectedTime) > 1e-8) {
-                    throw new Error('WASM returned invalid state');
-                }
-                // Commit complete mirrors only after validation: failures resume TS from its last good step.
-                this.kuramotoPhases.set(this.wasmPhaseView!);
-                for (let i = 0; i < VERLET_ENSEMBLE_COUNT; i++) {
-                    this.verletOrbitPos[i * 2] = this.wasmPosView![i * 3];
-                    this.verletOrbitPos[i * 2 + 1] = this.wasmPosView![i * 3 + 1];
-                    this.verletOrbitVel[i * 2] = this.wasmVelView![i * 3];
-                    this.verletOrbitVel[i * 2 + 1] = this.wasmVelView![i * 3 + 1];
-                }
-                this.integratedSimSec = integratedTime;
-                this.nativeActive = true;
-                const dur = performance.now() - startMs;
-                integrationRegistry.updateModuleStatus('wasm-physics', 'ready');
-                integrationRegistry.recordModuleStep('wasm-physics', dur, 24, 1024 * 4 + 64 * 4 * 4);
-                return { energyDriftRatio: drift, kuramotoOrderR: Number(order.toFixed(4)),
-                    barycenter1: [b1x, b1y], barycenter2: [b2x, b2y], stepDurationMs: dur, isWasmNative: true };
             } catch {
-                this.useTypescriptFallback();
+                // Trap или исключение нативного провайдера также выбирает резервный расчёт.
             }
+            this.useTypescriptFallback();
         }
 
         if (safeDt > 0 && count > 0) {
@@ -510,6 +508,42 @@ export class WasmPhysicsBridge {
     // КОНЕЦ ФУНКЦИИ stepSymplecticPhysics
 
     // НАЧАЛО ПОДРАЗДЕЛА. OPTIONAL ABI ОБЪЁМНОЙ ФОРМЫ
+    // НАЧАЛО ФУНКЦИИ trySampleNativeOuroboros
+    /** Ожидаемый отказ возвращает false; trap провайдера обрабатывается вызывающим методом. */
+    private trySampleNativeOuroboros(exports: RustWasmExports, seed: number, count: number,
+        timeSec: number, morph: number, energy: number): boolean {
+        if (typeof exports.get_ouroboros_abi_version !== 'function' ||
+            typeof exports.get_ouroboros_capacity !== 'function' ||
+            typeof exports.get_ouroboros_points_ptr !== 'function' ||
+            typeof exports.sample_ouroboros !== 'function' ||
+            exports.get_ouroboros_abi_version() !== 1 || exports.get_ouroboros_capacity() !== OUROBOROS_CAPACITY) return false;
+        if (exports.sample_ouroboros(seed, count, timeSec, morph, energy) !== count) return false;
+        const pointer = exports.get_ouroboros_points_ptr();
+        const buffer = exports.memory.buffer;
+        const length = OUROBOROS_CAPACITY * OUROBOROS_STRIDE;
+        if (!Number.isInteger(pointer) || pointer <= 0 || pointer % 4 !== 0 || pointer + length * 4 > buffer.byteLength) return false;
+        if (this.ouroborosMemoryBuffer !== buffer || this.ouroborosMemoryView?.byteOffset !== pointer) {
+            this.ouroborosMemoryView = new Float32Array(buffer, pointer, length);
+            this.ouroborosMemoryBuffer = buffer;
+        }
+        const view = this.ouroborosMemoryView!;
+        const used = count * OUROBOROS_STRIDE;
+        // Проверка всего активного диапазона предшествует первой записи в общий render-буфер.
+        for (let index = 0; index < used; index++) {
+            if (!Number.isFinite(view[index])) return false;
+        }
+        for (let index = 0; index < used; index += OUROBOROS_STRIDE) {
+            const kind = view[index + 7];
+            const nx = view[index + 3], ny = view[index + 4], nz = view[index + 5];
+            const normalLengthSq = nx * nx + ny * ny + nz * nz;
+            if (!Number.isInteger(kind) || kind < 0 || kind > 2 || view[index + 6] <= 0 ||
+                normalLengthSq < 0.999 || normalLengthSq > 1.001) return false;
+        }
+        this.ouroborosPoints.set(view.subarray(0, used));
+        return true;
+    }
+    // КОНЕЦ ФУНКЦИИ trySampleNativeOuroboros
+
     // НАЧАЛО ФУНКЦИИ sampleOuroboros
     /** Буфер принадлежит JS и сохраняет identity даже после memory.grow или отказа Rust. */
     public sampleOuroboros(seed: number, count: number, timeSec: number, morph: number, energy: number): Float32Array {
@@ -521,49 +555,17 @@ export class WasmPhysicsBridge {
         const exports = this.wasmExports;
         if (exports && !this.ouroborosNativeFailed) {
             try {
-                if (typeof exports.get_ouroboros_abi_version !== 'function' ||
-                    typeof exports.get_ouroboros_capacity !== 'function' ||
-                    typeof exports.get_ouroboros_points_ptr !== 'function' ||
-                    typeof exports.sample_ouroboros !== 'function' ||
-                    exports.get_ouroboros_abi_version() !== 1 || exports.get_ouroboros_capacity() !== OUROBOROS_CAPACITY) {
-                    throw new Error('Optional shape ABI unavailable');
+                if (this.trySampleNativeOuroboros(exports, seed, count, timeSec, morph, energy)) {
+                    this.ouroborosCount = count;
+                    this.ouroborosNativeActive = true;
+                    return this.ouroborosPoints;
                 }
-                if (exports.sample_ouroboros(seed, count, timeSec, morph, energy) !== count) {
-                    throw new Error('WASM rejected shape sample');
-                }
-                const pointer = exports.get_ouroboros_points_ptr();
-                const buffer = exports.memory.buffer;
-                const length = OUROBOROS_CAPACITY * OUROBOROS_STRIDE;
-                if (!Number.isInteger(pointer) || pointer <= 0 || pointer % 4 !== 0 || pointer + length * 4 > buffer.byteLength) {
-                    throw new Error('Invalid shape memory range');
-                }
-                if (this.ouroborosMemoryBuffer !== buffer || this.ouroborosMemoryView?.byteOffset !== pointer) {
-                    this.ouroborosMemoryView = new Float32Array(buffer, pointer, length);
-                    this.ouroborosMemoryBuffer = buffer;
-                }
-                const view = this.ouroborosMemoryView!;
-                const used = count * OUROBOROS_STRIDE;
-                // Проверка всего активного диапазона предшествует первой записи в общий render-буфер.
-                for (let index = 0; index < used; index++) {
-                    if (!Number.isFinite(view[index])) throw new Error('Nonfinite shape sample');
-                }
-                for (let index = 0; index < used; index += OUROBOROS_STRIDE) {
-                    const kind = view[index + 7];
-                    const nx = view[index + 3], ny = view[index + 4], nz = view[index + 5];
-                    const normalLengthSq = nx * nx + ny * ny + nz * nz;
-                    if (!Number.isInteger(kind) || kind < 0 || kind > 2 || view[index + 6] <= 0 ||
-                        normalLengthSq < 0.999 || normalLengthSq > 1.001) throw new Error('Invalid shape point');
-                }
-                for (let index = 0; index < used; index++) this.ouroborosPoints[index] = view[index];
-                this.ouroborosCount = count;
-                this.ouroborosNativeActive = true;
-                return this.ouroborosPoints;
             } catch {
-                // Ошибка графической формы не сбрасывает физические массивы и часы ABI v1.
-                this.ouroborosNativeFailed = true;
-                this.ouroborosMemoryView = null;
-                this.ouroborosMemoryBuffer = null;
+                // Trap или исключение optional ABI не сбрасывает физический провайдер.
             }
+            this.ouroborosNativeFailed = true;
+            this.ouroborosMemoryView = null;
+            this.ouroborosMemoryBuffer = null;
         }
         this.ouroborosNativeActive = false;
         this.ouroborosCount = fillOuroborosPoints(this.ouroborosPoints, seed, count, timeSec, morph, energy);

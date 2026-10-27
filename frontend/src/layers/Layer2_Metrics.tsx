@@ -687,7 +687,7 @@ export function renderLayer2MetricsView(snap: Readonly<UniverseState>): Element 
 
                 <div className="metrics-grid">
                     <div className="metric-box">
-                        <span className="label">FPS / P95 [ts/renderer.ts]</span>
+                        <span className="label">FPS / P95 [ts/UniverseRenderer.ts]</span>
                         <span
                             className="value"
                             data-breath-slot="l2_fps"

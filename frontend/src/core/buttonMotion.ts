@@ -52,7 +52,10 @@ const ALIGN_DURATION_SEC = 0.65;
 const RELEASE_DURATION_SEC = 0.9;
 const SHADOW_INTERVAL_SEC = 1 / 12;
 const SHADOW_PHASE_STEP = 0.618033988749895;
-const GITHUB_ACCENT_PERIOD_SEC = 48;
+const GITHUB_ACCENT_PERIOD_SEC = 18;
+const GITHUB_HEAT_COLORS = [
+    [255, 221, 156], [255, 198, 164], [255, 229, 224], [193, 217, 255],
+] as const;
 const PHASE_SPEED: Readonly<Record<VisualSignalSnapshot['phase'], number>> = Object.freeze({
     '01_VOID': 0.94, '02_GENESIS': 1.015, '03_EVOLUTION': 1.04,
     '04_COLLAPSE': 0.985, '05_SINGULARITY': 0.92,
@@ -291,11 +294,18 @@ export class ButtonMotionController {
     // КОНЕЦ ФУНКЦИИ publishShadow
 
     // НАЧАЛО ФУНКЦИИ publishGithubAccent
-    /** Светлая медь и пыльная роза сохраняют контраст на синей грани; полный перелив длится 48 секунд. */
+    /** Раскалённый металл: янтарь, коралл, розовый свет и холодный отблеск без потери контраста. */
     private publishGithubAccent(pose: ButtonPose): void {
         if (!pose.githubAccent) return;
-        const mix = 0.5 - Math.cos(pose.accentElapsedSec * Math.PI * 2 / GITHUB_ACCENT_PERIOD_SEC) * 0.5;
-        const color = `rgb(255 ${Math.round(209 - mix)} ${Math.round(172 + 48 * mix)})`;
+        const phase = pose.accentElapsedSec / GITHUB_ACCENT_PERIOD_SEC * GITHUB_HEAT_COLORS.length;
+        const index = Math.floor(phase) % GITHUB_HEAT_COLORS.length;
+        const mix = easeC2(phase - Math.floor(phase));
+        const from = GITHUB_HEAT_COLORS[index];
+        const to = GITHUB_HEAT_COLORS[(index + 1) % GITHUB_HEAT_COLORS.length];
+        const r = Math.round(from[0] + (to[0] - from[0]) * mix);
+        const g = Math.round(from[1] + (to[1] - from[1]) * mix);
+        const b = Math.round(from[2] + (to[2] - from[2]) * mix);
+        const color = `rgb(${r} ${g} ${b})`;
         if (color === pose.lastAccentColor) return;
         pose.element.style.setProperty(GITHUB_INK_PROPERTY, color);
         pose.lastAccentColor = color;

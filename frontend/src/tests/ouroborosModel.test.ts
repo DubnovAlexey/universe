@@ -110,6 +110,12 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     check(readableProjection,
         'The formed body keeps a readable projected minor axis above62% of its major axis across two cycles, with finite unit lighting normals');
 
+    fillOuroborosPoints(points, 104729, 512, 0, 1, 0.7);
+    const eyeDistance = Math.hypot(points[0] - points[8], points[1] - points[9], points[2] - points[10]);
+    check(points[6] >= 2.5 && points[14] >= 2.5 && points[7] === 0 && points[15] === 0 &&
+        eyeDistance > 0.05 && eyeDistance < 0.4 && validPoints(points, 512),
+        'Two distinct larger luminous eye cores remain part of the head and keep valid normals at reduced quality');
+
     const guard = new Float32Array(16).fill(19);
     const invalid = [[-1, 1, 0, 1, 0], [0, 1.5, 0, 1, 0], [0, 3073, 0, 1, 0],
         [0, 1, Number.NaN, 1, 0], [0, 1, -1, 1, 0], [0, 1, 0, -0.1, 0], [0, 1, 0, 1, Infinity]];

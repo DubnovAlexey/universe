@@ -42,6 +42,10 @@ const requiredFunctionExports = [
     'get_energy_drift',
     'get_kuramoto_r',
     'evaluate_lens_refraction',
+    'get_ouroboros_abi_version',
+    'get_ouroboros_capacity',
+    'get_ouroboros_points_ptr',
+    'sample_ouroboros',
 ];
 // КОНЕЦ РАЗДЕЛА 1
 
@@ -123,6 +127,16 @@ async function validateRawWasm(bytes) {
     const abiVersion = instance.exports.get_abi_version();
     if (abiVersion !== 1) {
         throw new Error(`Expected raw WASM ABI version 1, received ${String(abiVersion)}.`);
+    }
+    if (instance.exports.get_ouroboros_abi_version() !== 1 || instance.exports.get_ouroboros_capacity() !== 3072 ||
+        instance.exports.sample_ouroboros(104729, 8, 0, 1, 0.5) !== 8) {
+        throw new Error('The release artifact must provide Ouroboros geometry ABI v1 with capacity3072.');
+    }
+    const geometryPointer = instance.exports.get_ouroboros_points_ptr();
+    if (!Number.isInteger(geometryPointer) || geometryPointer < 0 || geometryPointer % 4 !== 0 ||
+        geometryPointer + 8 * 32 > instance.exports.memory.buffer.byteLength ||
+        !new Float32Array(instance.exports.memory.buffer, geometryPointer, 8 * 8).every(Number.isFinite)) {
+        throw new Error('The release artifact returned invalid Ouroboros geometry memory.');
     }
 }
 // --- КОНЕЦ ФУНКЦИИ validateRawWasm ---

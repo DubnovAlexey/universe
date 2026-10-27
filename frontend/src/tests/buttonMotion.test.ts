@@ -396,7 +396,7 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     const github = makeHarness(3, [], [], 1);
     const accentProperty = '--github-ink-color';
     const firstAccent = github.buttons[1].values.get(accentProperty);
-    let previousChannels = [255, 209, 172];
+    let previousChannels = firstAccent!.match(/\d+/g)!.map(Number);
     let warmAndReadable = true;
     const accentColors = new Set<string>();
     // НАЧАЛО ФУНКЦИИ luminance
@@ -406,21 +406,29 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
             [0.2126, 0.7152, 0.0722][index];
     }, 0);
     // КОНЕЦ ФУНКЦИИ luminance
-    for (let frame = 0; frame < 960; frame++) {
+    let sawHotAmber = false;
+    let minAccentLuminance = Infinity, maxAccentLuminance = 0;
+    let sawCoolMetal = false;
+    for (let frame = 0; frame < 360; frame++) {
         github.step(1, { simTimeSec: frame % 2 ? 1000 : -1000 });
         const color = github.buttons[1].values.get(accentProperty)!;
         const channels = color.match(/\d+/g)!.map(Number);
         accentColors.add(color);
-        warmAndReadable &&= channels[0] === 255 && channels[1] >= 208 && channels[1] <= 209 &&
-            channels[2] >= 172 && channels[2] <= 220 &&
-            channels.every((channel, index) => Math.abs(channel - previousChannels[index]) <= 1) &&
-            (luminance(channels) + 0.05) / (luminance([56, 92, 121]) + 0.05) >= 5;
+        sawHotAmber ||= channels[0] > 240 && channels[2] < 190;
+        sawCoolMetal ||= channels[2] > channels[0] + 20;
+        const accentLuminance = luminance(channels);
+        minAccentLuminance = Math.min(minAccentLuminance, accentLuminance);
+        maxAccentLuminance = Math.max(maxAccentLuminance, accentLuminance);
+        warmAndReadable &&= channels.every(channel => channel >= 0 && channel <= 255) &&
+            channels.every((channel, index) => Math.abs(channel - previousChannels[index]) <= 3) &&
+            (luminance(channels) + 0.05) / (luminance([56, 92, 121]) + 0.05) >= 4.5;
         previousChannels = channels;
     }
-    check(warmAndReadable && accentColors.size > 40 && github.buttons[1].values.get(accentProperty) === firstAccent &&
+    check(warmAndReadable && sawHotAmber && sawCoolMetal && maxAccentLuminance / minAccentLuminance >= 1.18 &&
+        accentColors.size > 100 && github.buttons[1].values.get(accentProperty) === firstAccent &&
         !github.buttons[0].values.has(accentProperty) && !github.buttons[2].values.has(accentProperty) &&
         github.shared.subscriptions === 1 && github.binding.listenerCount === 15,
-        'Only the GitHub label cycles subtly through warm copper/rose over 48 active seconds, without phase-clock jumps or another scheduler, and retains 5:1 contrast on the brightest blue face');
+        'Only GitHub cycles through visibly lighter/darker hot amber/coral and cool metal over18 active seconds with smooth steps, independent phase-clock jumps and at least4.5:1 text contrast');
     github.step(80);
     const accentBeforePause = github.buttons[1].values.get(accentProperty);
     github.step(40, { isPaused: true });

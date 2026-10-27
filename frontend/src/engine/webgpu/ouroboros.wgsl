@@ -37,28 +37,28 @@ struct CoreOutput {
 
 // НАЧАЛО РАЗДЕЛА 2. ПЕРСПЕКТИВА И ЭКРАННЫЕ КВАДРАТЫ
 // НАЧАЛО ФУНКЦИИ projectPoint
-fn projectPoint(point: PointInput, vertexIndex: u32, spread: f32) -> VertexOutput {
+fn projectPoint(samplePoint: PointInput, vertexIndex: u32, spread: f32) -> VertexOutput {
     var corners = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
         vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0)
     );
     let corner = corners[vertexIndex];
     let cameraDistance = u.placement.z;
-    let perspective = cameraDistance / max(0.35, cameraDistance + point.position.z);
+    let perspective = cameraDistance / max(0.35, cameraDistance + samplePoint.position.z);
     let sizeFactor = clamp(min(u.viewport.x, u.viewport.y) / 800.0, 0.6, 1.2);
-    let radius = max(0.3, point.size * sizeFactor * perspective);
+    let radius = max(0.3, samplePoint.size * sizeFactor * perspective);
     let center = vec2<f32>(
-        u.placement.x + u.material.w * point.position.x * perspective,
-        u.placement.y - u.material.w * point.position.y * perspective
+        u.placement.x + u.material.w * samplePoint.position.x * perspective,
+        u.placement.y - u.material.w * samplePoint.position.y * perspective
     );
     let pixel = center + corner * radius * spread;
-    let depth = clamp((cameraDistance + point.position.z - 0.35) / 7.0, 0.001, 0.999);
+    let depth = clamp((cameraDistance + samplePoint.position.z - 0.35) / 7.0, 0.001, 0.999);
     var out: VertexOutput;
     out.position = vec4<f32>(pixel.x / u.viewport.x * 2.0 - 1.0,
         1.0 - pixel.y / u.viewport.y * 2.0, depth, 1.0);
     out.uv = corner;
-    out.normal = normalize(point.normal + vec3<f32>(0.00001, 0.00002, -0.00003));
-    out.kind = point.kind;
+    out.normal = normalize(samplePoint.normal + vec3<f32>(0.00001, 0.00002, -0.00003));
+    out.kind = samplePoint.kind;
     out.depth = depth;
     out.worldRadius = radius / max(1.0, u.material.w * perspective);
     return out;
@@ -66,15 +66,15 @@ fn projectPoint(point: PointInput, vertexIndex: u32, spread: f32) -> VertexOutpu
 // КОНЕЦ ФУНКЦИИ projectPoint
 
 // НАЧАЛО ФУНКЦИИ vsCore
-@vertex fn vsCore(point: PointInput, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    return projectPoint(point, vertexIndex, 1.0);
+@vertex fn vsCore(samplePoint: PointInput, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    return projectPoint(samplePoint, vertexIndex, 1.0);
 }
 // КОНЕЦ ФУНКЦИИ vsCore
 
 // НАЧАЛО ФУНКЦИИ vsGlow
-@vertex fn vsGlow(point: PointInput, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    let spread = select(2.6, 1.9, point.kind > 0.5 && point.kind < 1.5);
-    return projectPoint(point, vertexIndex, spread);
+@vertex fn vsGlow(samplePoint: PointInput, @builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    let spread = select(2.6, 1.9, samplePoint.kind > 0.5 && samplePoint.kind < 1.5);
+    return projectPoint(samplePoint, vertexIndex, spread);
 }
 // КОНЕЦ ФУНКЦИИ vsGlow
 // КОНЕЦ РАЗДЕЛА 2
@@ -96,7 +96,7 @@ fn projectPoint(point: PointInput, vertexIndex: u32, spread: f32) -> VertexOutpu
     let shadow = mix(vec3<f32>(0.025, 0.055, 0.12), vec3<f32>(0.045, 0.075, 0.15), u.material.y * 0.45);
     let pearl = mix(vec3<f32>(0.55, 0.76, 0.86), vec3<f32>(0.67, 0.84, 0.93), u.material.y * 0.3);
     let color = shadow * (0.7 + facing * 0.3)
-        + pearl * pow(diffuse, 0.8) * select(0.94, 1.06, satellite)
+        + pearl * (0.12 + pow(diffuse, 0.8) * select(0.94, 1.06, satellite))
         + vec3<f32>(0.23, 0.65, 0.83) * rim * (0.4 + u.material.z * 0.3)
         + vec3<f32>(0.85, 0.95, 1.0) * specular * select(0.34, 0.8, satellite);
     let coverage = 1.0 - smoothstep(0.45, 1.0, radiusSquared);
@@ -120,7 +120,7 @@ fn projectPoint(point: PointInput, vertexIndex: u32, spread: f32) -> VertexOutpu
     let satellite = input.kind > 1.5;
     let envelope = exp(-radiusSquared * select(4.8, 3.2, dust)) * (1.0 - smoothstep(0.5, 1.0, radiusSquared));
     let breath = 0.96 + 0.04 * sin(u.viewport.w * 0.7 + input.normal.x * 3.0);
-    let intensity = select(select(0.1, 0.22, satellite), 0.38, dust) * (0.65 + u.material.z * 0.35);
+    let intensity = select(select(0.16, 0.22, satellite), 0.38, dust) * (0.65 + u.material.z * 0.35);
     let alpha = envelope * intensity * u.material.x * breath;
     let dustColor = vec3<f32>(0.35, 0.60, 0.78);
     let pearlGlow = mix(vec3<f32>(0.2, 0.47, 0.64), vec3<f32>(0.34, 0.62, 0.78), u.material.y * 0.3);

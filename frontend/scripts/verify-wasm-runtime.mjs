@@ -176,17 +176,22 @@ async function verifyOuroborosGeometry(WasmPhysicsBridge, SceneBufferSoA, fillOu
     fillOuroborosPoints(expected, 104729, 3072, 17, 0.8, 0.5);
     assert.deepEqual(stable, expected, 'Missing optional ABI selects the exact TS geometry');
 
-    for (const defect of ['trap', 'pointer', 'version', 'capacity', 'count', 'nan']) {
+    for (const defect of ['trap', 'pointer', 'bounds', 'version', 'capacity', 'count', 'nan', 'normal', 'radius', 'kind', 'material']) {
         const actual = await instantiate();
         const altered = { ...actual };
         if (defect === 'trap') altered.sample_ouroboros = () => { throw new Error('Injected shape trap'); };
         else if (defect === 'pointer') altered.get_ouroboros_points_ptr = () => 3;
+        else if (defect === 'bounds') altered.get_ouroboros_points_ptr = () => actual.memory.buffer.byteLength - 4;
         else if (defect === 'version') altered.get_ouroboros_abi_version = () => 2;
         else if (defect === 'capacity') altered.get_ouroboros_capacity = () => 3071;
         else if (defect === 'count') altered.sample_ouroboros = () => 3071;
         else altered.sample_ouroboros = (...args) => {
             const written = actual.sample_ouroboros(...args);
-            new Float32Array(actual.memory.buffer, actual.get_ouroboros_points_ptr(), 8)[0] = NaN;
+            const point = new Float32Array(actual.memory.buffer, actual.get_ouroboros_points_ptr(), 8);
+            if (defect === 'nan') point[0] = NaN;
+            else if (defect === 'normal') point.fill(0, 3, 6);
+            else if (defect === 'radius') point[6] = 0;
+            else point[7] = defect === 'kind' ? 1.5 : 3;
             return written;
         };
         assert.ok(geometry.attachWasmExports(altered));
@@ -284,6 +289,41 @@ try {
     assert.equal(step(rejected, 0).isWasmNative, false, 'Nonthrowing rejection at dt=0 must not report ACTIVE');
     assert.equal(rejected.isWasmActive(), false);
     console.log('[PASS] Trap/rejected step resume TS; invalid ABI/pointers are rejected'); passed++;
+
+    // Повреждённый результат не переносится в зеркала; резерв продолжает последний принятый шаг.
+    const physicsDefects = ['memory', 'position', 'velocity', 'phase', 'drift', 'drift-nan',
+        'order', 'order-nan', 'time', 'time-nan', 'metric-trap'];
+    for (const defect of physicsDefects) {
+        const actual = await instantiate();
+        let sampled = false;
+        const altered = { ...actual, step_verlet_nbody: (...args) => {
+            const status = actual.step_verlet_nbody(...args);
+            sampled = true;
+            const pointer = defect === 'position' ? actual.get_positions_ptr() :
+                defect === 'velocity' ? actual.get_velocities_ptr() : actual.get_phases_ptr();
+            if (['position', 'velocity', 'phase'].includes(defect)) new Float32Array(actual.memory.buffer, pointer, 1)[0] = NaN;
+            return status;
+        } };
+        if (defect === 'memory') altered.get_positions_ptr = () => sampled ? 3 : actual.get_positions_ptr();
+        else if (defect === 'drift' || defect === 'drift-nan') altered.get_energy_drift = () => defect === 'drift' ? -1 : NaN;
+        else if (defect === 'order' || defect === 'order-nan') altered.get_kuramoto_r = () => defect === 'order' ? 1.1 : NaN;
+        else if (defect === 'time' || defect === 'time-nan') altered.get_integrated_time = () => defect === 'time' ? actual.get_integrated_time() + 1 : NaN;
+        else if (defect === 'metric-trap') altered.get_energy_drift = () => { throw new Error('Injected metric trap'); };
+        const expected = new WasmPhysicsBridge(seed);
+        const candidate = new WasmPhysicsBridge(seed);
+        assert.ok(candidate.attachWasmExports(altered));
+        step(expected, 0.016, 64);
+        assert.equal(step(candidate, 0.016, 64).isWasmNative, false, `Physics fallback after ${defect}`);
+        assert.equal(candidate.isWasmActive(), false);
+        compare(expected, candidate, 64);
+        step(expected, 0.008, 64); step(candidate, 0.008, 64);
+        compare(expected, candidate, 64);
+        assert.ok(candidate.attachWasmExports(await instantiate()));
+        step(expected, 0.004, 64);
+        assert.equal(step(candidate, 0.004, 64).isWasmNative, true, `Native recovery after ${defect}`);
+        compare(expected, candidate, 64);
+    }
+    console.log(`[PASS] ${physicsDefects.length} invalid physics results reject atomically, continue TS and permit native recovery`); passed++;
     // КОНЕЦ РАЗДЕЛА 2
 
     // НАЧАЛО РАЗДЕЛА 3. ПРОВАЙДЕР → ГЕОМЕТРИЯ → ГРАФ → SOA/DIGEST

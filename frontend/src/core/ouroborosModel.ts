@@ -82,16 +82,20 @@ export function fillOuroborosPoints(
             size = 0.4 + h4;
             kind = OUROBOROS_KIND_DUST;
         } else {
-            const u = h0;
+            // Две устойчивые яркие точки лежат на передней поверхности головы.
+            const eye = i < 2;
+            const u = eye ? 0.035 : i < 34 ? (i % 2 === 0 ? 0.016 : 0.05) + h0 * 0.018 : h0;
             const theta = 0.055 + u * (TAU - 0.11);
-            const phi = h1 * TAU;
+            const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.55 : 0.55) : h1 * TAU;
             const c = Math.cos(theta), s = Math.sin(theta);
             const cp = Math.cos(phi), sp = Math.sin(phi);
             // Одна голова у начала дуги, тонкий хвост у её конца и узкий зазор у рта.
             const headDistance = (u - 0.045) / 0.032;
             const head = Math.exp(-headDistance * headDistance);
+            const jawDistance = (u - 0.012) / 0.020;
+            const jaw = Math.exp(-jawDistance * jawDistance);
             const tail = 0.13 + 0.87 * smooth((1 - u) / 0.17);
-            const tube = (0.088 + 0.012 * Math.sin(theta * 3 + 0.35) + 0.012 * energy) * tail + 0.105 * head;
+            const tube = (0.088 + 0.012 * Math.sin(theta * 3 + 0.35) + 0.012 * energy) * tail + 0.105 * head + 0.05 * jaw;
             const radius = 0.85 + 0.022 * Math.sin(theta * 2 + timeSec * 0.11) * (0.4 + energy * 0.6);
             const bodyX = (radius + tube * cp) * c;
             const bodyY = (radius + tube * cp) * s;
@@ -103,7 +107,8 @@ export function fillOuroborosPoints(
             nx = Math.cos(dustAngle) * (1 - materialize) + cp * c * materialize;
             ny = Math.sin(dustAngle) * (1 - materialize) + cp * s * materialize;
             nz = 0.12 * (1 - materialize) + sp / 0.82 * materialize;
-            size = (0.4 + h4) + (0.8 + h4 * 0.8 + head * 0.35 - (0.4 + h4)) * materialize;
+            const coreSize = eye ? 3.6 : 1.0 + h4 * 0.9 + head * 0.65;
+            size = (0.4 + h4) + (coreSize - (0.4 + h4)) * materialize;
             kind = materialize < 0.5 ? OUROBOROS_KIND_DUST : OUROBOROS_KIND_BODY;
         }
         const length = Math.sqrt(nx * nx + ny * ny + nz * nz);

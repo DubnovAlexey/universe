@@ -165,7 +165,7 @@
         width: 100%;
         min-width: 0;
         padding: 0.26rem 0.14rem;
-        font-size: clamp(0.48rem, 1.85vw, 0.66rem);
+        font-size: clamp(0.78rem, 1.85vw, 0.88rem);
         min-height: 40px;
         line-height: 1.35;
         letter-spacing: -0.02em;
@@ -183,7 +183,7 @@
     }
 
     .phase-number {
-        font-size: 0.62rem;
+        font-size: 0.78rem;
         color: var(--accent-ice);
     }
 
@@ -195,6 +195,7 @@
         padding: 0.32rem 0.42rem;
         justify-content: center;
         gap: 0.24rem;
+        row-gap: 1.8rem;
     }
 
     :root .controls-dock > :nth-child(4n):is(:hover, :focus-visible) {
@@ -205,7 +206,7 @@
         --solid-pad-x: 0.18rem;
         --solid-pad-y: 0.3rem;
         padding: 0.3rem 0.18rem;
-        font-size: clamp(0.58rem, 2.1vw, 0.68rem);
+        font-size: clamp(0.80rem, 2.1vw, 0.90rem);
         white-space: normal;
         overflow-wrap: anywhere;
     }

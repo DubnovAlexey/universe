@@ -82,6 +82,7 @@
     --accent-violet: #6366f1;
     --accent-pearl: #f8fafc;
     --accent-amber: #f59e0b;
+    --github-ink-color: #ffd1ac;
 
     --text-primary: rgba(248, 250, 252, 0.96);
     --text-secondary: rgba(186, 230, 253, 0.88);
@@ -108,7 +109,7 @@
     --solid-depth: 18px;
     --solid-pad-x: 0.72rem;
     --solid-pad-y: 0.4rem;
-    --hud-compact-scale: 0.666667;
+    --hud-compact-scale: 0.75;
     --solid-rest-scale: 1;
     --solid-read-scale: 1.4625;
     --solid-live-scale: var(--solid-rest-scale);

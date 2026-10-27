@@ -102,6 +102,8 @@ export type HonestStatusLabel =
 // ----------------------------------------------------------------------------
 // 3. СТРУКТУРА ОБЪЕКТА МИРА (WORLD ENTITY) И ОГИБАЮЩЕЙ ПЕРЕХОДА (TRANSITION ENVELOPE)
 // ----------------------------------------------------------------------------
+// ОПИСАТЕЛЬНЫЕ КОНТРАКТЫ: спецификация сущностей и переходов, а не структуры живого store.
+// Рантайм использует QuantumParticle, UniverseState и SceneBufferSoA из соответствующих модулей.
 export interface WorldEntity {
     readonly id: number; // Стабильный u32 идентификатор на все 108 секунд цикла
     kind: EntitySemanticKind;
@@ -190,7 +192,7 @@ export interface GenesisToNexusContract {
     stateDigest: number;
 }
 
-// Контракт перехода NEXUS -> BREACH (t ≈ 61 с)
+// Описательный контракт перехода NEXUS -> BREACH (t ≈ 64 с).
 export interface AnomalyScheduleItem {
     readonly anomalyIndex: 0 | 1 | 2;
     targetType: 'FILAMENTS' | 'AXON_TRUNKS' | 'NEAR_STARS';
