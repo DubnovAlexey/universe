@@ -210,7 +210,7 @@ export class RenderPipeline {
         this.isDisposed = true;
         if (this.ditherPattern) {
             this.ditherPattern = null;
-            resourceLedger.trackRelease('textures', 1);
+            resourceLedger.trackPageLifetimeRelease('textures', 1);
         }
     }
     // --- КОНЕЦ ФУНКЦИИ dispose ---

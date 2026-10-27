@@ -2,6 +2,7 @@
 // ФАЙЛ: frontend/src/engine/bootstrap.ts
 // НАЗНАЧЕНИЕ: Активный экземпляр, монтирование слоёв и обработчики страницы.
 // РАЗДЕЛЫ: 1. Экземпляр и доступ; 2. Инициализация и подписки.
+// ФУНКЦИИ: getUniverseRenderer, createUniverseResizeHandler, bootstrapUniverseV2.
 // ============================================================================
 
 import { PHASE_ORDER, universeStore, type PhaseId, type UniverseState } from '../store/universeState';
@@ -29,6 +30,18 @@ export function getUniverseRenderer(): UniverseRenderer | null {
     return activeRenderer;
 }
 // --- КОНЕЦ ФУНКЦИИ getUniverseRenderer ---
+
+// --- НАЧАЛО ФУНКЦИИ createUniverseResizeHandler ---
+/** Завершает перебор до пересчёта viewport: старые ink-метрики не попадают в новые ячейки. */
+export function createUniverseResizeHandler(renderer: Pick<UniverseRenderer, 'handleResize'>): () => void {
+    // --- НАЧАЛО ФУНКЦИИ handleUniverseResize ---
+    return function handleUniverseResize(): void {
+        calmGlyphHover.stopAll();
+        renderer.handleResize();
+    };
+    // --- КОНЕЦ ФУНКЦИИ handleUniverseResize ---
+}
+// --- КОНЕЦ ФУНКЦИИ createUniverseResizeHandler ---
 // КОНЕЦ РАЗДЕЛА 1. АКТИВНЫЙ ЭКЗЕМПЛЯР
 
 // НАЧАЛО РАЗДЕЛА 2. ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
@@ -135,7 +148,8 @@ export function bootstrapUniverseV2(): void {
     });
 
     // 6. Постоянные слушатели страницы сохраняются между циклами и входят в baseline.
-    window.addEventListener('resize', renderer.handleResize, { passive: true });
+    const handleUniverseResize = createUniverseResizeHandler(renderer);
+    window.addEventListener('resize', handleUniverseResize, { passive: true });
     resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
     window.addEventListener(

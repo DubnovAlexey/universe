@@ -3,14 +3,14 @@
 // НАЗНАЧЕНИЕ: Регрессии размещения визитки над ярким фотонным ореолом.
 // РАЗДЕЛЫ: 1. Общая оптическая геометрия; 2. Viewport/ограничения; 3. C²-подъём;
 //          4. Постоянная Unicode-сетка декоративной квантовой строки.
-// ФУНКЦИИ: makeLayout, makeQuantumLine, runFinaleCompositionChecks.
+// ФУНКЦИИ: makeLayout, makeQuantumLine, runFinaleRiseClockChecks, runFinaleCompositionChecks.
 // ============================================================================
 import {
     getFinaleCardPlacement, getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP,
     type FinaleCardLayout,
 } from '../core/finaleComposition';
 import {
-    CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES, smootherstep,
+    CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES, smootherstep, universeStore,
 } from '../store/universeState';
 import { CANONICAL_FINALE_LINES, CipherOdometerEngine, formatFinaleStaticLine, getFinaleLineAssemblyProgress } from '../bridge/cipherOdometerEngine';
 import { GLYPH_WAITING_SPACE, getOrderedGlyphState, splitGlyphText } from '../core/glyphGrammar';
@@ -47,8 +47,57 @@ function makeQuantumLine(): {
 }
 // КОНЕЦ ФУНКЦИИ makeQuantumLine
 
+// НАЧАЛО ФУНКЦИИ runFinaleRiseClockChecks
+/** Проверяет общий старт композиции и часы подъёма через паузы и сбросы фаз. */
+function runFinaleRiseClockChecks(check: (passed: boolean, description: string) => void): void {
+    const Store = universeStore.constructor as new () => typeof universeStore;
+    const store = new Store();
+    store.toggleAutoCycle();
+    store.setPhase('05_SINGULARITY');
+    const advance = (elapsed: number): void => store.updateTelemetry({ frameTimeMs: 16,
+        phaseElapsedSec: elapsed, simulationTimeSec: store.getState().phaseMeta.startSec + elapsed });
+    advance(18.549);
+    const assembling = store.getState().githubCardAssemblyProgress < 1 && store.getState().finaleRiseElapsedSec === null;
+    advance(18.55);
+    const exactStart = store.getState().githubCardAssemblyProgress === 1 && store.getState().finaleRiseElapsedSec === 0;
+    advance(18.55);
+    const zeroStep = store.getState().finaleRiseElapsedSec === 0;
+    advance(19.05);
+    check(assembling && exactStart && zeroStep && Math.abs((store.getState().finaleRiseElapsedSec ?? -1) - 0.5) < 1e-10,
+        'The shared rise clock starts at zero exactly when first ACT_D assembly completes, then advances only by the active telemetry delta');
+
+    store.togglePause(); advance(19.55); store.togglePause();
+    const paused = store.getState().finaleRiseElapsedSec;
+    store.setTabHidden(true); advance(20.05); store.setTabHidden(false);
+    const hidden = store.getState().finaleRiseElapsedSec;
+    advance(20.55);
+    const resumed = store.getState().finaleRiseElapsedSec;
+    store.setPhase('01_VOID');
+    advance(0.25);
+    store.completeRestartToVoid();
+    advance(0.25);
+    check(Math.abs((paused ?? -1) - 0.5) < 1e-10 && paused === hidden &&
+        Math.abs((resumed ?? -1) - 1) < 1e-10 && Math.abs((store.getState().finaleRiseElapsedSec ?? -1) - 1.5) < 1e-10,
+        'Pause and hidden frames freeze the shared rise clock; manual phase rewind and cycle reset preserve its progress');
+
+    const manual = new Store();
+    manual.toggleAutoCycle(); manual.setPhase('05_SINGULARITY');
+    manual.updateTelemetry({ phaseElapsedSec: 16.3, simulationTimeSec: 95.3 });
+    const partial = manual.getState().finaleReachedOnce && manual.getState().finaleRiseElapsedSec === null;
+    manual.setPhase('01_VOID');
+    const manualStart = manual.getState().finaleRiseElapsedSec === 0;
+    manual.updateTelemetry({ phaseElapsedSec: 0.1, simulationTimeSec: 0.1 });
+    manual.setPhase('05_SINGULARITY');
+    const retained = manual.getState().finaleRiseElapsedSec === 0.1;
+    manual.updateTelemetry({ phaseElapsedSec: 20, simulationTimeSec: 99 });
+    check(partial && manualStart && retained && manual.getState().finaleRiseElapsedSec === 12,
+        'Leaving a partially assembled first card starts the same rise clock once; re-entry retains it and elapsed time caps at twelve seconds');
+}
+// КОНЕЦ ФУНКЦИИ runFinaleRiseClockChecks
+
 // НАЧАЛО ФУНКЦИИ runFinaleCompositionChecks
 export function runFinaleCompositionChecks(check: (passed: boolean, description: string) => void): void {
+    runFinaleRiseClockChecks(check);
     const initialEngine = new CipherOdometerEngine();
     const halfwayCells = initialEngine.evaluateCells(1920, 1080, 0.4, false, 0);
     check(halfwayCells.every((cell) =>

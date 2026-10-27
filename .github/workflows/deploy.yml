@@ -85,6 +85,9 @@ jobs:
         working-directory: ./frontend
         run: npm test
 
+      - name: Verify Graphics Lifecycle and Fallback Contracts
+        run: npm run verify:graphics
+
       - name: Build Astro Production Bundle for GitHub Pages
         working-directory: ./frontend
         env:

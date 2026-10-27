@@ -52,6 +52,7 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       ├── memory.rs                      # SceneBufferHeader (#[repr(C)], 24 байта), SceneStateSoA (MAX_CAPACITY=1024)
     │       ├── gravity.rs                     # step_symplectic_verlet_and_kuramoto(), compute_reference_total_energy()
     │       ├── breach_math.rs                 # compute_refraction_offset_with_stress(), compute_refraction_offset()
+    │       ├── ouroboros.rs                   # Optional ABI v1: до 3072 объёмных точек, нормали и материалы
     │       └── prng.rs                        # DeterministicPrng, verify_golden_vectors(), compute_quantized_state_digest()
     ├── frontend/                              # [РЕАЛИЗОВАНО В RUNTIME] Клиентское приложение Astro + TypeScript
     │   ├── astro.config.mjs                   # site: 'https://dubnovalexey.github.io', base: '/universe' (prod) / '/' (dev)
@@ -87,6 +88,9 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       │   ├── buttonSolid.ts             # Шесть CSS-граней, layout-размеры, доступный канон и обновление подписи
     │       │   ├── buttonMotion.ts            # Полные обороты вокруг собственной оси, выравнивание и плавный разгон
     │       │   ├── finaleComposition.ts       # Общая геометрия фотонного кольца и безопасного подъёма визитки
+    │       │   ├── ouroborosModel.ts          # Детерминированный TS fallback геометрии и контракт восьми f32
+    │       │   ├── ouroborosEpisode.ts        # Сборка при подъёме визитки и распыление в первой фазе
+    │       │   ├── ouroborosFieldMorph.ts     # Передача экранных частиц в объёмную форму без изменения физики
     │       │   ├── prng.ts                    # DeterministicPRNG, GOLDEN_U32_VECTORS, computeQuantizedStateDigest()
     │       │   ├── sceneBuffer.ts             # SceneBufferSoA (24-байтный заголовок 'UNVS' + 8-польный NaN-guard)
     │       │   ├── integrationRegistry.ts     # IntegrationRegistryManager (8 модулей, p50/p95 перцентили шага)
@@ -121,7 +125,12 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │       │   │   ├── breachPass.ts          # Мембрана BREACH, рефракция и глубинная сеть Z4
     │       │   │   ├── singularityPass.ts     # Корона, Точка Нуля и начальный Canvas-одометр
     │       │   │   └── nodeCallout.ts         # Общая отрисовка выносок узлов
-    │       │   └── webgpu/*.wgsl              # Шейдерные спецификации WGSL (illusion.wgsl, truth.wgsl, breach.wgsl)
+    │       │   ├── ouroboros/
+    │       │   │   ├── OuroborosEffect.ts     # Общий кадр, выбор WebGPU/Canvas, диагностика и освобождение
+    │       │   │   ├── gpuRenderer.ts         # Компиляция, pixel self-test, depth/light passes и GPU lifecycle
+    │       │   │   ├── canvasRenderer.ts      # Резервная проекция тех же точек, атлас света и орбитальные нити
+    │       │   │   └── types.ts               # Контракт геометрии, кадра, viewport и GPU-диагностики
+    │       │   └── webgpu/*.wgsl              # Исполняемый ouroboros.wgsl; illusion/truth/breach остаются спецификациями
     │       ├── layers/
     │       │   ├── Layer2_Metrics.tsx         # Нативная фабрика React.createElement, динамический тег физики, LAYER_02
     │       │   ├── Layer3_Topology.tsx        # mountLayer3Topology() — инспектор графа NEXUS (LAYER_03, EST. BFS)
@@ -137,6 +146,9 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │           ├── buttonSolid.test.ts        # Шесть граней, доступные подписи, размеры и восстановление DOM
     │           ├── finaleComposition.test.ts # Размещение визитки, зазор над ореолом и плавный подъём
     │           ├── visualSignals.test.ts     # Кадровый шаг, Unicode/кириллица, доступность и прокрутка
+    │           ├── ouroborosModel.test.ts     # Детерминизм 3D-геометрии, материалы, нормали и границы
+    │           ├── ouroborosEpisode.test.ts   # Время эпизода, размещение, пять фаз и reduced motion
+    │           ├── ouroborosFieldMorph.test.ts # Передача экранных источников, интерполяция и защита буфера
     │           ├── waterfallLifecycle.test.ts # Кеш DOM, shared frame, visibility и lifecycle каскадов
     │           └── fixtures/nexusParity24.json # Общие входы и полный результат TS/Python, 40 рёбер
     ├── docs/
@@ -158,13 +170,13 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 | **Оболочка Astro** | `frontend/src/pages/index.astro` | `[РЕАЛИЗОВАНО В RUNTIME]` | Отдаёт статический HTML/CSS каркас с `base: '/universe'` в production и `'/'` в dev. |
 | **Хранилище и часы** | `frontend/src/store/universeState.ts` (`UniverseStore`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Управляет временем сценария, 5 фазами, 4 подактами финала и `SceneBufferSoA`. Выбор фазы переводит часы к её началу, а restart обнуляет их. |
 | **Рендерер Canvas 2D** | `frontend/src/engine/UniverseRenderer.ts`, `engine/passes/` | `[РЕАЛИЗОВАНО В RUNTIME]` | Активный графический движок (`Canvas2D-HighDPI`), рисующий все 5 фаз, дизеринг `Blue-Noise`, линзу `BREACH` и эшелон `Z4`; публичная точка подключения — `engine/renderer.ts`. |
-| **Проверка WebGPU** | `frontend/src/engine/pipeline.ts` (`probeWebGpuSupport`) | `[ПРОВЕРКА ПОДДЕРЖКИ / PROBE]` | Вызывает `navigator.gpu.requestAdapter()` и выставляет статус `fallback` / `unsupported`. Файлы `*.wgsl` — спецификации; активный рендер остаётся Canvas 2D. |
+| **Объёмный проход WebGPU** | `engine/ouroboros/`, `engine/webgpu/ouroboros.wgsl` | `[WEBGPU / CANVAS FALLBACK]` | Отдельный прозрачный холст рисует перспективные ядра с depth buffer и мягкий свет. `READY` появляется после компиляции, offscreen draw/readback и первой проверенной отправки. Ошибка устройства или инициализации выбирает Canvas. Основные пять фаз остаются Canvas 2D. |
 | **Физический provider** | `frontend/src/bridge/wasmBridge.ts` (`WasmPhysicsBridge`) | `[RUST/WASM / TS FALLBACK]` | Default async raw ABI v1; после валидного шага — `WASM_ACTIVE`, при `?wasm=0` или отказе — TS. Kuramoto влияет на видимые цели; отдельные `REF64` орбиты дают энергию. CI собирает и проверяет реальный WASM до Astro. |
 | **Графовый движок NEXUS** | `frontend/src/bridge/simulationWorker.ts` (`NexusGraphEngine`) | `[РЕЗЕРВ / FALLBACK]` | Вызывается синхронно из `01_void.ts` каждые `0.12 с` симуляционного времени. Статус в реестре — `FALLBACK`, метка в UI — `[ts/graph_engine]`. |
 | **Нативные DOM/SVG слои** | `frontend/src/layers/Layer2..Layer5.tsx` | `[РЕАЛИЗОВАНО В RUNTIME]` | Собственная легковесная фабрика `React.createElement` (без пакета React). Монтирует DOM один раз и обновляет числа через `data-bind`; контуры и одометр используют общий кадр, а квантовая строка — ритм `18–26 Гц`. |
 | **Звуковой движок** | `frontend/src/utils/audioSync.ts` (`AudioSyncEngine`) | `[РЕАЛИЗОВАНО В RUNTIME]` | Запрашивает воспроизведение при загрузке; при запрете автозапуска использует пользовательский жест. Спектральные огибающие имеют временно-независимое сглаживание. `audioSession.type = 'playback'` задаётся при наличии API, но поведение зависит от платформы. |
 | **Ядро Python 3** | `backend/main.py`, `backend/core/*.py` | `[ОФЛАЙН-ИНСТРУМЕНТ / CI VERIFIER]` | Реализует локальный HTTP/Binary сервер (`/api/health`, `/api/topology`, `/api/frame.bin`), CLI-верификатор (`--verify`) и проверки `unittest`. На статическом GitHub Pages Python-сервер не запущен (`CLIENT_ONLY`), а `PythonSocketClient` служит подготовленным и протестированным валидатором бинарных пакетов `'UNVS'`. |
-| **Крейт Rust** | `physics_engine/src/*.rs` | `[WASM PROVIDER / NATIVE TESTS]` | Raw ABI v1, Kuramoto, контрольный Velocity Verlet и `breach_math`; native-тесты и интеграции реального WASM. |
+| **Крейт Rust** | `physics_engine/src/*.rs` | `[WASM PROVIDER / NATIVE TESTS]` | Raw ABI v1, Kuramoto, контрольный Velocity Verlet и `breach_math`; optional ABI объёмной геометрии Уробороса; native-тесты и интеграции реального WASM. |
 
 ---
 
@@ -309,11 +321,17 @@ Renderer публикует неизменяемый `VisualSignalSnapshot`: в�
 
 В строках визитки канонический текст generic `p/span` доступен в отдельном span, а декоративное представление имеет `aria-hidden`. Кнопки, ссылки и заголовки сохраняют доступное имя. Центральная квантовая строка из 25 ячеек использует отдельный диапазон `18–26 Гц`; цифровой водопад сохраняет собственное символьное представление.
 
-Статичные строки собираются слева направо: закреплённый текст, фронт прокрутки, затем пустые окна. Знаки наборных строк также прокручиваются горизонтально слева направо — при начальном Canvas-показе и при наведении на DOM-текст. Первоначальные Canvas и DOM используют общий порядок; при наведении каждый знак проходит два оборота и закрепляется в настоящем DOM. Измеритель сохраняет размеры, доступный текст остаётся каноническим; постоянная квантовая строка работает независимо.
+Статичные строки собираются слева направо: закреплённый текст, фронт перебора, затем пустые окна. Начальный Canvas-показ использует горизонтальное направление; при наведении на DOM целый знак перелистывается вокруг Y (`0→90°`, затем `−90→0°`) без скользящего обрезания. Одновременно виден один слой, а равномерный scale вписывает ширину и высоту начертания с выносами и базовой линией. Каждый знак проходит два оборота, после чего раскрывается исходная наборная мера с точным tracking. Первоначальные Canvas и DOM сохраняют общий LTR-порядок, доступный текст остаётся каноническим; постоянная квантовая строка работает независимо.
 
 В шкале фаз текущая кнопка удерживает читаемую переднюю грань и увеличивается вместе с тенью. Приоритет выделения: наведение → видимый клавиатурный фокус → текущая фаза. После ухода курсора и снятия фокуса выделяется актуальная фаза; остальные тела вращаются независимо.
 
-Визитка появляется из Точки Нуля и после первого показа плавно поднимается над светлой областью фотонного ореола при переходе в другую фазу или новый цикл. Повторный вход в финал сохраняет начавшийся подъём и собранный текст. Позиция ограничена размерами карточки, HUD и viewport; пауза сохраняет положение, reduced motion использует статичное представление. На низком экране ограничение подъёма сохраняет видимость содержимого и действий, даже если полный зазор над ореолом недостижим.
+Визитка появляется из Точки Нуля; полная сборка запускает её 12-секундный подъём на общих часах `finaleRiseElapsedSec`. Повторный вход в финал сохраняет начавшийся подъём и собранный текст. Позиция ограничена размерами карточки, HUD и viewport; пауза сохраняет положение, reduced motion использует статичное представление. На низком экране ограничение подъёма сохраняет видимость содержимого и действий, даже если полный зазор над ореолом недостижим.
+
+Во время подъёма поле собирается в объёмного Уробороса; в начале следующей первой фазы форма распыляется обратно в поле. `ouroboros.rs` и `ouroborosModel.ts` заполняют отдельный буфер до 3072 записей по восемь `f32`: позиция, нормаль, размер, материал. Host проверяет optional ABI версии 1 и геометрию до копирования. Морфинг читает экранные источники, не изменяя частицы физики и NEXUS. WebGPU и Canvas используют согласованные точки; способы освещения различаются. Эпизод не добавляет шестую фазу и сохраняет 108-секундный цикл.
+
+GPU-проход проверяет компиляцию WGSL, реальную offscreen-отрисовку с чтением пикселей и первую отправку перед публикацией `READY`. `OuroborosEffect` выбирает Canvas при отказе; `?gpu=0` принудительно задаёт этот путь, `?ouroboros=0` отключает эпизод. Буферы и depth texture освобождаются при отказе и снятии страницы; устаревшее завершение асинхронной инициализации не восстанавливает снятый проход. Основной `probeWebGpuSupport()` обновляет capabilities и не выдаёт себя за успешный draw.
+
+Подпись `link-hud-github` имеет медно-розовый цвет с бордовым свечением. Её 48-секундный перелив использует существующий общий шаг; при pause/reduced motion цвет неподвижен. Другие кнопки сохраняют свою палитру.
 
 ---
 
@@ -325,7 +343,7 @@ Renderer публикует неизменяемый `VisualSignalSnapshot`: в�
 | :--- | :--- | :--- | :---: | :--- |
 | `ts-core` | `TypeScript` | `frontend/src/store/universeState.ts` | `READY` | На каждом шаге физики в режиме `TS_FALLBACK` (`wasmBridge.ts`). |
 | `wasm-physics` | `Rust/WASM` | `physics_engine/src/gravity.rs` | `LOADING` → `READY` / `FALLBACK` | Default async raw ABI v1; первый валидный native-шаг даёт `WASM_ACTIVE` без утверждения SIMD. `?wasm=0` или ошибка выбирают TS fallback. |
-| `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/illusion.wgsl` | `FALLBACK` | Вызывает только `probeWebGpuSupport()`; WGSL-спецификации не запускаются, текущий рендер выполняется через Canvas 2D. |
+| `webgpu-render` | `WGSL/WebGPU` | `frontend/src/engine/webgpu/ouroboros.wgsl` | `FALLBACK` → `LOADING` → `READY` / `FALLBACK` | `OuroborosEffect` запускает реальный depth/light проход после GPU self-test; замеры обновляются при успешных отправках. Canvas сохраняет основные фазы и резервное представление эпизода. |
 | `canvas2d-render` | `Canvas2D` | `frontend/src/engine/UniverseRenderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`; рисунок формируют модули `engine/passes/`. |
 | `pyodide-graph` | `Python` | `backend/core/graph_logic.py` | `FALLBACK` | Остаётся в `FALLBACK` при работе локального TS-движка графа. |
 | `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Офлайн HTTP/Binary инструмент и подготовленный `PythonSocketClient`; текущие HTTP и WebSocket протоколы не образуют рабочее браузерное подключение. |

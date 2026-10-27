@@ -11,6 +11,7 @@ import { createVisualSignals, publishVisualSignals } from '../core/visualSignals
 import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile,
     getOrderedGlyphState, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, fitGlyphInk } from '../core/glyphHover';
+import { createUniverseResizeHandler } from '../engine/bootstrap';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
 class HoverElement extends EventTarget {
@@ -315,6 +316,40 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         mock.textContent === 'FIRST CANONICAL' && secondMock.textContent === 'LATEST SECOND CANONICAL' &&
         mock.styleValues.size === 0 && secondMock.styleValues.size === 0,
         description: 'Hide/disposal cleanup restores all active glyph sessions and latest text without waiting for another frame' });
+
+    publishVisualSignals(state, audio, stress);
+    const resizeLink = new HoverElement('a');
+    const resizeParagraph = new HoverElement('p');
+    const linkElement = resizeLink as unknown as HTMLElement;
+    const paragraphDuringResize = resizeParagraph as unknown as HTMLElement;
+    const resizeLabel = 'СБОРКА A\u0301 𓂀';
+    const paragraphLabel = 'ОПИСАНИЕ 👩‍🔬';
+    calmGlyphHover.start(linkElement, resizeLabel);
+    calmGlyphHover.start(paragraphDuringResize, paragraphLabel);
+    publishVisualSignals(state, audio, stress);
+    const rollingBeforeResize = calmGlyphHover.isActive(linkElement) && calmGlyphHover.isActive(paragraphDuringResize);
+    let viewportUpdates = 0;
+    let canonicalBeforeGeometry = true;
+    // НАЧАЛО ФУНКЦИИ updateViewportProbe
+    const updateViewportProbe = (): void => {
+        viewportUpdates++;
+        canonicalBeforeGeometry &&= !calmGlyphHover.isActive(linkElement) && !calmGlyphHover.isActive(paragraphDuringResize) &&
+            calmGlyphHover.getVisualText(linkElement) === resizeLabel &&
+            calmGlyphHover.getVisualText(paragraphDuringResize) === paragraphLabel &&
+            resizeLink.getAttribute('aria-label') === resizeLabel &&
+            resizeParagraph.children[0].textContent === paragraphLabel &&
+            resizeParagraph.children[1].getAttribute('aria-hidden') === 'true' &&
+            descendants(resizeLink, 'glyph-reel-window').length === 0 &&
+            descendants(resizeParagraph, 'glyph-reel-window').length === 0 &&
+            resizeLink.styleValues.size === 0 && resizeParagraph.styleValues.size === 0;
+    };
+    // КОНЕЦ ФУНКЦИИ updateViewportProbe
+    const handleResize = createUniverseResizeHandler({ handleResize: updateViewportProbe });
+    // Ни RAF, ни нового визуального снимка между resize и проверкой нет.
+    handleResize();
+    handleResize();
+    checks.push({ passed: rollingBeforeResize && viewportUpdates === 2 && canonicalBeforeGeometry,
+        description: 'The actual resize handoff restores all rolling links/paragraphs and accessible Unicode canon before viewport geometry changes, without waiting for a frame or adding a scheduler' });
 
     // Один и тот же набор активных кадров должен дать одинаковый Roll/Dwell,
     // даже когда часы симуляции прыгают вперёд/назад при переключении фаз.

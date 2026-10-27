@@ -104,7 +104,6 @@ class FinaleCardDomAnimator {
     private accumulatedAssemblyPhase = 0;
     private lfoClockSec = 0;
     private lastQuantumStep = -1;
-    private ambientRiseElapsedSec = 0;
     private ambientRiseDistancePx = 0;
     private ambientLayoutKey = '';
     private breathHeartbeat = 0.35;
@@ -232,7 +231,7 @@ class FinaleCardDomAnimator {
         }
 
         const isSimActive = !signals.isPaused && !state.isPaused && !state.isTabHidden;
-        const staticStateKey = `${state.currentPhase}:${state.cycleCount}:${state.githubCardAssemblyProgress}:${state.singularityAct}:${state.reducedMotion}`;
+        const staticStateKey = `${state.currentPhase}:${state.cycleCount}:${state.githubCardAssemblyProgress}:${state.singularityAct}:${state.reducedMotion}:${state.finaleRiseElapsedSec !== null}`;
         if ((!isSimActive || state.reducedMotion) && !this.layoutDirty && staticStateKey === this.lastStaticStateKey) {
             return;
         }
@@ -241,8 +240,7 @@ class FinaleCardDomAnimator {
         const glyphPool = getRenderableGlyphPool(state.currentPhase);
 
         if (this.cardBoxEl) {
-            const hasLoopCard = isPersistentCard &&
-                (state.cycleCount > 1 || !isActD || this.ambientRiseElapsedSec > 0);
+            const hasLoopCard = isPersistentCard && state.finaleRiseElapsedSec !== null;
             const p = hasLoopCard
                 ? 1.0
                 : Math.max(0, Math.min(1, state.githubCardAssemblyProgress));
@@ -252,18 +250,12 @@ class FinaleCardDomAnimator {
 
             if (isSimActive) this.breathHeartbeat = signals.heartbeat;
 
-            // После первого показа и выхода из Акта D подъём занимает 12 активных секунд.
+            // Полная сборка в Акте D начинает 12-секундный подъём на общих часах сцены.
             // Общий кадр объединяет его с дыханием: CSS не переопределяет transform,
             // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
-            if (!hasLoopCard) {
-                this.ambientRiseElapsedSec = 0;
-            } else if (state.reducedMotion) {
-                this.ambientRiseElapsedSec = 12;
-            } else if (isSimActive) {
-                this.ambientRiseElapsedSec = Math.min(12, this.ambientRiseElapsedSec + dtSec);
-            }
+            const ambientRiseElapsedSec = state.reducedMotion ? 12 : Math.max(0, Math.min(12, state.finaleRiseElapsedSec ?? 0));
             const ambientRise = hasLoopCard
-                ? this.getAmbientRiseDistance() * smootherstep(0, 12, this.ambientRiseElapsedSec)
+                ? this.getAmbientRiseDistance() * smootherstep(0, 12, ambientRiseElapsedSec)
                 : 0;
 
             // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении

@@ -101,6 +101,8 @@ export interface UniverseState {
     autoCyclePhases: boolean;
     isFinaleCardHovered: boolean;
     finaleReachedOnce: boolean;
+    /** null до начала подъёма; активные секунды [0..12], сохраняемые между фазами и циклами. */
+    finaleRiseElapsedSec: number | null;
     timeScale: number;
     gravityMultiplier: number;
     audioEnabled: boolean;
@@ -265,6 +267,7 @@ class UniverseStore {
             autoCyclePhases: true,
             isFinaleCardHovered: false,
             finaleReachedOnce: false,
+            finaleRiseElapsedSec: null,
             timeScale: 1.0,
             gravityMultiplier: 1.0,
             audioEnabled: true,
@@ -485,6 +488,10 @@ class UniverseStore {
             return;
         }
 
+        // Ручной выход сохраняет показанную карточку и начинает общий подъём.
+        if (this.state.finaleReachedOnce && this.state.finaleRiseElapsedSec === null) {
+            this.state.finaleRiseElapsedSec = 0;
+        }
         const meta = UNIVERSE_PHASES[phase];
         this.state.currentPhase = phase;
         this.state.phaseMeta = meta;
@@ -672,6 +679,7 @@ class UniverseStore {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
         this.state.isFinaleCardHovered = false;
         this.state.finaleReachedOnce = true;
+        this.state.finaleRiseElapsedSec ??= 0;
         this.state.singularityAct = 'RESTART_COLLAPSE';
         this.state.restartElapsedSec = 0;
         this.state.singularityActProgress = 0;
@@ -730,6 +738,10 @@ class UniverseStore {
             0,
             this.state.telemetry.phaseElapsedSec - prevPhaseElapsed
         );
+        // Часы подъёма сохраняются при смене фазы и сбросе часов основного цикла.
+        if (this.state.finaleRiseElapsedSec !== null && !this.state.isPaused && !this.state.isTabHidden) {
+            this.state.finaleRiseElapsedSec = Math.min(12, this.state.finaleRiseElapsedSec + dtSec);
+        }
 
         const ft = Math.max(1.0, this.state.telemetry.frameTimeMs);
         this.state.telemetry.fps = Math.min(240, Math.round(1000 / ft));
@@ -829,6 +841,9 @@ class UniverseStore {
                         : Math.max(0, Math.min(1, cardElapsed / 4.5));
                 this.state.singularityActProgress =
                     this.state.githubCardAssemblyProgress;
+                if (this.state.githubCardAssemblyProgress === 1 && this.state.finaleRiseElapsedSec === null) {
+                    this.state.finaleRiseElapsedSec = 0;
+                }
                 this.emitEventOnce(
                     'zero_silence_end',
                     'zero-silence:ended',

@@ -121,7 +121,7 @@ async function verifyOuroborosGeometry(WasmPhysicsBridge, SceneBufferSoA, fillOu
     let maximumError = 0;
     for (const seed of [0, 104729, 0xffffffff]) {
         for (const count of [0, 1, 3072]) {
-            for (const time of [0, 17, 108]) {
+            for (const time of [0, 17, 54, 72, 108, 216]) {
                 for (const morph of [0, 0.5, 1]) {
                     for (const energy of [0, 1]) {
                         assert.equal(fillOuroborosPoints(expected, seed, count, time, morph, energy), count);
