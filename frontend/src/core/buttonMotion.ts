@@ -165,7 +165,7 @@ export class ButtonMotionController {
             return pose;
         });
         this.updateReadTarget();
-        if (this.buttons.length) this.unsubscribe = this.subscribeFrame(this.update);
+        if (this.buttons.length) this.unsubscribe = this.subscribeFrame(this.update, 'hud-buttons');
         let disposed = false;
         return {
             listenerCount: this.buttons.length * 5,

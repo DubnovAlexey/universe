@@ -11,6 +11,7 @@
 
 import {
     React,
+    setHudText,
     renderWaterfallMembraneDecor,
     waterfallAnimator,
 } from './Layer2_Metrics';
@@ -180,32 +181,29 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
             state.inspectionLevel === 'TERMINAL';
         rootEl.classList.toggle('layer-hidden', !isVisible);
 
-        if (elDigest) {
-            elDigest.textContent = `ILLUSION==NEXUS==X-RAY [${state.telemetry.stateDigestHex}]`;
-        }
+        setHudText(elDigest, `ILLUSION==NEXUS==X-RAY [${state.telemetry.stateDigestHex}]`);
 
         for (let i = 0; i < modules.length; i++) {
             const m = modules[i];
             const sEl = statusEls[i];
             if (sEl) {
-                sEl.className = `mod-status status-${m.status}`;
-                sEl.textContent = m.status.toUpperCase();
+                const statusClass = `mod-status status-${m.status}`;
+                if (sEl.className !== statusClass) sEl.className = statusClass;
+                setHudText(sEl, m.status.toUpperCase());
             }
             const pEl = perfEls[i];
             if (pEl) {
-                pEl.textContent = `${m.stepP50Ms}ms / ${m.stepP95Ms}ms`;
+                setHudText(pEl, `${m.stepP50Ms}ms / ${m.stepP95Ms}ms`);
             }
         }
 
         const ledger = resourceLedger.getCounters();
-        if (elLedger) {
-            elLedger.textContent = `LEDGER: buf=${ledger.buffers} | tex=${ledger.textures} | audio=${ledger.audioNodes} | listeners=${ledger.listeners} | restarts=${ledger.restartCount}`;
-        }
+        setHudText(elLedger, `LEDGER: buf=${ledger.buffers} | tex=${ledger.textures} | audio=${ledger.audioNodes} | listeners=${ledger.listeners} | restarts=${ledger.restartCount}`);
 
         for (let i = 0; i < 3; i++) {
             const lEl = logEls[i];
             if (lEl) {
-                lEl.textContent = state.terminalLogs[i] ?? '';
+                setHudText(lEl, state.terminalLogs[i] ?? '');
             }
         }
     };

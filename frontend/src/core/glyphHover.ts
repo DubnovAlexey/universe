@@ -262,7 +262,7 @@ class CalmGlyphHover {
 
     // НАЧАЛО ФУНКЦИИ setVisualText
     /** Внешняя сборка сохраняет метрики канона: широкие знаки вписываются в его ячейки. */
-    public setVisualText(element: HTMLElement | null, text: string): void {
+    public setVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[]): void {
         if (!element) return;
         const visual = this.ensureTextNodes(element).visual;
         const canonical = element.dataset.canonicalText ?? text;
@@ -270,7 +270,10 @@ class CalmGlyphHover {
         const glyphs = splitGlyphText(text);
         if (text === canonical || source.length !== glyphs.length) {
             this.fittedLines.delete(element);
-            if (visual.textContent !== text) visual.textContent = text;
+            if (visual.textContent !== text) {
+                const apply = (): void => { visual.textContent = text; };
+                if (writes) writes.push(apply); else apply();
+            }
             return;
         }
         let line = this.fittedLines.get(element);
@@ -308,12 +311,15 @@ class CalmGlyphHover {
                 state: canonicalGlyph ? 'canonical' : waiting ? 'waiting' : 'rolling',
                 fit: !canonicalGlyph && !waiting ? prepareFittedGlyph(cell.ink, glyph, source[index], fitKey) : undefined });
         });
-        // Сначала измеряются все изменившиеся окна, затем одним блоком применяются DOM-записи.
-        updates.forEach(({ cell, glyph, state, fit, canonical: canonicalGlyph }) => {
-            cell.glyph = glyph;
-            cell.node.dataset.glyphStatic = state;
-            if (fit) setFittedGlyph(cell.ink, glyph, canonicalGlyph, fit);
-        });
+        // Карточка может объединить записи нескольких строк и квантовой сетки после всех измерений.
+        const apply = (): void => {
+            updates.forEach(({ cell, glyph, state, fit, canonical: canonicalGlyph }) => {
+                cell.glyph = glyph;
+                cell.node.dataset.glyphStatic = state;
+                if (fit) setFittedGlyph(cell.ink, glyph, canonicalGlyph, fit);
+            });
+        };
+        if (writes) writes.push(apply); else apply();
     }
     // КОНЕЦ ФУНКЦИИ setVisualText
 
@@ -480,7 +486,7 @@ class CalmGlyphHover {
         this.updateReels(this.sessions.get(element)!, signals, element);
         element.dataset.glyphActive = '1';
         element.dataset.scrambling = '1';
-        if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot) => this.update(snapshot));
+        if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot) => this.update(snapshot), 'glyph-reels');
     }
     // КОНЕЦ ФУНКЦИИ start
 

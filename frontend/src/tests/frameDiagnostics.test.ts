@@ -13,11 +13,17 @@ export function runFrameDiagnosticsChecks(check: (passed: boolean, description: 
     const profile = new FrameDiagnostics(canvas, true);
     const state = { ...universeStore.getState(), isPaused: false, isTabHidden: false };
     profile.record(16, 4, state, 0);
-    profile.record(1450, 1200, state, 1450);
+    profile.record(1450, 1200, state, 1450, { setupMs: 10, simulationMs: 100, uiMs: 70, renderMs: 1020,
+        visualSignals: { 'finale-card': 65, waterfall: 2 } });
     const report = profile.snapshot();
     check(report.totals.frames === 2 && report.totals.maxGapMs === 1450 && report.totals.maxCpuMs === 1200 &&
         report.totals.gapsOver1000Ms === 1 && JSON.parse(canvas.dataset.frameProfile!).totals.maxGapMs === 1450,
     'Opt-in profiling retains a1.45-second actual gap and CPU cost instead of clamping them to physics dt');
+    check(report.totals.maxSetupMs === 10 && report.totals.maxSimulationMs === 100 &&
+        report.totals.maxUiMs === 70 && report.totals.maxRenderMs === 1020 &&
+        Object.values(report.stages).some(stage => stage.maxRenderMs === 1020) &&
+        report.totals.maxVisualSignalsMs['finale-card'] === 65 && report.totals.maxVisualSignalsMs.waterfall === 2,
+        'The active stage distinguishes setup, simulation, UI updates and rendering instead of attributing every hitch to geometry');
     profile.record(2000, 2, { ...state, isPaused: true }, 3450);
     profile.record(2000, 2, state, 5450);
     profile.record(3000, 2, { ...state, isTabHidden: true }, 8450);

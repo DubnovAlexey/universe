@@ -15,10 +15,20 @@ interface FrameMetrics {
     gapsOver100Ms: number;
     gapsOver500Ms: number;
     gapsOver1000Ms: number;
+    maxSetupMs: number;
+    maxSimulationMs: number;
+    maxUiMs: number;
+    maxRenderMs: number;
+    maxVisualSignalsMs: Record<string, number>;
+}
+export interface FrameWorkBreakdown {
+    setupMs: number; simulationMs: number; uiMs: number; renderMs: number;
+    visualSignals?: Readonly<Record<string, number>>;
 }
 // НАЧАЛО ФУНКЦИИ emptyMetrics
 const emptyMetrics = (): FrameMetrics => ({ frames: 0, maxGapMs: 0, maxCpuMs: 0,
-    gapsOver100Ms: 0, gapsOver500Ms: 0, gapsOver1000Ms: 0 });
+    gapsOver100Ms: 0, gapsOver500Ms: 0, gapsOver1000Ms: 0,
+    maxSetupMs: 0, maxSimulationMs: 0, maxUiMs: 0, maxRenderMs: 0, maxVisualSignalsMs: {} });
 // КОНЕЦ ФУНКЦИИ emptyMetrics
 type FrameState = Pick<UniverseState, 'currentPhase' | 'singularityAct' | 'isPaused' | 'isTabHidden'>;
 
@@ -54,7 +64,7 @@ export class FrameDiagnostics {
     // КОНЕЦ ФУНКЦИИ resetContinuity
 
     // НАЧАЛО ФУНКЦИИ record
-    public record(gapMs: number, cpuMs: number, state: FrameState, nowMs: number): void {
+    public record(gapMs: number, cpuMs: number, state: FrameState, nowMs: number, work?: Readonly<FrameWorkBreakdown>): void {
         if (!this.enabled) return;
         const active = !state.isPaused && !state.isTabHidden;
         // Возобновление вкладки или паузы не считается зависанием активной сцены.
@@ -68,6 +78,17 @@ export class FrameDiagnostics {
             target.frames++;
             target.maxGapMs = Math.max(target.maxGapMs, validGap);
             target.maxCpuMs = Math.max(target.maxCpuMs, cpuMs);
+            if (work) {
+                if (Number.isFinite(work.setupMs) && work.setupMs >= 0) target.maxSetupMs = Math.max(target.maxSetupMs, work.setupMs);
+                if (Number.isFinite(work.simulationMs) && work.simulationMs >= 0) target.maxSimulationMs = Math.max(target.maxSimulationMs, work.simulationMs);
+                if (Number.isFinite(work.uiMs) && work.uiMs >= 0) target.maxUiMs = Math.max(target.maxUiMs, work.uiMs);
+                if (Number.isFinite(work.renderMs) && work.renderMs >= 0) target.maxRenderMs = Math.max(target.maxRenderMs, work.renderMs);
+                if (work.visualSignals) for (const [label, elapsedMs] of Object.entries(work.visualSignals)) {
+                    if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+                        target.maxVisualSignalsMs[label] = Math.max(target.maxVisualSignalsMs[label] ?? 0, elapsedMs);
+                    }
+                }
+            }
             if (validGap > 100) target.gapsOver100Ms++;
             if (validGap > 500) target.gapsOver500Ms++;
             if (validGap > 1000) target.gapsOver1000Ms++;
@@ -82,8 +103,9 @@ export class FrameDiagnostics {
 
     // НАЧАЛО ФУНКЦИИ snapshot
     public snapshot(): { totals: FrameMetrics; stages: Record<string, FrameMetrics> } {
-        return { totals: { ...this.totals },
-            stages: Object.fromEntries(Array.from(this.stages, ([key, value]) => [key, { ...value }])) };
+        return { totals: { ...this.totals, maxVisualSignalsMs: { ...this.totals.maxVisualSignalsMs } },
+            stages: Object.fromEntries(Array.from(this.stages, ([key, value]) => [key,
+                { ...value, maxVisualSignalsMs: { ...value.maxVisualSignalsMs } }])) };
     }
     // КОНЕЦ ФУНКЦИИ snapshot
     // КОНЕЦ РАЗДЕЛА 2

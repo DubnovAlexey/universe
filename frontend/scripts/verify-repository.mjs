@@ -1,12 +1,14 @@
 // ============================================================================
 // ФАЙЛ: frontend/scripts/verify-repository.mjs
-// НАЗНАЧЕНИЕ: Проверка наличия исходников и npm entry points в индексе Git.
-// ФУНКЦИИ: Чтение индекса, разбор node-команд и диагностика неполного checkout.
+// НАЗНАЧЕНИЕ: Проверка исходников, локальных импортов и npm entry points в Git.
+// ФУНКЦИИ: readGitPaths, tokenizeCommand, findNodeEntries, tokenizeSource,
+// findRelativeImports, resolveIndexedImport, isRepositoryFile, verifyRepository, runSelfTests.
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, пути и чтение списков Git.
 //   2. Разбор команд npm и определение файлов запуска Node.js.
-//   3. Проверка package scripts и неотслеживаемых исходников/fixtures.
-//   4. Запуск проверки и диагностика ошибки.
+//   3. Литеральные относительные импорты и точные пути Git.
+//   4. Проверка package scripts, импортов и неотслеживаемых исходников/fixtures.
+//   5. Самопроверки и запуск проверки репозитория.
 // ============================================================================
 
 // НАЧАЛО РАЗДЕЛА 1. ЗАВИСИМОСТИ, ПУТИ И ЧТЕНИЕ СПИСКОВ GIT
@@ -14,6 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sourceDirectories = [
@@ -118,7 +121,110 @@ function findNodeEntries(command) {
 // КОНЕЦ ФУНКЦИИ findNodeEntries
 // КОНЕЦ РАЗДЕЛА 2
 
-// НАЧАЛО РАЗДЕЛА 3. ПРОВЕРКА PACKAGE SCRIPTS И НЕОТСЛЕЖИВАЕМЫХ ИСХОДНИКОВ
+// НАЧАЛО РАЗДЕЛА 3. ЛОКАЛЬНЫЕ ИМПОРТЫ И ТОЧНЫЕ ПУТИ GIT
+// НАЧАЛО ФУНКЦИИ tokenizeSource
+/** Пропускает комментарии, шаблоны и regex; содержимое строк не становится кодом. */
+function tokenizeSource(source) {
+    const tokens = [];
+    for (let i = 0; i < source.length;) {
+        const c = source[i], next = source[i + 1];
+        if (/\s/.test(c)) { i++; continue; }
+        if (c === '/' && next === '/') { while (i < source.length && source[i] !== '\n') i++; continue; }
+        if (c === '/' && next === '*') { const end = source.indexOf('*/', i + 2); i = end < 0 ? source.length : end + 2; continue; }
+        if (c === '"' || c === "'" || c === '`') {
+            const start = i++, quote = c;
+            let value = '';
+            while (i < source.length && source[i] !== quote) {
+                if (source[i] === '\\') { i++; if (i < source.length) value += source[i++]; }
+                else value += source[i++];
+            }
+            i++;
+            tokens.push({ kind: quote === '`' ? 'template' : 'string', value, start });
+            continue;
+        }
+        const previous = tokens.at(-1);
+        const regexPosition = !previous || (previous.kind === 'punct' && '=(:,[!&|?;{'.includes(previous.value)) ||
+            (previous.kind === 'word' && ['return', 'throw', 'case', 'yield'].includes(previous.value)) ||
+            (previous.value === '>' && tokens.at(-2)?.value === '=');
+        if (c === '/' && regexPosition) {
+            i++;
+            let inClass = false;
+            while (i < source.length) {
+                if (source[i] === '\\') { i += 2; continue; }
+                if (source[i] === '[') inClass = true;
+                if (source[i] === ']') inClass = false;
+                if (source[i++] === '/' && !inClass) break;
+            }
+            while (/[A-Za-z]/.test(source[i] ?? '')) i++;
+            tokens.push({ kind: 'punct', value: '<regex>', start: i });
+            continue;
+        }
+        if (/[A-Za-z_$]/.test(c)) {
+            const start = i++;
+            while (/[\w$]/.test(source[i] ?? '')) i++;
+            tokens.push({ kind: 'word', value: source.slice(start, i), start });
+        } else tokens.push({ kind: 'punct', value: source[i], start: i++ });
+    }
+    return tokens;
+}
+// КОНЕЦ ФУНКЦИИ tokenizeSource
+
+// НАЧАЛО ФУНКЦИИ findRelativeImports
+/** Только литеральные ES-импорты: шаблоны, glob и bare package specifiers не исполняются. */
+export function findRelativeImports(source) {
+    const tokens = tokenizeSource(source), found = [];
+    const add = (token) => {
+        if (token?.kind === 'string' && /^\.\.?\//.test(token.value)) {
+            found.push({ specifier: token.value, line: source.slice(0, token.start).split('\n').length });
+        }
+    };
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (token.kind !== 'word' || !['import', 'export'].includes(token.value) || tokens[i - 1]?.value === '.') continue;
+        if (token.value === 'import') {
+            if (tokens[i + 1]?.kind === 'string') { add(tokens[i + 1]); continue; }
+            if (tokens[i + 1]?.value === '(') { add(tokens[i + 2]); continue; }
+            if (tokens[i + 1]?.value === '.') continue;
+        } else if (!['{', '*'].includes(tokens[i + 1]?.value) &&
+            !(tokens[i + 1]?.value === 'type' && tokens[i + 2]?.value === '{')) continue;
+        for (let j = i + 1; j < tokens.length && tokens[j].value !== ';'; j++) {
+            if (j > i + 1 && tokens[j].kind === 'word' && ['import', 'export'].includes(tokens[j].value)) break;
+            if (tokens[j].kind === 'word' && tokens[j].value === 'from' && tokens[j + 1]?.kind === 'string') { add(tokens[j + 1]); break; }
+        }
+    }
+    return found;
+}
+// КОНЕЦ ФУНКЦИИ findRelativeImports
+
+// НАЧАЛО ФУНКЦИИ resolveIndexedImport
+export function resolveIndexedImport(importer, specifier, indexedPaths, isFile) {
+    const clean = specifier.split(/[?#]/, 1)[0];
+    const base = path.posix.normalize(path.posix.join(path.posix.dirname(importer), clean));
+    if (base.startsWith('../') || path.posix.isAbsolute(base)) return 'Import escapes repository';
+    const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json', '.d.ts'];
+    const asset = /\.(?:css|wgsl|json|astro|ttf|woff2?|svg|png|jpe?g|webp|gif|mp3|wav|wasm)$/i.test(base);
+    const candidates = asset ? [base] : [base, ...extensions.map(ext => base + ext),
+        ...extensions.map(ext => base + '/index' + ext)];
+    if (/\.js$/.test(base)) candidates.push(...['.ts', '.tsx', '.d.ts'].map(ext => base.slice(0, -3) + ext));
+    const tracked = candidates.find(candidate => indexedPaths.has(candidate));
+    if (tracked) return isFile(tracked) ? null : `Missing imported file: ${tracked}`;
+    const lowerPaths = new Map([...indexedPaths].map(file => [file.toLowerCase(), file]));
+    const differentCase = candidates.map(candidate => lowerPaths.get(candidate.toLowerCase())).find(Boolean);
+    if (differentCase) return `Import path casing differs from Git: ${differentCase}`;
+    const local = candidates.find(isFile);
+    return local ? `Imported file is not tracked in Git: ${local}` : `Unresolved relative import: ${specifier}`;
+}
+// КОНЕЦ ФУНКЦИИ resolveIndexedImport
+
+// НАЧАЛО ФУНКЦИИ isRepositoryFile
+function isRepositoryFile(file) {
+    try { return statSync(path.join(repositoryRoot, file)).isFile(); }
+    catch (error) { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return false; throw error; }
+}
+// КОНЕЦ ФУНКЦИИ isRepositoryFile
+// КОНЕЦ РАЗДЕЛА 3
+
+// НАЧАЛО РАЗДЕЛА 4. ПРОВЕРКА PACKAGE SCRIPTS, ИМПОРТОВ И НЕОТСЛЕЖИВАЕМЫХ ИСХОДНИКОВ
 
 // НАЧАЛО ФУНКЦИИ verifyRepository
 function verifyRepository() {
@@ -129,6 +235,7 @@ function verifyRepository() {
         .sort();
     const issues = [];
     let checkedEntries = 0;
+    let checkedImports = 0;
     for (const packagePath of packagePaths) {
         const absolutePackagePath = path.join(repositoryRoot, packagePath);
         const manifest = JSON.parse(readFileSync(absolutePackagePath, 'utf8'));
@@ -160,6 +267,14 @@ function verifyRepository() {
         /(?:^|\/)fixtures?\//.test(file)
     ).sort();
     for (const file of untrackedSources) issues.push(`Untracked source or shared test fixture: ${file}`);
+    for (const file of indexedPaths) {
+        if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) || !isRepositoryFile(file)) continue;
+        for (const { specifier, line } of findRelativeImports(readFileSync(path.join(repositoryRoot, file), 'utf8'))) {
+            checkedImports++;
+            const issue = resolveIndexedImport(file, specifier, indexedPaths, isRepositoryFile);
+            if (issue) issues.push(`${file}:${line} -> ${specifier}: ${issue}`);
+        }
+    }
     if (issues.length > 0) {
         throw new Error([
             'Repository source completeness check failed:',
@@ -167,16 +282,45 @@ function verifyRepository() {
             'Add the intended source files to Git before committing; CI can only use files included in the commit.',
         ].join('\n'));
     }
-    console.log(`[verify:repo] Passed: ${packagePaths.length} package manifests, ${checkedEntries} Node entry points tracked in the Git index, no untracked source files or shared fixtures.`);
+    console.log(`[verify:repo] Passed: ${packagePaths.length} package manifests, ${checkedEntries} Node entry points and ${checkedImports} relative imports tracked in Git, no untracked source files or shared fixtures.`);
 }
 // КОНЕЦ ФУНКЦИИ verifyRepository
-// КОНЕЦ РАЗДЕЛА 3
+// КОНЕЦ РАЗДЕЛА 4
 
-// НАЧАЛО РАЗДЕЛА 4. ЗАПУСК ПРОВЕРКИ И ДИАГНОСТИКА ОШИБКИ
+// НАЧАЛО РАЗДЕЛА 5. САМОПРОВЕРКИ И ЗАПУСК ПРОВЕРКИ РЕПОЗИТОРИЯ
+// НАЧАЛО ФУНКЦИИ runSelfTests
+function runSelfTests() {
+    const source = [
+        '// import "./comment";', '/* export * from "./comment2"; */',
+        'const text = "import(\'./string\')";', 'const template = `import "./template";`;',
+        String.raw`const pattern = /import "\.\/regex"/;`, 'import type {', ' A, B', '} from "./types";',
+        'import "./theme.css";', 'export type { C } from "../shared/contracts";',
+        'export * from "./public";', 'const lazy = import("./lazy");',
+        'import shader from "./shape.wgsl?raw";', 'import data from "./fixture.json";',
+        'import { tool } from "node:fs";', 'const files = import.meta.glob("./*.ttf");',
+    ].join('\n');
+    assert.deepEqual(findRelativeImports(source).map(entry => entry.specifier),
+        ['./types', './theme.css', '../shared/contracts', './public', './lazy', './shape.wgsl?raw', './fixture.json']);
+    const indexed = new Set(['src/types.ts', 'src/theme.css', 'src/public/index.ts', 'src/shape.wgsl', 'src/fixture.json', 'src/Case.ts']);
+    const disk = new Set([...indexed, 'src/local.ts']);
+    const resolve = specifier => resolveIndexedImport('src/main.ts', specifier, indexed, file => disk.has(file));
+    assert.equal(resolve('./types'), null); assert.equal(resolve('./public'), null);
+    assert.equal(resolve('./shape.wgsl?raw'), null); assert.equal(resolve('./fixture.json'), null);
+    assert.match(resolve('./local'), /not tracked/); assert.match(resolve('./missing'), /Unresolved/);
+    assert.match(resolve('./case'), /casing/); assert.match(resolve('../../outside'), /escapes/);
+    disk.delete('src/types.ts'); assert.match(resolve('./types'), /Missing imported file/);
+    // Все три отсутствующих модуля диагностируются, даже если локальные файлы существуют.
+    const missing = ['core/frameDiagnostics.ts', 'tests/frameDiagnostics.test.ts', 'tests/glyphFontBudget.test.ts'];
+    for (const file of missing) assert.match(resolveIndexedImport('frontend/src/main.ts', './' + file.slice(0, -3), new Set(),
+        candidate => candidate === 'frontend/src/' + file), /not tracked/);
+    console.log('[verify:repo] Import guard self-tests passed (syntax, index, casing, assets and missing modules).');
+}
+// КОНЕЦ ФУНКЦИИ runSelfTests
 try {
-    verifyRepository();
+    if (process.argv.includes('--self-test')) runSelfTests();
+    else { runSelfTests(); verifyRepository(); }
 } catch (error) {
     console.error(`[verify:repo] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
 }
-// КОНЕЦ РАЗДЕЛА 4
+// КОНЕЦ РАЗДЕЛА 5

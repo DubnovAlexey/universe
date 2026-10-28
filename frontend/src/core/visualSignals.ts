@@ -32,7 +32,7 @@ let latest: Readonly<VisualSignalSnapshot> = Object.freeze({
     isPaused: false, reducedMotion: false, seed: 104729,
     low: 0, mid: 0, high: 0, pulse: 0, heartbeat: 0, kuramotoR: 0, globalStress: 0,
 });
-const listeners = new Set<(signals: Readonly<VisualSignalSnapshot>) => void>();
+const listeners = new Map<(signals: Readonly<VisualSignalSnapshot>) => void, string>();
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. НОРМАЛИЗАЦИЯ
@@ -67,18 +67,26 @@ export function createVisualSignals(
 // НАЧАЛО РАЗДЕЛА 3. ПУБЛИКАЦИЯ И ПОДПИСКИ
 // НАЧАЛО ФУНКЦИИ publishVisualSignals
 export function publishVisualSignals(
-    state: Readonly<UniverseState>, audio: Readonly<AudioModulationSnapshot>, stress: Readonly<StressStateData>
-): void {
+    state: Readonly<UniverseState>, audio: Readonly<AudioModulationSnapshot>, stress: Readonly<StressStateData>,
+    profile = false
+): Record<string, number> | undefined {
     latest = createVisualSignals(state, audio, stress);
-    listeners.forEach((listener) => listener(latest));
+    const timings: Record<string, number> | undefined = profile ? {} : undefined;
+    listeners.forEach((label, listener) => {
+        if (!timings) { listener(latest); return; }
+        const start = performance.now();
+        listener(latest);
+        timings[label] = (timings[label] ?? 0) + performance.now() - start;
+    });
+    return timings;
 }
 // КОНЕЦ ФУНКЦИИ publishVisualSignals
 // НАЧАЛО ФУНКЦИИ getVisualSignals
 export function getVisualSignals(): Readonly<VisualSignalSnapshot> { return latest; }
 // КОНЕЦ ФУНКЦИИ getVisualSignals
 // НАЧАЛО ФУНКЦИИ subscribeVisualSignals
-export function subscribeVisualSignals(listener: (signals: Readonly<VisualSignalSnapshot>) => void): () => void {
-    listeners.add(listener);
+export function subscribeVisualSignals(listener: (signals: Readonly<VisualSignalSnapshot>) => void, label = 'unlabelled'): () => void {
+    listeners.set(listener, label);
     return () => { listeners.delete(listener); };
 }
 // КОНЕЦ ФУНКЦИИ subscribeVisualSignals

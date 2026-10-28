@@ -31,7 +31,7 @@ import {
     smootherstep, universeStore, type UniverseState,
 } from '../store/universeState';
 import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
-import { getGlyphFontEpoch, getRenderableGlyphPool } from '../core/glyphGrammar';
+import { getGlyphFontEpoch, getRenderableGlyphPool, GLYPH_WAITING_SPACE, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, prepareFittedGlyph, setFittedGlyph, type GlyphInkFit } from '../core/glyphHover';
 import { getFinaleCardPlacement, getFinaleCardScale, type FinaleCardLayout } from '../core/finaleComposition';
 
@@ -72,7 +72,8 @@ export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = CAN
 
 // --- НАЧАЛО ФУНКЦИИ updateFinaleQuantumCells ---
 /** Меняет только содержимое кешированных ячеек, сохраняя сетку и индивидуальный темп. */
-export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], glyphPool: readonly string[], step: number, reducedMotion: boolean): void {
+export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], glyphPool: readonly string[], step: number, reducedMotion: boolean,
+    writes?: (() => void)[]): void {
     const updates: { cell: FinaleQuantumCell; glyph: string; fitKey: string; fit: GlyphInkFit }[] = [];
     const fontEpoch = getGlyphFontEpoch();
     for (const cell of cells) {
@@ -87,11 +88,14 @@ export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], gl
         }
     }
     // Размеры и метрики всех 25 окон прочитаны до первого изменения начертания.
-    updates.forEach(({ cell, glyph, fitKey, fit }) => {
-        cell.glyph = glyph;
-        cell.fitKey = fitKey;
-        setFittedGlyph(cell.ink, glyph, cell.canonical, fit);
-    });
+    const apply = (): void => {
+        updates.forEach(({ cell, glyph, fitKey, fit }) => {
+            cell.glyph = glyph;
+            cell.fitKey = fitKey;
+            setFittedGlyph(cell.ink, glyph, cell.canonical, fit);
+        });
+    };
+    if (writes) writes.push(apply); else apply();
 }
 // --- КОНЕЦ ФУНКЦИИ updateFinaleQuantumCells ---
 // КОНЕЦ РАЗДЕЛА 0
@@ -159,6 +163,10 @@ class FinaleCardDomAnimator {
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
         staticLines.forEach((el, index) => {
             calmGlyphHover.setCanonical(el, CANONICAL_FINALE_LINES[index]);
+            // Холодные ячейки создаются при скрытом монтировании, а не в кадре выхода из Точки Нуля.
+            if (!universeStore.getState().finaleReachedOnce) {
+                calmGlyphHover.setVisualText(el, GLYPH_WAITING_SPACE.repeat(splitGlyphText(CANONICAL_FINALE_LINES[index]).length));
+            }
         });
         root.querySelectorAll<HTMLElement>('.btn-cipher-action').forEach((el) => {
             calmGlyphHover.setCanonical(el, el.textContent ?? '');
@@ -180,7 +188,7 @@ class FinaleCardDomAnimator {
         }
         if (this.headerEl) this.resizeObserver?.observe(this.headerEl);
         this.layoutDirty = true;
-        this.unsubscribeSignals = subscribeVisualSignals(this.tick);
+        this.unsubscribeSignals = subscribeVisualSignals(this.tick, 'finale-card');
     }
     // --- КОНЕЦ ФУНКЦИИ startIfNeeded ---
 
@@ -263,6 +271,7 @@ class FinaleCardDomAnimator {
         const glyphPool = getRenderableGlyphPool(state.currentPhase);
 
         if (this.cardBoxEl) {
+            const glyphWrites: (() => void)[] = [];
             const hasLoopCard = isPersistentCard && state.finaleRiseElapsedSec !== null;
             const p = hasLoopCard
                 ? 1.0
@@ -303,7 +312,7 @@ class FinaleCardDomAnimator {
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
             const finalScale = emergeScale * heartbeatScale * settledScale;
-            this.cardBoxEl.style.transform = `translate3d(0, ${(floatY - ambientRise).toFixed(
+            const cardTransform = `translate3d(0, ${(floatY - ambientRise).toFixed(
                 1
             )}px, 0) scale(${finalScale.toFixed(4)})`;
 
@@ -321,7 +330,7 @@ class FinaleCardDomAnimator {
                         p,
                         assemblyStep,
                         glyphPool
-                    ));
+                    ), glyphWrites);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
                     calmGlyphHover.setVisualText(this.line1El, this.formatOdometerLineForProgress(
@@ -330,7 +339,7 @@ class FinaleCardDomAnimator {
                         p,
                         assemblyStep,
                         glyphPool
-                    ));
+                    ), glyphWrites);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
                     calmGlyphHover.setVisualText(this.line3El, this.formatOdometerLineForProgress(
@@ -339,7 +348,7 @@ class FinaleCardDomAnimator {
                         p,
                         assemblyStep,
                         glyphPool
-                    ));
+                    ), glyphWrites);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
                     calmGlyphHover.setVisualText(this.line4El, this.formatOdometerLineForProgress(
@@ -348,20 +357,20 @@ class FinaleCardDomAnimator {
                         p,
                         assemblyStep,
                         glyphPool
-                    ));
+                    ), glyphWrites);
                 }
             } else {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    calmGlyphHover.setVisualText(this.line0El, CANONICAL_FINALE_LINES[0]);
+                    calmGlyphHover.setVisualText(this.line0El, CANONICAL_FINALE_LINES[0], glyphWrites);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    calmGlyphHover.setVisualText(this.line1El, CANONICAL_FINALE_LINES[1]);
+                    calmGlyphHover.setVisualText(this.line1El, CANONICAL_FINALE_LINES[1], glyphWrites);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    calmGlyphHover.setVisualText(this.line3El, CANONICAL_FINALE_LINES[3]);
+                    calmGlyphHover.setVisualText(this.line3El, CANONICAL_FINALE_LINES[3], glyphWrites);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    calmGlyphHover.setVisualText(this.line4El, CANONICAL_FINALE_LINES[4]);
+                    calmGlyphHover.setVisualText(this.line4El, CANONICAL_FINALE_LINES[4], glyphWrites);
                 }
             }
 
@@ -386,8 +395,11 @@ class FinaleCardDomAnimator {
                 this.layoutDirty || fontEpoch !== this.lastQuantumFontEpoch)) {
                 this.lastQuantumStep = qStep;
                 this.lastQuantumFontEpoch = fontEpoch;
-                updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion);
+                updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion, glyphWrites);
             }
+            // Один пакет для всех строк: transform и текст не прерывают измерения следующей строки.
+            glyphWrites.forEach(apply => apply());
+            this.cardBoxEl.style.transform = cardTransform;
         }
 
         this.layoutDirty = false;
@@ -606,6 +618,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     let profileLinkEl: HTMLAnchorElement | null = null;
     let repoLinkEl: HTMLAnchorElement | null = null;
     let restartBtn: HTMLButtonElement | null = null;
+    let lastDomState = '';
 
     // --- НАЧАЛО ФУНКЦИИ update (mountLayer5CipherFinale) ---
     const update = (state: Readonly<UniverseState>): void => {
@@ -619,6 +632,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
             repoLinkEl = rootEl.querySelector<HTMLAnchorElement>('#link-open-repo');
             restartBtn = rootEl.querySelector<HTMLButtonElement>('#btn-restart-universe');
             finaleCardAnimator.bindElements(rootEl);
+            lastDomState = '';
         }
 
         const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
@@ -627,6 +641,10 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
         const showActions =
             isPersistentAmbient ||
             (isActD && state.githubCardAssemblyProgress >= 0.25);
+
+        const domState = `${isCardVisible}:${isPersistentAmbient}:${showActions}`;
+        if (domState === lastDomState) return;
+        lastDomState = domState;
 
         rootEl.classList.toggle('visible', isCardVisible);
         rootEl.setAttribute('aria-hidden', isCardVisible ? 'false' : 'true');

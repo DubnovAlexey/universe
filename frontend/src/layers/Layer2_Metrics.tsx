@@ -7,6 +7,7 @@
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
 //   РАЗДЕЛ 1. Нативная DOM/SVG фабрика React.createElement: создание узлов HTML и SVG
 //             (http://www.w3.org/2000/svg) без сторонних runtime-зависимостей.
+//             setHudText обновляет подпись только при изменении значения.
 //   РАЗДЕЛ 2. Генератор спокойного волнового контура (buildLivingBreachContourPath)
 //             и плавной подзаголовочной волны (buildLivingHorizontalWavePath).
 //   РАЗДЕЛ 3. Контроллер общего кадра (TelemetryWaterfallAnimator): непрерывное
@@ -20,6 +21,13 @@
 import { universeStore, type UniverseState } from '../store/universeState';
 import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 import { pickGlyph } from '../core/glyphGrammar';
+
+// НАЧАЛО ФУНКЦИИ setHudText
+/** Повторная телеметрия сохраняет текстовый узел и не запускает лишний пересчёт DOM. */
+export function setHudText(element: HTMLElement | null, text: string): void {
+    if (element && element.textContent !== text) element.textContent = text;
+}
+// КОНЕЦ ФУНКЦИИ setHudText
 
 // ============================================================================
 // РАЗДЕЛ 1. АВТОНОМНАЯ ФАБРИКА JSX -> DOM/SVG ELEMENT (БЕЗ ОШИБКИ TS2322)
@@ -280,7 +288,7 @@ export class TelemetryWaterfallAnimator {
     // --- НАЧАЛО ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
     public ensureRunning(): void {
         if (!this.unsubscribeSignals && this.cascades.size) {
-            this.unsubscribeSignals = this.subscribeFrame(this.tick);
+            this.unsubscribeSignals = this.subscribeFrame(this.tick, 'waterfall');
         }
     }
     // --- КОНЕЦ ФУНКЦИИ ensureRunning (TelemetryWaterfallAnimator) ---
@@ -820,24 +828,16 @@ export function mountLayer2Metrics(container: HTMLElement | null): () => void {
 
         const physSourceTag = resolvePhysicsModuleTag(t.wasmStatus);
 
-        if (elDigest) elDigest.textContent = `DIGEST: ${t.stateDigestHex}`;
-        if (elFps) elFps.textContent = `${t.fps} FPS `;
-        if (elFrameTime) {
-            elFrameTime.textContent = `(${t.frameTimeMs}/${t.frameTimeP95Ms}ms)`;
-        }
-        if (elDriftLabel) elDriftLabel.textContent = `REF64 ΔE/E₀ ${physSourceTag}`;
-        if (elDrift) elDrift.textContent = t.energyDriftRatio.toExponential(2);
-        if (elKuramotoLabel) elKuramotoLabel.textContent = `KURAMOTO r(t) ${physSourceTag}`;
-        if (elKuramoto) elKuramoto.textContent = t.kuramotoOrderR.toFixed(3);
-        if (elNodes) {
-            elNodes.textContent = `${t.activeParticles} / ${t.activeConnections}`;
-        }
-        if (elCore) {
-            elCore.textContent = `${t.wasmStatus} · ${t.pythonBackendStatus}`;
-        }
-        if (elAudio) {
-            elAudio.textContent = `${t.audioStatus} (${t.silenceRmsDb.toFixed(1)} dBFS)`;
-        }
+        setHudText(elDigest, `DIGEST: ${t.stateDigestHex}`);
+        setHudText(elFps, `${t.fps} FPS `);
+        setHudText(elFrameTime, `(${t.frameTimeMs}/${t.frameTimeP95Ms}ms)`);
+        setHudText(elDriftLabel, `REF64 ΔE/E₀ ${physSourceTag}`);
+        setHudText(elDrift, t.energyDriftRatio.toExponential(2));
+        setHudText(elKuramotoLabel, `KURAMOTO r(t) ${physSourceTag}`);
+        setHudText(elKuramoto, t.kuramotoOrderR.toFixed(3));
+        setHudText(elNodes, `${t.activeParticles} / ${t.activeConnections}`);
+        setHudText(elCore, `${t.wasmStatus} · ${t.pythonBackendStatus}`);
+        setHudText(elAudio, `${t.audioStatus} (${t.silenceRmsDb.toFixed(1)} dBFS)`);
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer2Metrics) ---
 

@@ -12,6 +12,7 @@ import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch
     getOrderedGlyphState, getRenderableGlyphPool, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, fitGlyphInk } from '../core/glyphHover';
 import { createUniverseResizeHandler } from '../engine/bootstrap';
+import { bindFinaleQuantumCells, updateFinaleQuantumCells } from '../layers/Layer5_CipherFinale';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
 class HoverElement extends EventTarget {
@@ -24,6 +25,7 @@ class HoverElement extends EventTarget {
     public get offsetWidth(): number { this.access?.push('read'); return 120; }
     public get offsetHeight(): number { this.access?.push('read'); return 24; }
     public get clientWidth(): number { this.access?.push('read'); return 13; }
+    public get clientHeight(): number { this.access?.push('read'); return 24; }
     private text = '';
     public isConnected = true;
     public readonly styleValues = new Map<string, string>();
@@ -196,12 +198,15 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     const assemblyHeading = new HoverElement('h1');
     const assemblyElement = assemblyHeading as unknown as HTMLElement;
     calmGlyphHover.setCanonical(assemblyElement, 'IWABC');
+    calmGlyphHover.setVisualText(assemblyElement, '\u00A0'.repeat(5));
+    const preparedAssembly = descendants(assemblyHeading, 'glyph-fitted-cell');
     calmGlyphHover.setVisualText(assemblyElement, '𓅓∑𝋳AB');
     const assemblyCells = descendants(assemblyHeading, 'glyph-fitted-cell');
     const assemblyMeasures = descendants(assemblyHeading, 'glyph-reel-measure');
     const assemblyInks = descendants(assemblyHeading, 'glyph-reel-ink');
     const firstAssembly = calmGlyphHover.getVisualText(assemblyElement) === '𓅓∑𝋳AB' &&
         assemblyHeading.getAttribute('aria-label') === 'IWABC' && assemblyCells.length === 5 &&
+        assemblyCells.every((cell, index) => cell === preparedAssembly[index]) &&
         assemblyMeasures.map(node => node.textContent).join('') === 'IWABC' &&
         assemblyInks.slice(0, 3).every(ink => /^scale\([\d.]+\)$/.test(ink.styleValues.get('transform') ?? ''));
     calmGlyphHover.setVisualText(assemblyElement, 'IA𓂀BC');
@@ -409,6 +414,23 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
             if (firstWrite > 0) framesWithReadsAndWrites++;
             hoverReadsBeforeWrites &&= firstWrite < 0 || !hoverAccess.slice(firstWrite).includes('read');
         }
+        const lines = Array.from({ length: 4 }, () => new HoverElement('p', hoverAccess) as unknown as HTMLElement);
+        lines.forEach(line => {
+            calmGlyphHover.setCanonical(line, 'ABCD');
+            calmGlyphHover.setVisualText(line, GLYPH_WAITING_SPACE.repeat(4));
+        });
+        const quantumLine = new HoverElement('div', hoverAccess) as unknown as HTMLElement;
+        const quantum = bindFinaleQuantumCells(quantumLine);
+        hoverAccess.length = 0;
+        const writes: (() => void)[] = [];
+        lines.forEach(line => calmGlyphHover.setVisualText(line, '∑∇ℏ∮', writes));
+        updateFinaleQuantumCells(quantum, ['∇'], 1, false, writes);
+        const onlyReads = hoverAccess.length > 0 && !hoverAccess.includes('write');
+        writes.forEach(apply => apply());
+        const firstCardWrite = hoverAccess.indexOf('write');
+        checks.push({ passed: onlyReads && firstCardWrite > 0 && !hoverAccess.slice(firstCardWrite).includes('read') &&
+            quantum.every(cell => cell.ink.textContent === '∇') && lines.every(line => calmGlyphHover.getVisualText(line) === '∑∇ℏ∮'),
+            description: 'The first visible assembly batches all four prewarmed static lines and all 25 quantum cells before any ink writes, preserving complete glyphs without inter-line layout flushes' });
     } finally {
         calmGlyphHover.stop(batchedHover);
         if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);

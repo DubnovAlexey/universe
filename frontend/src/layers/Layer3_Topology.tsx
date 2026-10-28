@@ -20,6 +20,7 @@
 
 import {
     React,
+    setHudText,
     renderWaterfallMembraneDecor,
     waterfallAnimator,
 } from './Layer2_Metrics';
@@ -187,17 +188,13 @@ export function mountLayer3Topology(container: HTMLElement | null): () => void {
             state.inspectionLevel === 'TOPOLOGY';
         rootEl.classList.toggle('layer-hidden', !isVisible);
 
-        if (elSource) elSource.textContent = metrics.computeSource;
-        if (elTrunks) elTrunks.textContent = `${metrics.trunkCount} [MST]`;
-        if (elBridges) elBridges.textContent = `${metrics.bridgeCount} [GABRIEL]`;
-        if (elDendrites) elDendrites.textContent = `${metrics.dendriteCount} [r_p³=∑r_c³]`;
-        if (elDeg) {
-            elDeg.textContent = `${metrics.avgDegree} / ${metrics.clusteringCoeff}`;
-        }
-        if (elDiam) {
-            elDiam.textContent = `${metrics.diameterHops} hops / ${metrics.avgPathLength}`;
-        }
-        if (elPulses) elPulses.textContent = String(state.telemetry.activePulses);
+        setHudText(elSource, metrics.computeSource);
+        setHudText(elTrunks, `${metrics.trunkCount} [MST]`);
+        setHudText(elBridges, `${metrics.bridgeCount} [GABRIEL]`);
+        setHudText(elDendrites, `${metrics.dendriteCount} [r_p³=∑r_c³]`);
+        setHudText(elDeg, `${metrics.avgDegree} / ${metrics.clusteringCoeff}`);
+        setHudText(elDiam, `${metrics.diameterHops} hops / ${metrics.avgPathLength}`);
+        setHudText(elPulses, String(state.telemetry.activePulses));
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer3Topology) ---
 

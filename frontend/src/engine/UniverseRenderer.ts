@@ -20,7 +20,7 @@ import { publishVisualSignals } from '../core/visualSignals';
 import { BackgroundFields } from './backgroundFields';
 import { OuroborosEffect } from './ouroboros/OuroborosEffect';
 import { getVisualSignals } from '../core/visualSignals';
-import { FrameDiagnostics } from '../core/frameDiagnostics';
+import { FrameDiagnostics, type FrameWorkBreakdown } from '../core/frameDiagnostics';
 import {
     renderBreathingLightEchoRings, renderSpiralDustAndCanyons,
     renderCurvedFieldSignals, renderCorticalHemispheresAndKeplerRings,
@@ -433,6 +433,9 @@ export class UniverseRenderer {
         if (!this.isRunning) return;
         const profileStartMs = this.frameDiagnostics.enabled ? performance.now() : 0;
         const profileGapMs = Math.max(0, nowMs - this.lastFrameTimeMs);
+        const profileWork: FrameWorkBreakdown | undefined = this.frameDiagnostics.enabled
+            ? { setupMs: 0, simulationMs: 0, uiMs: 0, renderMs: 0 } : undefined;
+        let profileMarkMs = profileStartMs;
 
         try {
             const rawDtMs = Math.max(1.0, nowMs - this.lastFrameTimeMs);
@@ -473,6 +476,11 @@ export class UniverseRenderer {
                 state.currentPhase,
                 false
             );
+            if (profileWork) {
+                const endMs = performance.now();
+                profileWork.setupMs = endMs - profileMarkMs;
+                profileMarkMs = endMs;
+            }
 
             if (isActiveSim && simDtSec > 0) {
                 stressStore.stepPhysics(simDtSec);
@@ -486,6 +494,11 @@ export class UniverseRenderer {
                 );
             }
 
+            if (profileWork) {
+                const endMs = performance.now();
+                profileWork.simulationMs = endMs - profileMarkMs;
+                profileMarkMs = endMs;
+            }
             const latestState = universeStore.getState();
             const particles = this.getSimParticles();
             const edges = this.getSimEdges();
@@ -524,8 +537,15 @@ export class UniverseRenderer {
                 });
             }
 
-            publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState());
+            const visualTimings = publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState(), !!profileWork);
+            if (profileWork) profileWork.visualSignals = visualTimings;
+            if (profileWork) {
+                const endMs = performance.now();
+                profileWork.uiMs = endMs - profileMarkMs;
+                profileMarkMs = endMs;
+            }
             this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
+            if (profileWork) profileWork.renderMs = performance.now() - profileMarkMs;
             this.consecutiveFrameErrors = 0;
         } catch (err: unknown) {
             this.consecutiveFrameErrors++;
@@ -545,7 +565,7 @@ export class UniverseRenderer {
         } finally {
             if (this.frameDiagnostics.enabled) {
                 this.frameDiagnostics.record(profileGapMs, performance.now() - profileStartMs,
-                    universeStore.getState(), nowMs);
+                    universeStore.getState(), nowMs, profileWork);
             }
             if (this.isRunning) {
                 this.rafId = requestAnimationFrame(this.loop);

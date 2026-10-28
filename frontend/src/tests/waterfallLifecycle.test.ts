@@ -4,7 +4,7 @@
 // РАЗДЕЛЫ: 1. Минимальные DOM-привязки; 2. Общий кадр и жизненный цикл каскадов.
 // ФУНКЦИИ: makeCascade, runWaterfallLifecycleChecks.
 // ============================================================================
-import { TelemetryWaterfallAnimator } from '../layers/Layer2_Metrics';
+import { TelemetryWaterfallAnimator, setHudText } from '../layers/Layer2_Metrics';
 import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
@@ -86,6 +86,14 @@ function makeCascade(hidden = false): { node: WaterfallNode; root: HTMLElement; 
 // НАЧАЛО РАЗДЕЛА 2. ОБЩИЙ КАДР И СНЯТИЕ КАСКАДОВ
 // НАЧАЛО ФУНКЦИИ runWaterfallLifecycleChecks
 export function runWaterfallLifecycleChecks(check: (passed: boolean, description: string) => void): void {
+    let text = '', textWrites = 0;
+    const label = { get textContent(): string { return text; }, set textContent(value: string) { text = value; textWrites++; } } as HTMLElement;
+    setHudText(label, 'READY');
+    for (let i = 0; i < 120; i++) setHudText(label, 'READY');
+    setHudText(label, 'FALLBACK');
+    setHudText(null, 'READY');
+    check(textWrites === 2 && text === 'FALLBACK',
+        'Repeated unchanged telemetry retains its text node while real status changes appear immediately');
     const shared: { listener: ((snapshot: Readonly<VisualSignalSnapshot>) => void) | null;
         subscriptions: number; releases: number } = { listener: null, subscriptions: 0, releases: 0 };
     const animator = new TelemetryWaterfallAnimator((listener) => {
