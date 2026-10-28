@@ -98,6 +98,7 @@
     --button-axis-y: 0;
     --button-axis-z: 0;
     --button-spin-angle: 0deg;
+    --button-back-label-turn: 0deg;
     --button-shadow-x: 3px;
     --button-shadow-y: 8px;
     --button-shadow-blur: 6px;
