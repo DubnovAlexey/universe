@@ -1,6 +1,6 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/ouroborosModel.test.ts
-// НАЗНАЧЕНИЕ: Проверить формат, детерминизм и безопасные границы объёмной формы.
+// НАЗНАЧЕНИЕ: Проверить формат, детерминизм, границы формы и мягкое внутреннее течение.
 // РАЗДЕЛЫ: 1. Проверка активных точек; 2. Контракты заполнения и морфинга.
 // ФУНКЦИИ: validPoints, projectedBodyAspectRatio, bodyVolumeRatio, runOuroborosModelChecks.
 // ============================================================================
@@ -68,19 +68,23 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     const points = new Float32Array(OUROBOROS_CAPACITY * OUROBOROS_STRIDE);
     const repeated = new Float32Array(points.length);
     fillOuroborosPoints(points, 104729, OUROBOROS_CAPACITY, 17, 1, 0.7);
-    let body = 0, dust = 0, satellites = 0;
+    let body = 0, dust = 0, interiorDust = 0, exteriorDust = 0, satellites = 0;
     let radiiValid = true;
     for (let i = 0; i < OUROBOROS_CAPACITY; i++) {
         const offset = i * OUROBOROS_STRIDE;
         const radius = Math.hypot(points[offset], points[offset + 1], points[offset + 2]);
         const kind = points[offset + 7];
         if (kind === 0) { body++; radiiValid &&= radius >= 0.6 && radius <= 1.15; }
-        else if (kind === 1) { dust++; radiiValid &&= radius >= 1.34 && radius <= 2.22; }
+        else if (kind === 1) {
+            dust++;
+            if (i % 16 === 6) { interiorDust++; radiiValid &&= radius >= 0.15 && radius <= 0.52; }
+            else { exteriorDust++; radiiValid &&= radius >= 1.34 && radius <= 2.22; }
+        }
         else { satellites++; radiiValid &&= radius >= 1.29 && radius <= 2.04; }
     }
     check(OUROBOROS_STRIDE === 8 && points.length === 24576 && validPoints(points, OUROBOROS_CAPACITY) &&
-        body === 2304 && dust === 760 && satellites === 8 && radiiValid,
-        'Packed Ouroboros geometry has finite positions, unit normals, CSS radii and distinct body/dust/satellite spatial bands');
+        body === 2304 && dust === 760 && interiorDust === 192 && exteriorDust === 568 && satellites === 8 && radiiValid,
+        'Packed Ouroboros geometry preserves all point counts, unit normals and separate airy interior, exterior dust, body and satellite bands');
 
     let deterministic = true;
     for (const seed of [0, 104729, 0xffffffff]) {
@@ -185,6 +189,66 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     }
     check(completesTurn,
         'The fully formed head completes at least one visible orbit before automatic dispersion in each of three cycles');
+
+    const interiorIndices = Array.from({ length: 32 }, (_, index) => index * 16 + 6);
+    let interiorBounds = true, gentleMotion = true, differentialFlow = true, repeatableFlow = true;
+    for (const seed of [0, 104729, 0xffffffff]) {
+        for (const time of [0, 17, 103.05, 216]) {
+            fillOuroborosPoints(prefix, seed, 512, time, 1, 0.7);
+            fillOuroborosPoints(nextPose, seed, 512, time + 0.05, 1, 0.7);
+            for (const index of interiorIndices) {
+                const offset = index * OUROBOROS_STRIDE;
+                const radius = Math.hypot(prefix[offset], prefix[offset + 1], prefix[offset + 2]);
+                const step = Math.hypot(nextPose[offset] - prefix[offset], nextPose[offset + 1] - prefix[offset + 1],
+                    nextPose[offset + 2] - prefix[offset + 2]);
+                interiorBounds &&= prefix[offset + 7] === 1 && radius >= 0.15 && radius <= 0.52;
+                // Медленный поток не наследует быстрый полный оборот тела каждые 12 секунд.
+                gentleMotion &&= step > 1e-6 && step / 0.05 < 0.12;
+            }
+            fillOuroborosPoints(nextPose, seed, 512, time + 2, 1, 0.7);
+            let nonRigidPairs = 0;
+            for (let pair = 1; pair < 8; pair++) {
+                const a = interiorIndices[0] * OUROBOROS_STRIDE;
+                const b = interiorIndices[pair] * OUROBOROS_STRIDE;
+                const distance = (buffer: Float32Array): number => Math.hypot(buffer[a] - buffer[b], buffer[a + 1] - buffer[b + 1],
+                    buffer[a + 2] - buffer[b + 2]);
+                if (Math.abs(distance(nextPose) - distance(prefix)) > 1e-4) nonRigidPairs++;
+            }
+            differentialFlow &&= nonRigidPairs >= 4;
+            fillOuroborosPoints(nextPose, seed, 512, time, 1, 0.7);
+            repeatableFlow &&= prefix.every((value, index) => value === nextPose[index]);
+        }
+    }
+    check(interiorBounds && gentleMotion,
+        'Interior dust stays inside the body with an open central region and moves continuously at a restrained speed instead of inheriting the full twelve-second body spin');
+    check(differentialFlow && repeatableFlow,
+        'Interior point separations change as a differential field rather than one rigid object; fixed shared time replays the exact paused Float32 pose');
+
+    fillOuroborosPoints(points, 104729, OUROBOROS_CAPACITY, 17, 1, 0.5);
+    let exteriorUnchanged = true;
+    for (let i = 0; i < OUROBOROS_CAPACITY; i++) {
+        if (i % 8 < 6 || i % 16 === 6) continue;
+        for (let field = 0; field < OUROBOROS_STRIDE; field++) {
+            const offset = i * OUROBOROS_STRIDE + field;
+            exteriorUnchanged &&= points[offset] === dissolved[offset];
+        }
+    }
+    check(exteriorUnchanged,
+        'Interior organization leaves every exterior dust point and satellite unchanged between dissolved and formed poses at the same time');
+
+    let smoothFlowHandoff = true;
+    for (const [boundary, neighbor] of [[0, 0.0001], [1, 0.9999]]) {
+        fillOuroborosPoints(prefix, 104729, 512, 17, boundary, 0.7);
+        fillOuroborosPoints(nextPose, 104729, 512, 17, neighbor, 0.7);
+        for (const index of interiorIndices) {
+            const offset = index * OUROBOROS_STRIDE;
+            smoothFlowHandoff &&= Math.hypot(nextPose[offset] - prefix[offset], nextPose[offset + 1] - prefix[offset + 1],
+                nextPose[offset + 2] - prefix[offset + 2]) < 1e-5;
+            if (boundary === 0) smoothFlowHandoff &&= Math.hypot(prefix[offset], prefix[offset + 1], prefix[offset + 2]) >= 1.34;
+        }
+    }
+    check(smoothFlowHandoff,
+        'Interior flow emerges continuously from the original exterior dust and reaches its formed pose without a positional snap at either morph endpoint');
 
     const guard = new Float32Array(16).fill(19);
     const invalid = [[-1, 1, 0, 1, 0], [0, 1.5, 0, 1, 0], [0, 3073, 0, 1, 0],

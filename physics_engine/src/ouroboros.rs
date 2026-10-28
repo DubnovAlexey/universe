@@ -1,6 +1,6 @@
 // ============================================================================
 // ФАЙЛ: physics_engine/src/ouroboros.rs
-// НАЗНАЧЕНИЕ: Независимая геометрия Уробороса и optional raw ABI формы версии 1.
+// НАЗНАЧЕНИЕ: Геометрия Уробороса, внутреннее течение пыли и optional raw ABI v1.
 // РАЗДЕЛЫ: 1. Формат; 2. Заполнение точек; 3. Статическая память и ABI; 4. Тесты.
 // ФУНКЦИИ: smooth, hash_float, fill_ouroboros_points, get_ouroboros_abi_version,
 // get_ouroboros_capacity, get_ouroboros_points_ptr, sample_ouroboros.
@@ -52,6 +52,12 @@ pub fn fill_ouroboros_points(
     let (r00, r01, r02) = (cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx);
     let (r10, r11, r12) = (sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx);
     let (r20, r21, r22) = (-sy, cy * sx, cy * cx);
+    // Поле разделяет пространственное покачивание, но не полный оборот тела каждые 12 с.
+    let flow_az = 0.12 + 0.07 * (time_sec * 0.11).sin();
+    let (flow_sin, flow_cos) = (flow_az.sin(), flow_az.cos());
+    let (f00, f01, f02) = (flow_cos * cy, flow_cos * sy * sx - flow_sin * cx, flow_cos * sy * cx + flow_sin * sx);
+    let (f10, f11, f12) = (flow_sin * cy, flow_sin * sy * sx + flow_cos * cx, flow_sin * sy * cx - flow_cos * sx);
+    let flow_blend = smooth(morph);
 
     for i in 0..count {
         let h0 = hash_float(seed, (i * 11) as u32);
@@ -64,7 +70,9 @@ pub fn fill_ouroboros_points(
         let dx = dust_angle.cos() * dust_radius;
         let dy = dust_angle.sin() * dust_radius;
         let dz = (h2 - 0.5) * 0.22 + (dust_angle * 3.0 + time_sec * 0.13).sin() * 0.035;
-        let (x, y, z, mut nx, mut ny, mut nz, size, kind);
+        // Стабильная четверть пылевых индексов: 192 из 3072, без расходования исходного облака.
+        let interior = i % 16 == 6;
+        let (mut x, mut y, mut z, mut nx, mut ny, mut nz, mut size, kind);
         if i % 384 == 383 {
             let orbit = h0 * TAU + time_sec * (0.07 + h3 * 0.04) * if h4 < 0.5 { -1.0 } else { 1.0 };
             let radius = 1.3 + 0.7 * h1;
@@ -79,6 +87,17 @@ pub fn fill_ouroboros_points(
             nx = dust_angle.cos(); ny = dust_angle.sin(); nz = 0.12;
             size = 0.4 + h4;
             kind = 1.0;
+            if interior {
+                // Музыка меняет амплитуду дыхания, сохраняя непрерывную фазу траекторий.
+                let flow_angle = h0 * TAU + time_sec * (0.055 + h3 * 0.04);
+                let flow_radius = 0.17 + 0.31 * h1.sqrt()
+                    + (time_sec * 0.24 + h2 * TAU).sin() * (0.008 + 0.006 * energy);
+                let flow_z = (h2 - 0.5) * 0.16 + (flow_angle * 2.0 + time_sec * 0.14).sin() * 0.025;
+                x += (flow_angle.cos() * flow_radius - x) * flow_blend;
+                y += (flow_angle.sin() * flow_radius - y) * flow_blend;
+                z += (flow_z - z) * flow_blend;
+                size += (0.75 + 0.65 * h4 - size) * flow_blend;
+            }
         } else {
             let eye = i < 2;
             let lip = i == 2 || i == 3;
@@ -117,11 +136,11 @@ pub fn fill_ouroboros_points(
         if length > 1e-12 { nx /= length; ny /= length; nz /= length; }
         else { nx = 0.0; ny = 0.0; nz = 1.0; }
         let offset = i * OUROBOROS_STRIDE;
-        target[offset] = (r00 * x + r01 * y + r02 * z) as f32;
-        target[offset + 1] = (r10 * x + r11 * y + r12 * z) as f32;
+        target[offset] = (if interior { f00 * x + f01 * y + f02 * z } else { r00 * x + r01 * y + r02 * z }) as f32;
+        target[offset + 1] = (if interior { f10 * x + f11 * y + f12 * z } else { r10 * x + r11 * y + r12 * z }) as f32;
         target[offset + 2] = (r20 * x + r21 * y + r22 * z) as f32;
-        target[offset + 3] = (r00 * nx + r01 * ny + r02 * nz) as f32;
-        target[offset + 4] = (r10 * nx + r11 * ny + r12 * nz) as f32;
+        target[offset + 3] = (if interior { f00 * nx + f01 * ny + f02 * nz } else { r00 * nx + r01 * ny + r02 * nz }) as f32;
+        target[offset + 4] = (if interior { f10 * nx + f11 * ny + f12 * nz } else { r10 * nx + r11 * ny + r12 * nz }) as f32;
         target[offset + 5] = (r20 * nx + r21 * ny + r22 * nz) as f32;
         target[offset + 6] = size as f32;
         target[offset + 7] = kind;

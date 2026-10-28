@@ -122,6 +122,8 @@
     .btn-cipher-action {
         font-size: 0.6rem;
         padding-inline: 0.5rem;
+        /* Подписи сохраняются целиком, когда центральная полоса уже суммы трёх ссылок. */
+        white-space: normal;
     }
 
     .metrics-inspector-v2,

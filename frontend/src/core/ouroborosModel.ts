@@ -1,6 +1,6 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/core/ouroborosModel.ts
-// НАЗНАЧЕНИЕ: Детерминированные объёмные точки Уробороса, пылевого кольца и спутников.
+// НАЗНАЧЕНИЕ: Объёмные точки Уробороса, внутреннее течение пыли, ореол и спутники.
 // РАЗДЕЛЫ: 1. Формат и проверка входов; 2. Заполнение геометрии без выделения памяти.
 // ФУНКЦИИ: isValidOuroborosSample, smooth, fillOuroborosPoints.
 // Позиции и нормали уже повёрнуты; size хранит базовый радиус в CSS-пикселях.
@@ -53,6 +53,12 @@ export function fillOuroborosPoints(
     const r00 = cz * cy, r01 = cz * sy * sx - sz * cx, r02 = cz * sy * cx + sz * sx;
     const r10 = sz * cy, r11 = sz * sy * sx + cz * cx, r12 = sz * sy * cx - cz * sx;
     const r20 = -sy, r21 = cy * sx, r22 = cy * cx;
+    // Поле разделяет пространственное покачивание, но не полный оборот тела каждые 12 с.
+    const flowAz = 0.12 + 0.07 * Math.sin(timeSec * 0.11);
+    const flowSin = Math.sin(flowAz), flowCos = Math.cos(flowAz);
+    const f00 = flowCos * cy, f01 = flowCos * sy * sx - flowSin * cx, f02 = flowCos * sy * cx + flowSin * sx;
+    const f10 = flowSin * cy, f11 = flowSin * sy * sx + flowCos * cx, f12 = flowSin * sy * cx - flowCos * sx;
+    const flowBlend = smooth(morph);
 
     for (let i = 0; i < count; i++) {
         // Независимые hash-каналы не расходуют PRNG физики и сохраняют prefix при смене качества.
@@ -66,6 +72,8 @@ export function fillOuroborosPoints(
         const dx = Math.cos(dustAngle) * dustRadius;
         const dy = Math.sin(dustAngle) * dustRadius;
         const dz = (h2 - 0.5) * 0.22 + Math.sin(dustAngle * 3 + timeSec * 0.13) * 0.035;
+        // Стабильная четверть пылевых индексов: 192 из 3072, без расходования исходного облака.
+        const interior = i % 16 === 6;
         let x: number, y: number, z: number, nx: number, ny: number, nz: number, size: number, kind: number;
 
         if (i % 384 === 383) {
@@ -82,6 +90,18 @@ export function fillOuroborosPoints(
             nx = Math.cos(dustAngle); ny = Math.sin(dustAngle); nz = 0.12;
             size = 0.4 + h4;
             kind = OUROBOROS_KIND_DUST;
+            if (interior) {
+                // Разные скорости и мягкое радиальное дыхание не создают второго жёсткого кольца.
+                // Музыка меняет амплитуду дыхания, сохраняя непрерывную фазу каждой траектории.
+                const flowAngle = h0 * TAU + timeSec * (0.055 + h3 * 0.04);
+                const flowRadius = 0.17 + 0.31 * Math.sqrt(h1) +
+                    Math.sin(timeSec * 0.24 + h2 * TAU) * (0.008 + 0.006 * energy);
+                const flowZ = (h2 - 0.5) * 0.16 + Math.sin(flowAngle * 2 + timeSec * 0.14) * 0.025;
+                x += (Math.cos(flowAngle) * flowRadius - x) * flowBlend;
+                y += (Math.sin(flowAngle) * flowRadius - y) * flowBlend;
+                z += (flowZ - z) * flowBlend;
+                size += (0.75 + 0.65 * h4 - size) * flowBlend;
+            }
         } else {
             // Стабильные ориентиры: глаза0/1, противоположные губы2/3, конец хвоста4/5.
             const eye = i < 2;
@@ -121,11 +141,11 @@ export function fillOuroborosPoints(
         if (length > 1e-12) { nx /= length; ny /= length; nz /= length; }
         else { nx = 0; ny = 0; nz = 1; }
         const offset = i * OUROBOROS_STRIDE;
-        target[offset] = r00 * x + r01 * y + r02 * z;
-        target[offset + 1] = r10 * x + r11 * y + r12 * z;
+        target[offset] = interior ? f00 * x + f01 * y + f02 * z : r00 * x + r01 * y + r02 * z;
+        target[offset + 1] = interior ? f10 * x + f11 * y + f12 * z : r10 * x + r11 * y + r12 * z;
         target[offset + 2] = r20 * x + r21 * y + r22 * z;
-        target[offset + 3] = r00 * nx + r01 * ny + r02 * nz;
-        target[offset + 4] = r10 * nx + r11 * ny + r12 * nz;
+        target[offset + 3] = interior ? f00 * nx + f01 * ny + f02 * nz : r00 * nx + r01 * ny + r02 * nz;
+        target[offset + 4] = interior ? f10 * nx + f11 * ny + f12 * nz : r10 * nx + r11 * ny + r12 * nz;
         target[offset + 5] = r20 * nx + r21 * ny + r22 * nz;
         target[offset + 6] = size;
         target[offset + 7] = kind;
