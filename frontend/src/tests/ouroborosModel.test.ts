@@ -147,6 +147,22 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     check(headLeads && maxNormalZ - minNormalZ > 0.12,
         'Projected motion always leads mouth-first rather than tail-first, while normals confirm gentle spatial rocking');
 
+    let completesTurn = true;
+    for (let cycle = 0; cycle < 3; cycle++) {
+        let previousAngle = 0, travel = 0;
+        for (let frame = 0; frame <= 251; frame++) {
+            // От конца сборки(103.05) до конца удержания VOID(108+7.6):12.55 движущейся секунды.
+            fillOuroborosPoints(prefix, 104729, 512, 103.05 + cycle * 108 + frame * 0.05, 1, 0.5);
+            const mouth = project(midpoint(position(prefix, 2), position(prefix, 3)));
+            const angle = Math.atan2(mouth[1], mouth[0]);
+            if (frame > 0) travel += Math.atan2(Math.sin(angle - previousAngle), Math.cos(angle - previousAngle));
+            previousAngle = angle;
+        }
+        completesTurn &&= travel >= Math.PI * 2;
+    }
+    check(completesTurn,
+        'The fully formed head completes at least one visible orbit before automatic dispersion in each of three cycles');
+
     const guard = new Float32Array(16).fill(19);
     const invalid = [[-1, 1, 0, 1, 0], [0, 1.5, 0, 1, 0], [0, 3073, 0, 1, 0],
         [0, 1, Number.NaN, 1, 0], [0, 1, -1, 1, 0], [0, 1, 0, -0.1, 0], [0, 1, 0, 1, Infinity]];

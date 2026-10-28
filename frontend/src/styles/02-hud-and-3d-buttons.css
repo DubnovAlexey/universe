@@ -276,6 +276,10 @@
     overflow: visible;
 }
 
+.solid-button-label--back {
+    transform: rotate(var(--button-back-label-turn, 0deg));
+}
+
 /* Широкие информационные тела имеют собственный локальный центр вращения. */
 
 :root .brand-card [data-button-solid="1"] {

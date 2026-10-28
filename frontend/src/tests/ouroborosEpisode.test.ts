@@ -55,13 +55,14 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
     const voidState = { currentPhase: '01_VOID' as const, singularityAct: 'INACTIVE' as const,
         ouroborosRelease: { ageSec: 12, timeSec: 108 }, finaleRiseElapsedSec: 12, cycleCount: 2 };
     const releaseStart = evaluateOuroborosEpisode(makeState(0, voidState, 0));
-    const releaseHalf = evaluateOuroborosEpisode(makeState(2.6, voidState, 2.6));
-    const dust = evaluateOuroborosEpisode(makeState(5.2, voidState, 5.2));
-    const fade = evaluateOuroborosEpisode(makeState(6.1, voidState, 6.1));
-    const end = evaluateOuroborosEpisode(makeState(6.8, voidState, 6.8));
-    check(releaseStart.morph === 1 && Math.abs(releaseHalf.morph - 0.5) < 1e-12 &&
+    const heldTurn = evaluateOuroborosEpisode(makeState(7.6, voidState, 7.6));
+    const releaseHalf = evaluateOuroborosEpisode(makeState(11.2, voidState, 11.2));
+    const dust = evaluateOuroborosEpisode(makeState(14.8, voidState, 14.8));
+    const fade = evaluateOuroborosEpisode(makeState(15.9, voidState, 15.9));
+    const end = evaluateOuroborosEpisode(makeState(16.8, voidState, 16.8));
+    check(releaseStart.morph === 1 && heldTurn.morph === 1 && Math.abs(releaseHalf.morph - 0.5) < 1e-12 &&
         dust.morph === 0 && dust.opacity === 0.76 && fade.morph === 0 && fade.opacity > 0 && fade.opacity < 0.76 && end.opacity === 0,
-        'Phase01 disperses the shape for5.2 seconds before fading the returned dust during5.4–6.8 seconds');
+        'Phase01 first holds the full turn, disperses for7.2 seconds and fades returned dust during15–16.8 seconds');
 
     const Store = universeStore.constructor as new () => typeof universeStore;
     const manual = new Store();
@@ -97,18 +98,53 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
         held.morph === 1 && next.morph === 1 && held.timeSec === next.timeSec && next.timeSec === 108,
         'Automatic restart captures the visible form and enters cycle2 with the same orientation and fullness');
 
+    const delayed = new Store();
+    let delayedContinuous = true;
+    for (let cycle = 1; cycle <= 2; cycle++) {
+        delayed.setPhase('05_SINGULARITY'); advance(delayed, 18.55); advance(delayed, 24.05);
+        delayed.setFinaleCardHovered(true); advance(delayed, 34.25);
+        const shown = evaluateOuroborosEpisode(delayed.getState());
+        delayed.setFinaleCardHovered(false); advance(delayed, 34.25);
+        const restart = evaluateOuroborosEpisode(delayed.getState());
+        advance(delayed, 34.975);
+        const collapsing = evaluateOuroborosEpisode(delayed.getState());
+        advance(delayed, 35.7);
+        const released = evaluateOuroborosEpisode(delayed.getState());
+        delayedContinuous &&= shown.timeSec === 113.25 + (cycle - 1) * 108 &&
+            JSON.stringify(shown) === JSON.stringify(restart) && JSON.stringify(shown) === JSON.stringify(collapsing) &&
+            JSON.stringify(shown) === JSON.stringify(released) && delayed.getState().currentPhase === '01_VOID' &&
+            delayed.getState().cycleCount === cycle + 1;
+        advance(delayed, 0.25);
+        delayedContinuous &&= evaluateOuroborosEpisode(delayed.getState()).timeSec === shown.timeSec + 0.25;
+    }
+    check(delayedContinuous,
+        'Hover-delayed restarts freeze the actual visible time beyond108 seconds, preserve it into VOID and resume without a cycle-offset jump');
+
+    const earlyRestart = new Store(); earlyRestart.toggleAutoCycle(); earlyRestart.setPhase('05_SINGULARITY');
+    advance(earlyRestart, 18.55); advance(earlyRestart, 21.3);
+    const partialBefore = evaluateOuroborosEpisode(earlyRestart.getState());
+    earlyRestart.triggerUniverseRestart();
+    const partialStart = evaluateOuroborosEpisode(earlyRestart.getState());
+    advance(earlyRestart, 22.025);
+    const partialCollapse = evaluateOuroborosEpisode(earlyRestart.getState());
+    advance(earlyRestart, 22.75);
+    const partialRelease = evaluateOuroborosEpisode(earlyRestart.getState());
+    check(partialBefore.morph > 0 && partialBefore.morph < 1 &&
+        [partialStart, partialCollapse, partialRelease].every(e => JSON.stringify(e) === JSON.stringify(partialBefore)),
+        'Manual Restart freezes both orientation and partial gathering at the rendered pose before returning that same shape to VOID');
+
     const staticGather = evaluateOuroborosEpisode(makeState(21, { reducedMotion: true }));
     const staticRelease = evaluateOuroborosEpisode(makeState(2, { ...voidState, reducedMotion: true }));
     check(staticGather.opacity === 0.42 && staticGather.morph === 1 && staticGather.timeSec === 0 &&
         JSON.stringify(staticGather) === JSON.stringify(staticRelease) &&
-        evaluateOuroborosEpisode(makeState(6.8, { ...voidState, reducedMotion: true })).opacity === 0,
+        evaluateOuroborosEpisode(makeState(16.8, { ...voidState, reducedMotion: true })).opacity === 0,
         'Reduced motion holds one stationary form with the same episode end boundary');
 
-    const previews = [6, 26, 46].map(time => evaluateOuroborosEpisode(makeState(0,
+    const previews = [6, 36, 66].map(time => evaluateOuroborosEpisode(makeState(0,
         { currentPhase: '01_VOID', finaleReachedOnce: false, finaleRiseElapsedSec: null, singularityAct: 'INACTIVE' }, time), true));
-    check(previews.every((e, i) => e.morph === 1 && e.opacity === 0.76 && e.timeSec === [6, 26, 46][i]) &&
-        evaluateOuroborosEpisode(makeState(0, {}, 19), true).opacity === 0,
-        'Preview preserves the shared clock and repeats its slower gather/dispersion envelope every20 seconds');
+    check(previews.every((e, i) => e.morph === 1 && e.opacity === 0.76 && e.timeSec === [6, 36, 66][i]) &&
+        evaluateOuroborosEpisode(makeState(0, {}, 29), true).opacity === 0,
+        'Preview preserves the shared clock and gives a full turn before its slow dispersion on a30-second envelope');
 
     check([NaN, Infinity, -1].every(rise => evaluateOuroborosEpisode(makeState(24, { finaleRiseElapsedSec: rise })).opacity === 0) &&
         [NaN, Infinity, -1].every(time => evaluateOuroborosEpisode(makeState(24, {}, time), true).timeSec === 0) &&

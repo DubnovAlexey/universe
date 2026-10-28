@@ -19,7 +19,7 @@ const SHADOW_PROPERTIES = [
     '--button-shadow-x', '--button-shadow-y', '--button-shadow-blur',
     '--button-shadow-opacity', '--button-shadow-scale-x', '--button-shadow-scale-y',
 ] as const;
-const BUTTON_PROPERTIES = ['--button-axis-x', '--button-axis-y', '--button-axis-z', '--button-spin-angle', ...SHADOW_PROPERTIES] as const;
+const BUTTON_PROPERTIES = ['--button-axis-x', '--button-axis-y', '--button-axis-z', '--button-spin-angle', '--button-back-label-turn', ...SHADOW_PROPERTIES] as const;
 const GITHUB_INK_PROPERTY = '--github-ink-color';
 type ButtonProperty = typeof BUTTON_PROPERTIES[number] | typeof GITHUB_INK_PROPERTY;
 interface ButtonPose {
@@ -136,6 +136,8 @@ export class ButtonMotionController {
             element.style.setProperty('--button-axis-x', formatCssNumber(axis[0]));
             element.style.setProperty('--button-axis-y', formatCssNumber(axis[1]));
             element.style.setProperty('--button-axis-z', formatCssNumber(axis[2]));
+            // Печать на обратной стороне учитывает вертикальный или горизонтальный переворот тела.
+            element.style.setProperty('--button-back-label-turn', Math.abs(axis[0]) >= Math.abs(axis[1]) ? '180deg' : '0deg');
             const enter = (): void => this.setInteracting(pose, true, element.matches(':focus-visible'));
             const leave = (): void => this.setInteracting(pose, false, element.matches(':focus-visible'));
             const focus = (): void => this.setInteracting(pose, pose.hovered, element.matches(':focus-visible'));

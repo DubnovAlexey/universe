@@ -112,7 +112,10 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
     const statusAxis = axis(h.buttons[3]);
     check(h.shared.subscriptions === 1 && h.binding.listenerCount === 20 &&
         h.buttons.every((button) => Math.abs(Math.hypot(...axis(button)) - 1) < 0.000002 &&
-            button.values.size === 10 && !button.values.has('transform') && button.textContent === 'CANONICAL BUTTON') &&
+            button.values.size === 11 && !button.values.has('transform') && button.textContent === 'CANONICAL BUTTON') &&
+        h.buttons[0].values.get('--button-back-label-turn') === '180deg' &&
+        h.buttons[1].values.get('--button-back-label-turn') === '0deg' &&
+        h.buttons[3].values.get('--button-back-label-turn') === '180deg' &&
         axis(h.buttons[0])[0] > 0.99 && axis(h.buttons[1])[1] > 0.99 &&
         statusAxis[0] > 0.9998 && Math.abs(statusAxis[1]) < 0.016 && Math.abs(statusAxis[2]) < 0.006 &&
         spin(h.buttons[0]) > 0 && spin(h.buttons[1]) < 0 && spin(h.buttons[2]) < 0 && spin(h.buttons[3]) > 0,

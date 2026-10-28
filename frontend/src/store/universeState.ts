@@ -103,7 +103,7 @@ export interface UniverseState {
     finaleReachedOnce: boolean;
     /** null до начала подъёма; активные секунды [0..12], сохраняемые между фазами и циклами. */
     finaleRiseElapsedSec: number | null;
-    /** Снимок видимого эпизода при входе в VOID; null исключает появление формы из ничего. */
+    /** Снимок видимого эпизода при начале restart или входе в VOID; null исключает появление формы из ничего. */
     ouroborosRelease: { readonly ageSec: number; readonly timeSec: number } | null;
     timeScale: number;
     gravityMultiplier: number;
@@ -486,9 +486,10 @@ class UniverseStore {
         const state = this.state;
         if (state.currentPhase !== '05_SINGULARITY' || state.finaleRiseElapsedSec === null ||
             (state.singularityAct !== 'ACT_D_GITHUB_CARD' && state.singularityAct !== 'RESTART_COLLAPSE')) return null;
+        // Restart удерживает фактически показанную позу, включая задержанный наведением финал.
+        if (state.singularityAct === 'RESTART_COLLAPSE' && state.ouroborosRelease !== null) return state.ouroborosRelease;
         const ageSec = Math.max(0, Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55));
-        const cycleTime = state.singularityAct === 'RESTART_COLLAPSE'
-            ? Math.min(108, state.telemetry.simulationTimeSec) : state.telemetry.simulationTimeSec;
+        const cycleTime = state.telemetry.simulationTimeSec;
         return { ageSec, timeSec: cycleTime + Math.max(0, state.cycleCount - 1) * 108 };
     }
     // --- КОНЕЦ ФУНКЦИИ captureOuroborosRelease (UniverseStore) ---
@@ -693,6 +694,7 @@ class UniverseStore {
     // --- НАЧАЛО ФУНКЦИИ triggerUniverseRestart (UniverseStore) ---
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
+        this.state.ouroborosRelease = this.captureOuroborosRelease();
         this.state.isFinaleCardHovered = false;
         this.state.finaleReachedOnce = true;
         this.state.finaleRiseElapsedSec ??= 0;

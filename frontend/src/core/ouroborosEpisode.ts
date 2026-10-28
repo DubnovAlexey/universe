@@ -25,11 +25,11 @@ export interface OuroborosLayout {
 /** Подъём открывает сборку; первая фаза возвращает собранную форму в то же поле. */
 export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview = false): OuroborosEpisode {
     const safeCycleTime = Number.isFinite(state.telemetry.simulationTimeSec) ? Math.max(0, state.telemetry.simulationTimeSec) : 0;
-    // Collapse завершается после конца обычного цикла: удерживаем ориентацию до reset часов.
-    const cycleTime = state.currentPhase === '05_SINGULARITY' && state.singularityAct === 'RESTART_COLLAPSE'
-        ? Math.min(CYCLE_DURATION_SEC, safeCycleTime) : safeCycleTime;
+    // Collapse удерживает фактически показанную позу: наведение может продлить финал за108 с.
+    const frozen = state.currentPhase === '05_SINGULARITY' && state.singularityAct === 'RESTART_COLLAPSE'
+        ? state.ouroborosRelease : null;
     const cycleIndex = Number.isFinite(state.cycleCount) ? Math.max(0, state.cycleCount - 1) : 0;
-    const combinedTime = cycleTime + cycleIndex * CYCLE_DURATION_SEC;
+    const combinedTime = frozen !== null ? frozen.timeSec : safeCycleTime + cycleIndex * CYCLE_DURATION_SEC;
     let timeSec = Number.isFinite(combinedTime) ? combinedTime : 0;
     if (state.singularityAct === 'ACT_C_ZERO_SILENCE') {
         return { opacity: 0, morph: 0, timeSec };
@@ -37,16 +37,16 @@ export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview
     let opacity = 0;
     let morph = 0;
     if (preview) {
-        const age = timeSec % 20;
-        if (age < 16.8) {
-            opacity = Math.max(0, 0.76 * smootherstep(0, 0.8, age) * (1 - smootherstep(15.4, 16.8, age)));
-            morph = Math.max(0, smootherstep(0, 5.5, age) * (1 - smootherstep(10, 15.2, age)));
+        const age = timeSec % 30;
+        if (age < 27.5) {
+            opacity = Math.max(0, 0.76 * smootherstep(0, 0.8, age) * (1 - smootherstep(25.7, 27.5, age)));
+            morph = Math.max(0, smootherstep(0, 5.5, age) * (1 - smootherstep(18.3, 25.5, age)));
         }
     } else if (state.finaleReachedOnce && state.finaleRiseElapsedSec !== null &&
         Number.isFinite(state.finaleRiseElapsedSec) && state.finaleRiseElapsedSec >= 0) {
         if (state.currentPhase === '05_SINGULARITY' &&
             (state.singularityAct === 'ACT_D_GITHUB_CARD' || state.singularityAct === 'RESTART_COLLAPSE')) {
-            const age = Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55);
+            const age = frozen !== null ? frozen.ageSec : Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55);
             if (Number.isFinite(age) && age >= 0) {
                 opacity = 0.76 * smootherstep(0, 0.8, age);
                 morph = smootherstep(0, 5.5, age);
@@ -54,11 +54,14 @@ export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview
         } else if (state.currentPhase === '01_VOID' && state.ouroborosRelease !== null) {
             const age = state.telemetry.phaseElapsedSec;
             const release = state.ouroborosRelease;
-            if (Number.isFinite(age) && age >= 0 && age < 6.8 &&
+            if (Number.isFinite(age) && age >= 0 && age < 16.8 &&
                 Number.isFinite(release.ageSec) && release.ageSec >= 0 &&
                 Number.isFinite(release.timeSec) && release.timeSec >= 0) {
-                opacity = Math.max(0, 0.76 * smootherstep(0, 0.8, release.ageSec) * (1 - smootherstep(5.4, 6.8, age)));
-                morph = Math.max(0, smootherstep(0, 5.5, release.ageSec) * (1 - smootherstep(0, 5.2, age)));
+                const fullness = smootherstep(0, 5.5, release.ageSec);
+                // Полная форма завершает оборот в начале VOID; ручной ранний выход не досбирает её насильно.
+                const hold = fullness === 1 ? 7.6 : 0;
+                opacity = Math.max(0, 0.76 * smootherstep(0, 0.8, release.ageSec) * (1 - smootherstep(hold + 7.4, hold + 9.2, age)));
+                morph = Math.max(0, fullness * (1 - smootherstep(hold, hold + 7.2, age)));
                 timeSec = release.timeSec + age;
             }
         }

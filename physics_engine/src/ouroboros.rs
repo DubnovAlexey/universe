@@ -45,7 +45,7 @@ pub fn fill_ouroboros_points(
     // Ограниченное покачивание трёх осей сохраняет читаемую плоскость тела.
     let ax = 0.38 + 0.24 * (time_sec * 0.21).sin();
     let ay = -0.32 + 0.24 * (time_sec * 0.17).sin();
-    let az = 0.12 - time_sec * 0.13 + 0.07 * (time_sec * 0.11).sin();
+    let az = 0.12 - time_sec * (TAU / 12.0) + 0.07 * (time_sec * 0.11).sin();
     let (sx, cx) = (ax.sin(), ax.cos());
     let (sy, cy) = (ay.sin(), ay.cos());
     let (sz, cz) = (az.sin(), az.cos());

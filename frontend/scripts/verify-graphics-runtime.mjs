@@ -253,6 +253,23 @@ try {
                 telemetry: { ...base.telemetry, simulationTimeSec: 100, phaseElapsedSec: 20.55 } };
             const signals = { ...getVisualSignals(), isPaused: true };
             const context = { save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, drawImage() {} };
+            await verify('An invisible warm-up starts GPU initialization once before ACT_D and performs no field or Canvas drawing', async () => {
+                const prewarm = new OuroborosEffect({ ownerDocument: { getElementById: () => overlay } });
+                let initializations = 0;
+                Object.assign(prewarm, { initializeGpu(frame) {
+                    initializations++;
+                    this.attemptedGpu = true;
+                    assert.equal(frame.count, 1); assert.equal(frame.uniforms.opacity, 0);
+                    assert(frame.points.every(Number.isFinite));
+                } });
+                const early = { ...state, singularityAct: 'ACT_A_ACCRETION', finaleReachedOnce: false,
+                    finaleRiseElapsedSec: null, telemetry: { ...state.telemetry, phaseElapsedSec: 2 } };
+                prewarm.render(context, early, signals, 1000, 800, 1);
+                prewarm.render(context, early, signals, 1000, 800, 1);
+                assert.equal(initializations, 1); assert.equal(overlay.style.visibility, 'hidden');
+                assert.equal(prewarm.atlas, null);
+                prewarm.dispose();
+            });
             const observed = [];
             const draw = (x, y) => {
                 effect.render(context, state, signals, 1000, 800, 1, [{ x, y, radius: 1 }]);

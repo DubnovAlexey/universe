@@ -82,6 +82,12 @@ export class OuroborosEffect {
         const episode = evaluateOuroborosEpisode(state, this.preview);
         if (episode.opacity <= 0.001) {
             this.overlay.style.visibility = 'hidden';
+            // Компиляция и pixel self-test выполняются до появления визитки, а не в её первом кадре.
+            if (!this.attemptedGpu && !this.forceCanvas && state.currentPhase === '05_SINGULARITY' &&
+                state.telemetry.phaseElapsedSec < 13.6) {
+                this.initializeGpu({ points: new Float32Array([0, 0, 0, 0, 0, -1, 1, 0]), count: 1,
+                    uniforms: { ...this.frame.uniforms, width, height, dpr, centerX: width / 2, centerY: height / 2, opacity: 0 } });
+            }
             this.publishDiagnostics(state, 'inactive');
             return;
         }
@@ -150,14 +156,14 @@ export class OuroborosEffect {
 
     // НАЧАЛО РАЗДЕЛА 3. GPU И ОСВОБОЖДЕНИЕ
     // НАЧАЛО ФУНКЦИИ initializeGpu
-    private initializeGpu(): void {
+    private initializeGpu(initialFrame: OuroborosFrame = this.frame): void {
         if (!this.overlay) return;
         this.attemptedGpu = true;
         const started = performance.now();
         integrationRegistry.updateModuleStatus('webgpu-render', 'loading');
         const gpu = new OuroborosGpuRenderer(this.overlay, (message) => this.failGpu(message));
         this.gpu = gpu;
-        void gpu.init(this.frame).then((ready) => {
+        void gpu.init(initialFrame).then((ready) => {
             if (this.disposed || this.gpu !== gpu) { gpu.dispose(); return; }
             if (!ready || !gpu.getStats().initialized) { this.failGpu(gpu.getStats().lastError ?? 'WebGPU unavailable'); return; }
             this.gpuReady = true;

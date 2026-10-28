@@ -46,7 +46,7 @@ export function fillOuroborosPoints(
     // Ограниченное покачивание трёх осей сохраняет читаемую плоскость тела.
     const ax = 0.38 + 0.24 * Math.sin(timeSec * 0.21);
     const ay = -0.32 + 0.24 * Math.sin(timeSec * 0.17);
-    const az = 0.12 - timeSec * 0.13 + 0.07 * Math.sin(timeSec * 0.11);
+    const az = 0.12 - timeSec * (TAU / 12) + 0.07 * Math.sin(timeSec * 0.11);
     const sx = Math.sin(ax), cx = Math.cos(ax);
     const sy = Math.sin(ay), cy = Math.cos(ay);
     const sz = Math.sin(az), cz = Math.cos(az);

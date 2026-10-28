@@ -107,7 +107,7 @@ export function fitGlyphInk(metrics: Partial<TextMetrics>, width: number, height
 
 // НАЧАЛО ФУНКЦИИ symbolFit
 /** CSS-размеры локального окна не зависят от внешнего 3D-поворота всей кнопки. */
-function symbolFit(element: HTMLElement, glyph: string): GlyphInkFit {
+function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean): GlyphInkFit {
     if (typeof window === 'undefined' || typeof document === 'undefined') return fitGlyphInk({}, 16, 20.8, 16);
     const fontEpoch = getGlyphFontEpoch();
     if (fontEpoch !== fitCacheEpoch) {
@@ -115,13 +115,16 @@ function symbolFit(element: HTMLElement, glyph: string): GlyphInkFit {
         fitCache.clear();
         fitCacheEpoch = fontEpoch;
     }
-    const style = window.getComputedStyle(element);
-    const fontPx = Number.parseFloat(style.fontSize) || 16;
-    const slotStyle = window.getComputedStyle(element.parentElement!);
-    const availableWidth = Number.parseFloat(slotStyle.width) || fontPx;
+    const slot = element.parentElement!;
+    const slotStyle = window.getComputedStyle(slot);
+    const inheritedFont = Number.parseFloat(slotStyle.fontSize) || 16;
+    const fontPx = isCanonical ? inheritedFont : Math.max(inheritedFont, 13);
+    // Каноническая мера остаётся в layout даже когда окно временно display:none.
+    const availableWidth = slot.clientWidth || slot.parentElement?.offsetWidth || Number.parseFloat(slotStyle.width) || fontPx;
     const availableHeight = Number.parseFloat(slotStyle.height) || fontPx * 1.3;
-    const tracking = Number.parseFloat(style.letterSpacing) || 0;
-    const font = style.fontStyle + ' ' + style.fontWeight + ' ' + fontPx + 'px ' + style.fontFamily;
+    const tracking = isCanonical ? Number.parseFloat(slotStyle.letterSpacing) || 0 : 0;
+    const font = slotStyle.fontStyle + ' ' + slotStyle.fontWeight + ' ' + fontPx + 'px ' +
+        (isCanonical ? slotStyle.fontFamily : GLYPH_FONT_STACK);
     const key = fontEpoch + ':' + font + ':' + availableWidth.toFixed(3) + ':' +
         availableHeight.toFixed(3) + ':' + tracking + ':' + glyph;
     const cached = fitCache.get(key);
@@ -146,13 +149,14 @@ function symbolFit(element: HTMLElement, glyph: string): GlyphInkFit {
 
 // НАЧАЛО ФУНКЦИИ setFittedGlyph
 /** Отдельный ink-слой центрируется по начертанию; слой поворота остаётся размером с ячейку. */
-export function setFittedGlyph(ink: HTMLElement, glyph: string, canonical: string): void {
-    ink.textContent = glyph;
+export function setFittedGlyph(ink: HTMLElement, glyph: string, canonical: string, preparedFit?: GlyphInkFit): void {
     const isCanonical = glyph === canonical;
+    // Все измерения предшествуют изменениям текста и стилей, не вызывая повторный layout после записи.
+    const fit = preparedFit ?? symbolFit(ink, glyph, isCanonical);
+    ink.textContent = glyph;
     ink.style.setProperty('font-family', isCanonical ? 'inherit' : GLYPH_FONT_STACK);
     ink.style.setProperty('font-size', isCanonical ? 'inherit' : 'max(1em, 13px)');
     ink.style.setProperty('letter-spacing', isCanonical ? 'inherit' : '0px');
-    const fit = symbolFit(ink, glyph);
     ink.style.setProperty('left', fit.left.toFixed(5) + 'px');
     ink.style.setProperty('top', fit.top.toFixed(5) + 'px');
     ink.style.setProperty('transform', 'scale(' + fit.scale.toFixed(6) + ')');
@@ -263,14 +267,21 @@ class CalmGlyphHover {
         const layoutChanged = fitKey !== line.fitKey;
         line.fitKey = fitKey;
         line.text = text;
+        const updates: { cell: FittedTextLine['cells'][number]; glyph: string; state: string; fit?: GlyphInkFit; canonical: string }[] = [];
         line.cells.forEach((cell, index) => {
             const glyph = glyphs[index];
             if (glyph === cell.glyph && !layoutChanged) return;
-            cell.glyph = glyph;
             const canonicalGlyph = glyph === source[index];
             const waiting = glyph === GLYPH_WAITING_SPACE || /^\s+$/u.test(glyph);
-            cell.node.dataset.glyphStatic = canonicalGlyph ? 'canonical' : waiting ? 'waiting' : 'rolling';
-            if (!canonicalGlyph && !waiting) setFittedGlyph(cell.ink, glyph, source[index]);
+            updates.push({ cell, glyph, canonical: source[index],
+                state: canonicalGlyph ? 'canonical' : waiting ? 'waiting' : 'rolling',
+                fit: !canonicalGlyph && !waiting ? symbolFit(cell.ink, glyph, false) : undefined });
+        });
+        // Сначала измеряются все изменившиеся окна, затем одним блоком применяются DOM-записи.
+        updates.forEach(({ cell, glyph, state, fit, canonical: canonicalGlyph }) => {
+            cell.glyph = glyph;
+            cell.node.dataset.glyphStatic = state;
+            if (fit) setFittedGlyph(cell.ink, glyph, canonicalGlyph, fit);
         });
     }
     // КОНЕЦ ФУНКЦИИ setVisualText
@@ -280,7 +291,7 @@ class CalmGlyphHover {
         const session = this.sessions.get(element);
         if (session) return session.logicalText;
         const fitted = this.fittedLines.get(element);
-        if (fitted?.visual.parentElement === element) return fitted.text;
+        if (fitted?.visual.parentElement === element && fitted.cells[0]?.node.parentElement === fitted.visual) return fitted.text;
         const visual = this.textNodes.get(element)?.visual;
         return visual?.parentElement === element ? visual.textContent ?? '' : element.textContent ?? '';
     }
