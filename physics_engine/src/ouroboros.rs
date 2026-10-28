@@ -96,19 +96,20 @@ pub fn fill_ouroboros_points(
             let jaw_distance = (u - 0.012) / 0.020;
             let jaw = (-jaw_distance * jaw_distance).exp();
             let tail = 0.13 + 0.87 * smooth((1.0 - u) / 0.17);
-            let tube = (0.088 + 0.012 * (theta * 3.0 + 0.35).sin() + 0.012 * energy) * tail + 0.105 * head + 0.05 * jaw;
+            let tube = (0.110 + 0.015 * (theta * 3.0 + 0.35).sin() + 0.015 * energy) * tail + 0.120 * head + 0.055 * jaw;
             let radius = 0.85 + 0.022 * (theta * 2.0 + time_sec * 0.11).sin() * (0.4 + energy * 0.6);
             let body_x = (radius + tube * cp) * c;
             let body_y = (radius + tube * cp) * s;
-            let body_z = tube * 0.82 * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
+            // Полное эллиптическое сечение читается при пространственном покачивании.
+            let body_z = tube * 1.06 * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
             let materialize = smooth((morph - (0.08 + h3 * 0.68)) / 0.24);
             x = dx + (body_x - dx) * materialize;
             y = dy + (body_y - dy) * materialize;
             z = dz + (body_z - dz) * materialize;
             nx = dust_angle.cos() * (1.0 - materialize) + cp * c * materialize;
             ny = dust_angle.sin() * (1.0 - materialize) + cp * s * materialize;
-            nz = 0.12 * (1.0 - materialize) + sp / 0.82 * materialize;
-            let core_size = if eye { 3.6 } else { 1.0 + h4 * 0.9 + head * 0.65 };
+            nz = 0.12 * (1.0 - materialize) + sp / 1.06 * materialize;
+            let core_size = if eye { 3.6 } else { 1.20 + h4 * 1.05 + head * 0.78 };
             size = (0.4 + h4) + (core_size - (0.4 + h4)) * materialize;
             kind = if materialize < 0.5 { 1.0 } else { 0.0 };
         }

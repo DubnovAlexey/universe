@@ -20,6 +20,7 @@ import { publishVisualSignals } from '../core/visualSignals';
 import { BackgroundFields } from './backgroundFields';
 import { OuroborosEffect } from './ouroboros/OuroborosEffect';
 import { getVisualSignals } from '../core/visualSignals';
+import { FrameDiagnostics } from '../core/frameDiagnostics';
 import {
     renderBreathingLightEchoRings, renderSpiralDustAndCanyons,
     renderCurvedFieldSignals, renderCorticalHemispheresAndKeplerRings,
@@ -35,6 +36,7 @@ export class UniverseRenderer {
     private readonly pipeline: RenderPipeline;
     private readonly simulation: VoidPhaseSimulation;
     private readonly ouroboros: OuroborosEffect;
+    private readonly frameDiagnostics: FrameDiagnostics;
 
     private width = 1920;
     private height = 1080;
@@ -68,6 +70,7 @@ export class UniverseRenderer {
 
         this.initProceduralBackgroundFields(initialState.seed);
         this.ouroboros = new OuroborosEffect(canvas);
+        this.frameDiagnostics = new FrameDiagnostics(canvas);
     }
     // --- КОНЕЦ ФУНКЦИИ constructor (UniverseRenderer) ---
 
@@ -388,12 +391,18 @@ export class UniverseRenderer {
 
     // НАЧАЛО РАЗДЕЛА 3. ЖИЗНЕННЫЙ ЦИКЛ И ЧАСЫ
 
+    // НАЧАЛО ФУНКЦИИ resetFrameTimingContinuity
+    /** Скрытая вкладка не оставляет ложный длинный интервал в диагностике активного кадра. */
+    public resetFrameTimingContinuity(): void { this.frameDiagnostics.resetContinuity(); }
+    // КОНЕЦ ФУНКЦИИ resetFrameTimingContinuity
+
     // --- НАЧАЛО ФУНКЦИИ start ---
     /**
      * Запускает главный цикл requestAnimationFrame рендерера.
      */
     public start(): void {
         if (this.isRunning) return;
+        this.resetFrameTimingContinuity();
         this.isRunning = true;
         this.lastFrameTimeMs = performance.now();
         this.rafId = requestAnimationFrame(this.loop);
@@ -422,6 +431,8 @@ export class UniverseRenderer {
      */
     private loop = (nowMs: number): void => {
         if (!this.isRunning) return;
+        const profileStartMs = this.frameDiagnostics.enabled ? performance.now() : 0;
+        const profileGapMs = Math.max(0, nowMs - this.lastFrameTimeMs);
 
         try {
             const rawDtMs = Math.max(1.0, nowMs - this.lastFrameTimeMs);
@@ -532,6 +543,10 @@ export class UniverseRenderer {
                 }
             }
         } finally {
+            if (this.frameDiagnostics.enabled) {
+                this.frameDiagnostics.record(profileGapMs, performance.now() - profileStartMs,
+                    universeStore.getState(), nowMs);
+            }
             if (this.isRunning) {
                 this.rafId = requestAnimationFrame(this.loop);
             }

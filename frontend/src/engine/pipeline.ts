@@ -19,6 +19,7 @@ import { integrationRegistry } from '../core/integrationRegistry';
 import { qualityGovernor } from '../core/qualityGovernor';
 import { resourceLedger } from '../core/resourceLedger';
 import { DeterministicPRNG } from '../core/prng';
+import { getDiagnosticDpr } from '../core/frameDiagnostics';
 
 // ============================================================================
 // РАЗДЕЛ 1. ИНТЕРФЕЙС ВОЗМОЖНОСТЕЙ ГРАФИЧЕСКОГО КОНВЕЙЕРА
@@ -42,6 +43,7 @@ export class RenderPipeline {
     private capabilities: RenderCapabilities;
     private ditherPattern: CanvasPattern | null = null;
     private isDisposed = false;
+    private readonly diagnosticDpr: number | null;
 
     // ------------------------------------------------------------------------
     // ПОДРАЗДЕЛ 2.1. КОНСТРУКТОР И ИНИЦИАЛИЗАЦИЯ HIGH-DPI КОНТЕКСТА
@@ -50,6 +52,7 @@ export class RenderPipeline {
     // --- НАЧАЛО ФУНКЦИИ constructor (RenderPipeline) ---
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
+        this.diagnosticDpr = getDiagnosticDpr(typeof window === 'undefined' ? '' : window.location?.search ?? '');
         const context = canvas.getContext('2d', {
             alpha: false,
             desynchronized: true,
@@ -61,7 +64,7 @@ export class RenderPipeline {
 
         this.ctx = context;
         const maxDpr = qualityGovernor.getProfile().maxDpr;
-        const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
         const dpr = Math.min(maxDpr, Math.max(1, rawDpr));
         const width = typeof window !== 'undefined' ? window.innerWidth : 1920;
         const height = typeof window !== 'undefined' ? window.innerHeight : 1080;
@@ -155,7 +158,7 @@ export class RenderPipeline {
     // --- НАЧАЛО ФУНКЦИИ updateViewportSize ---
     public updateViewportSize(): { width: number; height: number; dpr: number } {
         const maxDpr = qualityGovernor.getProfile().maxDpr;
-        const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
         const dpr = Math.min(maxDpr, Math.max(1, rawDpr));
         const width =
             typeof window !== 'undefined' ? Math.max(320, window.innerWidth) : 1920;
@@ -180,7 +183,7 @@ export class RenderPipeline {
     /** Применяет новый DPR-кэп на общем кадре без пересоздания частиц и ожидания resize. */
     public syncQualityProfile(): void {
         if (this.isDisposed) return;
-        const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
         const nextDpr = Math.min(qualityGovernor.getProfile().maxDpr, Math.max(1, rawDpr));
         if (nextDpr !== this.capabilities.dpr) this.updateViewportSize();
     }

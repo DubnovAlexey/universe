@@ -87,23 +87,23 @@ fn projectPoint(samplePoint: PointInput, vertexIndex: u32, spread: f32) -> Verte
     let hemisphere = sqrt(max(0.0, 1.0 - radiusSquared));
     let sphereNormal = normalize(vec3<f32>(input.uv.x, -input.uv.y, -hemisphere));
     let satellite = input.kind > 1.5;
-    let normal = normalize(mix(input.normal, sphereNormal, select(0.24, 1.0, satellite)));
+    let normal = normalize(mix(input.normal, sphereNormal, select(0.18, 1.0, satellite)));
     let light = normalize(vec3<f32>(-0.5, 0.75, -0.9));
     let diffuse = max(0.0, dot(normal, light));
     let facing = clamp(-normal.z, 0.0, 1.0);
     let rim = pow(1.0 - facing, 2.4);
     let specular = pow(max(0.0, dot(reflect(-light, normal), vec3<f32>(0.0, 0.0, -1.0))), 22.0);
-    let shadow = mix(vec3<f32>(0.025, 0.055, 0.12), vec3<f32>(0.045, 0.075, 0.15), u.material.y * 0.45);
+    let shadow = mix(vec3<f32>(0.015, 0.035, 0.075), vec3<f32>(0.03, 0.055, 0.12), u.material.y * 0.45);
     let pearl = mix(vec3<f32>(0.55, 0.76, 0.86), vec3<f32>(0.67, 0.84, 0.93), u.material.y * 0.3);
     let color = shadow * (0.7 + facing * 0.3)
-        + pearl * (0.12 + pow(diffuse, 0.8) * select(0.94, 1.06, satellite))
-        + vec3<f32>(0.23, 0.65, 0.83) * rim * (0.4 + u.material.z * 0.3)
-        + vec3<f32>(0.85, 0.95, 1.0) * specular * select(0.34, 0.8, satellite);
-    let coverage = 1.0 - smoothstep(0.45, 1.0, radiusSquared);
-    let alpha = coverage * u.material.x * select(0.82 + facing * 0.16, 0.98, satellite);
+        + pearl * (0.09 + pow(diffuse, 1.15) * select(1.16, 1.06, satellite))
+        + vec3<f32>(0.23, 0.65, 0.83) * rim * (0.34 + u.material.z * 0.3)
+        + vec3<f32>(0.85, 0.95, 1.0) * specular * select(0.44, 0.8, satellite);
+    let coverage = 1.0 - smoothstep(0.58, 1.0, radiusSquared);
+    let alpha = coverage * u.material.x * select(0.74 + facing * 0.24, 0.98, satellite);
     if (alpha < 0.025) { discard; }
     var out: CoreOutput;
-    let depthShade = clamp(1.2 - input.depth * 0.7, 0.5, 1.1);
+    let depthShade = clamp(1.55 - input.depth * 1.45, 0.42, 1.1);
     out.color = vec4<f32>(clamp(color * depthShade, vec3<f32>(0.0), vec3<f32>(1.0)) * alpha, alpha);
     out.depth = clamp(input.depth - hemisphere * input.worldRadius / 7.0, 0.0, 1.0);
     return out;

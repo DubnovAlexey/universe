@@ -25,11 +25,12 @@ export interface OuroborosLayout {
 /** Подъём открывает сборку; первая фаза возвращает собранную форму в то же поле. */
 export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview = false): OuroborosEpisode {
     const safeCycleTime = Number.isFinite(state.telemetry.simulationTimeSec) ? Math.max(0, state.telemetry.simulationTimeSec) : 0;
-    // Collapse удерживает фактически показанную позу: наведение может продлить финал за108 с.
-    const frozen = state.currentPhase === '05_SINGULARITY' && state.singularityAct === 'RESTART_COLLAPSE'
+    // Restart продолжает вращение от фактически показанной позы, даже после задержки финала наведением.
+    const restart = state.currentPhase === '05_SINGULARITY' && state.singularityAct === 'RESTART_COLLAPSE'
         ? state.ouroborosRelease : null;
+    const restartAge = Number.isFinite(state.restartElapsedSec) ? Math.max(0, state.restartElapsedSec) : 0;
     const cycleIndex = Number.isFinite(state.cycleCount) ? Math.max(0, state.cycleCount - 1) : 0;
-    const combinedTime = frozen !== null ? frozen.timeSec : safeCycleTime + cycleIndex * CYCLE_DURATION_SEC;
+    const combinedTime = restart !== null ? restart.timeSec + restartAge : safeCycleTime + cycleIndex * CYCLE_DURATION_SEC;
     let timeSec = Number.isFinite(combinedTime) ? combinedTime : 0;
     if (state.singularityAct === 'ACT_C_ZERO_SILENCE') {
         return { opacity: 0, morph: 0, timeSec };
@@ -46,7 +47,7 @@ export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview
         Number.isFinite(state.finaleRiseElapsedSec) && state.finaleRiseElapsedSec >= 0) {
         if (state.currentPhase === '05_SINGULARITY' &&
             (state.singularityAct === 'ACT_D_GITHUB_CARD' || state.singularityAct === 'RESTART_COLLAPSE')) {
-            const age = frozen !== null ? frozen.ageSec : Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55);
+            const age = restart !== null ? restart.ageSec : Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55);
             if (Number.isFinite(age) && age >= 0) {
                 opacity = 0.76 * smootherstep(0, 0.8, age);
                 morph = smootherstep(0, 5.5, age);
@@ -77,11 +78,13 @@ export function evaluateOuroborosEpisode(state: Readonly<UniverseState>, preview
 
 // НАЧАЛО РАЗДЕЛА 3. КОМПОЗИЦИОННАЯ ОБЛАСТЬ
 // НАЧАЛО ФУНКЦИИ getOuroborosLayout
-/** Локальный образ располагается под поднятой визиткой, дальнее кольцо окружает его. */
-export function getOuroborosLayout(width: number, height: number): OuroborosLayout {
+/** Форма использует центр общего поля вместе с дрейфом камеры; визитка освобождает эту область. */
+export function getOuroborosLayout(width: number, height: number, driftX = 0, driftY = 0): OuroborosLayout {
     const w = Number.isFinite(width) ? Math.max(1, width) : 1;
     const h = Number.isFinite(height) ? Math.max(1, height) : 1;
-    return { centerX: w * 0.5, centerY: h * (w <= 600 ? 0.59 : 0.58), scale: Math.min(w, h) * 0.232 };
+    const dx = Number.isFinite(driftX) ? driftX : 0;
+    const dy = Number.isFinite(driftY) ? driftY : 0;
+    return { centerX: w * 0.5 + dx, centerY: h * 0.5 + dy, scale: Math.min(w, h) * 0.232 };
 }
 // КОНЕЦ ФУНКЦИИ getOuroborosLayout
 // КОНЕЦ РАЗДЕЛА 3

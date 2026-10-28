@@ -5,7 +5,7 @@
 // ФУНКЦИИ: constructor, hasSameGpuPoints, render, initializeGpu,
 // failGpu, releaseAtlas, dispose, publishDiagnostics.
 // ============================================================================
-import { smootherstep, type UniverseState } from '../../store/universeState';
+import type { UniverseState } from '../../store/universeState';
 import type { VisualSignalSnapshot } from '../../core/visualSignals';
 import { evaluateOuroborosEpisode, getOuroborosLayout } from '../../core/ouroborosEpisode';
 import { OUROBOROS_CAPACITY } from '../../core/ouroborosModel';
@@ -35,6 +35,8 @@ export class OuroborosEffect {
     private disposed = false;
     private energy = 0;
     private diagnosticStamp = -1;
+    private diagnosticWidth = 0;
+    private diagnosticHeight = 0;
     private lastGpuTime = Number.NaN;
     private lastGpuWidth = 0;
     private lastGpuHeight = 0;
@@ -44,6 +46,7 @@ export class OuroborosEffect {
     private lastGpuOpacity = -1;
     private lastGpuMorph = -1;
     private lastGpuEnergy = -1;
+    private lastGpuCenterX = -1;
     private lastGpuCenterY = -1;
     private readonly frame: OuroborosFrame = {
         points: new Float32Array(0), count: 0,
@@ -97,9 +100,8 @@ export class OuroborosEffect {
         const profile = qualityGovernor.getProfile();
         const maxCount = this.forceCanvas || (this.attemptedGpu && !this.gpuReady) ? 1536 : OUROBOROS_CAPACITY;
         const count = Math.max(512, Math.floor(maxCount * profile.particleMultiplier));
-        const baseLayout = getOuroborosLayout(width, height);
-        const rise = state.reducedMotion ? 1 : smootherstep(0, 12, state.finaleRiseElapsedSec ?? 12);
-        const layout = { ...baseLayout, centerY: baseLayout.centerY + height * 0.1 * (1 - rise) };
+        // Фокус совпадает с полем; подъём визитки не сдвигает форму к нижнему краю.
+        const layout = getOuroborosLayout(width, height, state.camera.driftX, state.camera.driftY);
         this.frame.points = wasmPhysicsBridge.sampleOuroboros(state.seed, count, episode.timeSec, 1, this.energy);
         this.frame.count = wasmPhysicsBridge.getOuroborosCount();
         this.fieldLinked = applyOuroborosFieldMorph(this.frame.points, this.frame.count, sources, layout, episode.morph, state.seed);
@@ -119,7 +121,8 @@ export class OuroborosEffect {
             const unchanged = this.lastGpuTime === u.timeSec && this.lastGpuWidth === width &&
                 this.lastGpuHeight === height && this.lastGpuDpr === dpr && this.lastGpuCount === this.frame.count &&
                 this.lastGpuSeed === state.seed && this.lastGpuOpacity === u.opacity &&
-                this.lastGpuMorph === u.morph && this.lastGpuEnergy === u.energy && this.lastGpuCenterY === u.centerY &&
+                this.lastGpuMorph === u.morph && this.lastGpuEnergy === u.energy && this.lastGpuCenterX === u.centerX &&
+                this.lastGpuCenterY === u.centerY &&
                 this.hasSameGpuPoints();
             if (!unchanged) {
                 const started = performance.now();
@@ -135,6 +138,7 @@ export class OuroborosEffect {
                     this.lastGpuOpacity = u.opacity;
                     this.lastGpuMorph = u.morph;
                     this.lastGpuEnergy = u.energy;
+                    this.lastGpuCenterX = u.centerX;
                     this.lastGpuCenterY = u.centerY;
                     this.lastGpuPoints.set(this.frame.points.subarray(0, this.frame.count * 8));
                 }
@@ -218,8 +222,11 @@ export class OuroborosEffect {
     private publishDiagnostics(state: Readonly<UniverseState>, phase: string): void {
         if (!this.overlay) return;
         const stamp = Math.floor(state.telemetry.simulationTimeSec * 2);
-        if (stamp === this.diagnosticStamp && this.overlay.dataset.ouroborosState === phase) return;
+        if (stamp === this.diagnosticStamp && this.overlay.dataset.ouroborosState === phase &&
+            this.diagnosticWidth === this.frame.uniforms.width && this.diagnosticHeight === this.frame.uniforms.height) return;
         this.diagnosticStamp = stamp;
+        this.diagnosticWidth = this.frame.uniforms.width;
+        this.diagnosticHeight = this.frame.uniforms.height;
         const stats = this.gpu?.getStats();
         this.overlay.dataset.ouroborosState = phase;
         this.overlay.dataset.backend = this.gpuReady ? 'webgpu' : 'canvas2d';
@@ -233,7 +240,14 @@ export class OuroborosEffect {
         this.overlay.dataset.opacity = phase === 'inactive' ? '0' : this.frame.uniforms.opacity.toFixed(3);
         this.overlay.dataset.scenePhase = state.currentPhase;
         this.overlay.dataset.sceneTime = state.telemetry.phaseElapsedSec.toFixed(2);
+        this.overlay.dataset.modelTime = phase === 'inactive' ? '' : this.frame.uniforms.timeSec.toFixed(3);
+        this.overlay.dataset.viewportWidth = String(this.frame.uniforms.width);
+        this.overlay.dataset.viewportHeight = String(this.frame.uniforms.height);
         this.overlay.dataset.cardRise = state.finaleRiseElapsedSec === null ? 'waiting' : state.finaleRiseElapsedSec.toFixed(2);
+        this.overlay.dataset.centerX = phase === 'inactive' ? '' : this.frame.uniforms.centerX.toFixed(2);
+        this.overlay.dataset.centerY = phase === 'inactive' ? '' : this.frame.uniforms.centerY.toFixed(2);
+        this.overlay.dataset.sceneCenterX = phase === 'inactive' ? '' : (this.frame.uniforms.width * 0.5 + state.camera.driftX).toFixed(2);
+        this.overlay.dataset.sceneCenterY = phase === 'inactive' ? '' : (this.frame.uniforms.height * 0.5 + state.camera.driftY).toFixed(2);
     }
     // КОНЕЦ ФУНКЦИИ publishDiagnostics
     // КОНЕЦ РАЗДЕЛА 4

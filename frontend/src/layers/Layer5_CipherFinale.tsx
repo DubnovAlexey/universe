@@ -13,7 +13,8 @@
 //   РАЗДЕЛ 2. Контроллер анимации на общем такте кадра (FinaleCardDomAnimator):
 //     - Подраздел 2.1. Подписка общего кадра (активна в Акте D и в постоянном
 //                      полупрозрачном фоновом режиме после первого показа),
-//                      безопасное смещение визитки после возврата в фазу 01.
+//                      безопасное смещение визитки после возврата в фазу 01,
+//                      уменьшение только на телефоне в завершении подъёма.
 //     - Подраздел 2.2. Ускоренная в ~3.5 раза квантовая строка (18–26 Гц,
 //                      постоянные ячейки без скачков метрик шрифта) и
 //                      гарантированная 100%-ная фиксация строк 0, 1, 3, 4.
@@ -31,8 +32,8 @@ import {
 } from '../store/universeState';
 import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
 import { getGlyphFontEpoch, getRenderableGlyphPool } from '../core/glyphGrammar';
-import { calmGlyphHover, setFittedGlyph } from '../core/glyphHover';
-import { getFinaleCardPlacement } from '../core/finaleComposition';
+import { calmGlyphHover, prepareFittedGlyph, setFittedGlyph, type GlyphInkFit } from '../core/glyphHover';
+import { getFinaleCardPlacement, getFinaleCardScale, type FinaleCardLayout } from '../core/finaleComposition';
 
 const FINALE_PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
 
@@ -72,19 +73,25 @@ export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = CAN
 // --- НАЧАЛО ФУНКЦИИ updateFinaleQuantumCells ---
 /** Меняет только содержимое кешированных ячеек, сохраняя сетку и индивидуальный темп. */
 export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], glyphPool: readonly string[], step: number, reducedMotion: boolean): void {
+    const updates: { cell: FinaleQuantumCell; glyph: string; fitKey: string; fit: GlyphInkFit }[] = [];
+    const fontEpoch = getGlyphFontEpoch();
     for (const cell of cells) {
         const index = cell.sourceIndex;
         const slotStride = index % 3 === 0 ? 1 : 2;
         const charTick = Math.floor((step + index * 7) / slotStride);
         const glyphIndex = (index * 19 + charTick * 7 + (index % 5) * 13) % glyphPool.length;
         const glyph = reducedMotion || !glyphPool.length ? cell.canonical : glyphPool[glyphIndex];
-        const fitKey = `${getGlyphFontEpoch()}:${cell.node.clientWidth}:${cell.node.clientHeight}`;
+        const fitKey = `${fontEpoch}:${cell.node.clientWidth}:${cell.node.clientHeight}`;
         if (cell.glyph !== glyph || cell.fitKey !== fitKey) {
-            cell.glyph = glyph;
-            cell.fitKey = fitKey;
-            setFittedGlyph(cell.ink, glyph, cell.canonical);
+            updates.push({ cell, glyph, fitKey, fit: prepareFittedGlyph(cell.ink, glyph, cell.canonical, fitKey) });
         }
     }
+    // Размеры и метрики всех 25 окон прочитаны до первого изменения начертания.
+    updates.forEach(({ cell, glyph, fitKey, fit }) => {
+        cell.glyph = glyph;
+        cell.fitKey = fitKey;
+        setFittedGlyph(cell.ink, glyph, cell.canonical, fit);
+    });
 }
 // --- КОНЕЦ ФУНКЦИИ updateFinaleQuantumCells ---
 // КОНЕЦ РАЗДЕЛА 0
@@ -118,6 +125,7 @@ class FinaleCardDomAnimator {
     private lastQuantumFontEpoch = -1;
     private ambientRiseDistancePx = 0;
     private ambientLayoutKey = '';
+    private ambientLayout: FinaleCardLayout | null = null;
     private breathHeartbeat = 0.35;
 
     private cardBoxEl: HTMLElement | null = null;
@@ -138,6 +146,7 @@ class FinaleCardDomAnimator {
         this.cardBoxEl = root.querySelector<HTMLElement>('[data-bind="l5-card-box"]');
         this.headerEl = root.ownerDocument.querySelector<HTMLElement>('.brand-card');
         this.ambientLayoutKey = '';
+        this.ambientLayout = null;
         this.layoutDirty = true;
         this.lastStaticStateKey = '';
         this.line0El = root.querySelector<HTMLElement>('[data-bind="l5-line-0"]');
@@ -201,12 +210,13 @@ class FinaleCardDomAnimator {
             this.ambientLayoutKey = layoutKey;
             // Пиковая геометрия не зависит от текущего акта: после сжатия кольца
             // карточка остаётся в верхней свободной области вместо обратного спуска.
-            this.ambientRiseDistancePx = getFinaleCardPlacement({
+            this.ambientLayout = {
                 viewportWidth: stage.clientWidth, viewportHeight: stage.clientHeight,
                 cardHeight: card.offsetHeight, paddingTop, paddingBottom, headerBottom,
                 peakZoom: FINALE_PEAK_ZOOM,
                 cameraDriftYAmplitude: CAMERA_DRIFT_Y_AMPLITUDE,
-            }).risePx;
+            };
+            this.ambientRiseDistancePx = getFinaleCardPlacement(this.ambientLayout).risePx;
         }
 
         return this.ambientRiseDistancePx;
@@ -267,9 +277,13 @@ class FinaleCardDomAnimator {
             // Общий кадр объединяет его с дыханием: CSS не переопределяет transform,
             // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
             const ambientRiseElapsedSec = state.reducedMotion ? 12 : Math.max(0, Math.min(12, state.finaleRiseElapsedSec ?? 0));
-            const ambientRise = hasLoopCard
-                ? this.getAmbientRiseDistance() * smootherstep(0, 12, ambientRiseElapsedSec)
-                : 0;
+            const ambientTarget = hasLoopCard ? this.getAmbientRiseDistance() : 0;
+            const settledScale = hasLoopCard && this.ambientLayout
+                ? getFinaleCardScale(this.ambientLayout.viewportWidth, ambientRiseElapsedSec, state.reducedMotion) : 1;
+            // Финальная мера учитывает уменьшение; текущая не выпускает ещё крупную карточку за верхний HUD.
+            const currentRiseLimit = this.ambientLayout
+                ? getFinaleCardPlacement(this.ambientLayout, settledScale).risePx : ambientTarget;
+            const ambientRise = Math.min(ambientTarget * smootherstep(0, 12, ambientRiseElapsedSec), currentRiseLimit);
 
             // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении
             const emergeScale =
@@ -288,7 +302,7 @@ class FinaleCardDomAnimator {
                     0.003 * Math.cos(this.lfoClockSec * 2.5));
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
-            const finalScale = emergeScale * heartbeatScale;
+            const finalScale = emergeScale * heartbeatScale * settledScale;
             this.cardBoxEl.style.transform = `translate3d(0, ${(floatY - ambientRise).toFixed(
                 1
             )}px, 0) scale(${finalScale.toFixed(4)})`;

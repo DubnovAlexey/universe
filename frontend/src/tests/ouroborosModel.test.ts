@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/ouroborosModel.test.ts
 // НАЗНАЧЕНИЕ: Проверить формат, детерминизм и безопасные границы объёмной формы.
 // РАЗДЕЛЫ: 1. Проверка активных точек; 2. Контракты заполнения и морфинга.
-// ФУНКЦИИ: validPoints, projectedBodyAspectRatio, runOuroborosModelChecks.
+// ФУНКЦИИ: validPoints, projectedBodyAspectRatio, bodyVolumeRatio, runOuroborosModelChecks.
 // ============================================================================
 import { OUROBOROS_CAPACITY, OUROBOROS_STRIDE, fillOuroborosPoints } from '../core/ouroborosModel';
 
@@ -40,6 +40,26 @@ function projectedBodyAspectRatio(points: Float32Array): number {
     return Math.sqrt(Math.max(0, (vx + vy - difference) / (vx + vy + difference)));
 }
 // КОНЕЦ ФУНКЦИИ projectedBodyAspectRatio
+
+// НАЧАЛО ФУНКЦИИ bodyVolumeRatio
+/** Нормированный объём ковариации не меняется при повороте: плоское кольцо даёт ноль. */
+function bodyVolumeRatio(points: Float32Array): number {
+    let count = 0, x = 0, y = 0, z = 0, xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0;
+    for (let offset = 0; offset < points.length; offset += OUROBOROS_STRIDE) {
+        if (points[offset + 7] !== 0) continue;
+        const px = points[offset], py = points[offset + 1], pz = points[offset + 2];
+        count++; x += px; y += py; z += pz;
+        xx += px * px; yy += py * py; zz += pz * pz;
+        xy += px * py; xz += px * pz; yz += py * pz;
+    }
+    if (count < 4) return 0;
+    const a = xx / count - (x / count) ** 2, b = yy / count - (y / count) ** 2;
+    const c = zz / count - (z / count) ** 2, d = xy / count - x * y / (count * count);
+    const e = xz / count - x * z / (count * count), f = yz / count - y * z / (count * count);
+    const determinant = a * (b * c - f * f) - d * (d * c - e * f) + e * (d * f - b * e);
+    return Math.cbrt(Math.max(0, determinant)) / ((a + b + c) / 3);
+}
+// КОНЕЦ ФУНКЦИИ bodyVolumeRatio
 // КОНЕЦ РАЗДЕЛА 1. ПРОВЕРКА АКТИВНЫХ ТОЧЕК
 
 // НАЧАЛО РАЗДЕЛА 2. КОНТРАКТЫ ЗАПОЛНЕНИЯ И МОРФИНГА
@@ -54,7 +74,7 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
         const offset = i * OUROBOROS_STRIDE;
         const radius = Math.hypot(points[offset], points[offset + 1], points[offset + 2]);
         const kind = points[offset + 7];
-        if (kind === 0) { body++; radiiValid &&= radius >= 0.6 && radius <= 1.1; }
+        if (kind === 0) { body++; radiiValid &&= radius >= 0.6 && radius <= 1.15; }
         else if (kind === 1) { dust++; radiiValid &&= radius >= 1.34 && radius <= 2.22; }
         else { satellites++; radiiValid &&= radius >= 1.29 && radius <= 2.04; }
     }
@@ -100,15 +120,18 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     check(finiteMotion,
         'All rotation, morph and energy endpoints preserve finite points and normalized lighting normals');
 
-    let readableProjection = true;
+    let readableProjection = true, substantialVolume = true;
     for (const seed of [0, 104729, 0xffffffff]) {
         for (let time = 0; time <= 216; time += 9) {
             fillOuroborosPoints(points, seed, OUROBOROS_CAPACITY, time, 1, 0.7);
             readableProjection &&= projectedBodyAspectRatio(points) > 0.62 && validPoints(points, OUROBOROS_CAPACITY);
+            substantialVolume &&= bodyVolumeRatio(points) > 0.4;
         }
     }
     check(readableProjection,
         'The formed body keeps a readable projected minor axis above62% of its major axis across two cycles, with finite unit lighting normals');
+    check(substantialVolume,
+        'The formed body retains a substantial three-dimensional cross-section independent of camera tilt across seeds and two cycles');
 
     fillOuroborosPoints(points, 104729, 512, 0, 1, 0.7);
     const eyeDistance = Math.hypot(points[0] - points[8], points[1] - points[9], points[2] - points[10]);

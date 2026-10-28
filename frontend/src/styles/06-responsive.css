@@ -4,7 +4,7 @@
  * НАЗНАЧЕНИЕ: Ограничение декоративного движения и адаптивная компоновка экранов.
  * РАЗДЕЛЫ:
  *   1. УМЕНЬШЕННОЕ ДВИЖЕНИЕ.
- *   2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ.
+ *   2. НАСТОЛЬНАЯ ВИЗИТКА И СРЕДНИЕ ЭКРАНЫ.
  *   3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ.
  *   4. ТЕЛЕФОНЫ ДО 600 ПИКСЕЛЕЙ.
  * ============================================================================ */
@@ -22,10 +22,71 @@
 }
 /* КОНЕЦ РАЗДЕЛА 1. УМЕНЬШЕННОЕ ДВИЖЕНИЕ */
 
-/* НАЧАЛО РАЗДЕЛА 2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ */
+/* НАЧАЛО РАЗДЕЛА 2. НАСТОЛЬНАЯ ВИЗИТКА И СРЕДНИЕ ЭКРАНЫ */
 /* Верхний блок оставляет центральную полосу поднятой визитке на средних экранах. */
 
+@media (min-width: 921px) {
+    .finale-counter-actions {
+        flex-wrap: nowrap;
+        width: 100%;
+    }
+
+    .btn-cipher-action {
+        min-width: 0;
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        padding: 0.45rem 0.7rem;
+        white-space: nowrap;
+    }
+}
+
+/* На невысоком мониторе сохраняются все строки: экономия достигается их компоновкой. */
+@media (min-width: 921px) and (max-height: 800px) {
+    .finale-manifesto-card {
+        gap: 0.14rem;
+        padding: 0.3rem 2.2rem;
+    }
+
+    .finale-line-author {
+        font-size: 1.6rem;
+        line-height: 1.1;
+    }
+
+    .finale-line-subtitle {
+        font-size: 0.82rem;
+        line-height: 1.2;
+    }
+
+    .finale-line-quantum-stream {
+        font-size: 1em;
+        padding-block: 0;
+    }
+
+    .finale-line-stack {
+        font-size: 0.78rem;
+        line-height: 1.2;
+    }
+
+    .finale-line-math {
+        font-size: 0.74rem;
+        line-height: 1.2;
+    }
+
+    .finale-counter-actions {
+        margin-top: 0.1rem;
+    }
+}
+
 @media (min-width: 921px) and (max-width: 1730px) {
+    /* Центральная полоса и телеметрия имеют раздельные области чтения. */
+    .inspection-islands-stack {
+        width: min(422px, 22vw);
+    }
+
+    .finale-manifesto-card {
+        width: min(820px, calc(56vw - 3.4rem));
+    }
+
     .brand-card {
         max-width: clamp(216px, calc(50vw - 415px), 475px);
     }
@@ -33,6 +94,7 @@
 
 @media (min-width: 921px) and (max-width: 1280px) {
     .brand-card {
+        max-width: min(216px, calc(22vw - 0.1rem));
         padding: 0.48rem 0.85rem;
     }
 
@@ -48,8 +110,76 @@
     .brand-card .phase-philosophy {
         display: none !important;
     }
+
+    .finale-line-stack {
+        font-size: 0.72rem;
+    }
+
+    .finale-line-math {
+        font-size: 0.70rem;
+    }
+
+    .btn-cipher-action {
+        font-size: 0.6rem;
+        padding-inline: 0.5rem;
+    }
+
+    .metrics-inspector-v2,
+    .topology-inspector-v2,
+    .terminal-inspector-v2 {
+        padding: 0.55rem 0.7rem;
+    }
+
+    .waterfall-panel-content {
+        gap: 0.2rem;
+    }
+
+    .inspector-header {
+        gap: 0.3rem;
+    }
+
+    .inspector-header .phase-codename,
+    .digest-badge,
+    .source-tag,
+    .metric-box .label,
+    .metric-box .value small,
+    .registry-mini-table,
+    .ledger-bar,
+    .terminal-log-box {
+        font-size: 0.5rem;
+    }
+
+    .metrics-grid {
+        gap: 0.25rem 0.35rem;
+    }
+
+    .metric-box .value,
+    .topology-stats-row strong {
+        font-size: 0.65rem;
+    }
+
+    .topology-stats-row {
+        font-size: 0.55rem;
+    }
+
+    .registry-mini-table {
+        gap: 0.08rem;
+    }
+
+    .registry-row {
+        gap: 0.15rem;
+        padding-block: 0;
+    }
+
+    .ledger-bar {
+        padding: 0.12rem 0.24rem;
+    }
+
+    .terminal-log-box {
+        max-height: 30px;
+    }
 }
-/* КОНЕЦ РАЗДЕЛА 2. СРЕДНИЕ ЭКРАНЫ: 921–1730 И 921–1280 ПИКСЕЛЕЙ */
+/* КОНЕЦ РАЗДЕЛА 2. НАСТОЛЬНАЯ ВИЗИТКА И СРЕДНИЕ ЭКРАНЫ */
 
 /* НАЧАЛО РАЗДЕЛА 3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ */
 /* ============================================================================
@@ -259,6 +389,13 @@
     }
 }
 /* КОНЕЦ РАЗДЕЛА 3. ВЕРТИКАЛЬНАЯ КОМПОНОВКА ДО 920 ПИКСЕЛЕЙ */
+
+/* Планшет сохраняет размер шрифта и помещает постоянные25 ячеек в одну строку. */
+@media (min-width: 601px) and (max-width: 920px) {
+    .finale-line-quantum-stream {
+        grid-template-columns: repeat(var(--quantum-columns), minmax(0, 1fr));
+    }
+}
 
 /* НАЧАЛО РАЗДЕЛА 4. ТЕЛЕФОНЫ ДО 600 ПИКСЕЛЕЙ */
 /* Телефон: нижние плашки занимают ширину окна с безопасными полями, верхняя остаётся компактной. */

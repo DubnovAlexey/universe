@@ -9,25 +9,28 @@ import { stressStore } from '../store/stressState';
 import { audioSync } from '../utils/audioSync';
 import { createVisualSignals, publishVisualSignals } from '../core/visualSignals';
 import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile,
-    getOrderedGlyphState, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
+    getOrderedGlyphState, getRenderableGlyphPool, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, fitGlyphInk } from '../core/glyphHover';
 import { createUniverseResizeHandler } from '../engine/bootstrap';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
 class HoverElement extends EventTarget {
-    public constructor(public readonly tagName = 'button') { super(); }
+    public constructor(public readonly tagName = 'button', private readonly access?: string[]) { super(); }
     public dataset: Record<string, string> = {};
     public className = '';
     public parentElement: HoverElement | null = null;
     public children: HoverElement[] = [];
-    public ownerDocument = { createElement: (tagName: string): HoverElement => new HoverElement(tagName) };
+    public ownerDocument = { createElement: (tagName: string): HoverElement => new HoverElement(tagName, this.access) };
+    public get offsetWidth(): number { this.access?.push('read'); return 120; }
+    public get offsetHeight(): number { this.access?.push('read'); return 24; }
+    public get clientWidth(): number { this.access?.push('read'); return 13; }
     private text = '';
     public isConnected = true;
     public readonly styleValues = new Map<string, string>();
     private attributes = new Map<string, string>();
     public style = {
         // НАЧАЛО ФУНКЦИИ setProperty
-        setProperty: (name: string, value: string): void => { this.styleValues.set(name, value); },
+        setProperty: (name: string, value: string): void => { this.access?.push('write'); this.styleValues.set(name, value); },
         // КОНЕЦ ФУНКЦИИ setProperty
         // НАЧАЛО ФУНКЦИИ removeProperty
         removeProperty: (name: string): void => { this.styleValues.delete(name); },
@@ -374,6 +377,101 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     handleResize();
     checks.push({ passed: rollingBeforeResize && viewportUpdates === 2 && canonicalBeforeGeometry,
         description: 'The actual resize handoff restores all rolling links/paragraphs and accessible Unicode canon before viewport geometry changes, without waiting for a frame or adding a scheduler' });
+
+    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const hoverAccess: string[] = [];
+    const batchedHover = new HoverElement('button', hoverAccess) as unknown as HTMLElement;
+    let hoverReadsBeforeWrites = true;
+    let framesWithReadsAndWrites = 0;
+    try {
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+            innerWidth: 390, innerHeight: 844,
+            getComputedStyle: (): Partial<CSSStyleDeclaration> => {
+                hoverAccess.push('read');
+                return { fontSize: '13px', height: '24px', width: '13px', fontStyle: 'normal',
+                    fontWeight: '400', fontFamily: 'monospace', letterSpacing: '0px' };
+            },
+        } });
+        Object.defineProperty(globalThis, 'document', { configurable: true, value: {
+            createElement: (): { getContext: () => object } => ({ getContext: () => ({
+                measureText: (): Partial<TextMetrics> => ({ width: 20, actualBoundingBoxLeft: 2,
+                    actualBoundingBoxRight: 22, actualBoundingBoxAscent: 20, actualBoundingBoxDescent: 5 }),
+            }) }),
+        } });
+        invalidateGlyphFontCache();
+        publishVisualSignals(state, audio, stress);
+        calmGlyphHover.start(batchedHover, 'ORDERED BATCHED HOVER');
+        for (let frame = 0; frame < 18; frame++) {
+            hoverAccess.length = 0;
+            publishVisualSignals(state, audio, stress);
+            const firstWrite = hoverAccess.indexOf('write');
+            if (firstWrite > 0) framesWithReadsAndWrites++;
+            hoverReadsBeforeWrites &&= firstWrite < 0 || !hoverAccess.slice(firstWrite).includes('read');
+        }
+    } finally {
+        calmGlyphHover.stop(batchedHover);
+        if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+        else Reflect.deleteProperty(globalThis, 'window');
+        if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+        else Reflect.deleteProperty(globalThis, 'document');
+    }
+    checks.push({ passed: hoverReadsBeforeWrites && framesWithReadsAndWrites > 10,
+        description: 'Real hover frames prepare all outgoing/incoming glyph metrics before changing any reel styles, avoiding per-cell read/write layout thrashing' });
+
+    const coldHover = new HoverElement('button');
+    const coldElement = coldHover as unknown as HTMLElement;
+    const coldState = { ...state, currentPhase: '05_SINGULARITY' as const,
+        telemetry: { ...state.telemetry, frameTimeMs: 20 } };
+    let coldTurnStable = true, layoutTurnStable = false, initialPoolSize = 0, expandedPoolSize = 0;
+    let paintedGlyph = '';
+    try {
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+            innerWidth: 390, innerHeight: 844,
+            getComputedStyle: (): Partial<CSSStyleDeclaration> => ({ fontSize: '13px', height: '24px', width: '13px',
+                fontStyle: 'normal', fontWeight: '400', fontFamily: 'monospace', letterSpacing: '0px' }),
+        } });
+        Object.defineProperty(globalThis, 'document', { configurable: true, value: {
+            createElement: (): { getContext: () => object } => ({ getContext: () => ({
+                canvas: { width: 48, height: 40 }, clearRect: (): void => {},
+                fillText: (glyph: string): void => { paintedGlyph = glyph; },
+                getImageData: (): { data: Uint8ClampedArray } => {
+                    const data = new Uint8ClampedArray(48 * 40 * 4);
+                    const pixel = ['\u{10FFFF}', '\uFFFF', '\uFFFD'].includes(paintedGlyph)
+                        ? 0 : 100 + (paintedGlyph.codePointAt(0) ?? 0) % 1000;
+                    data[pixel * 4 + 3] = 255;
+                    return { data };
+                },
+                measureText: (): Partial<TextMetrics> => ({ width: 13, actualBoundingBoxAscent: 12, actualBoundingBoxDescent: 3 }),
+            }) }),
+        } });
+        invalidateGlyphFontCache();
+        publishVisualSignals(coldState, audio, stress);
+        initialPoolSize = getRenderableGlyphPool(coldState.currentPhase).length;
+        calmGlyphHover.start(coldElement, 'A');
+        const coldTrack = descendants(coldHover, 'glyph-reel-track')[0];
+        const selectedFaces = coldTrack.textContent;
+        for (let frame = 0; frame < 5; frame++) {
+            publishVisualSignals(coldState, audio, stress);
+            expandedPoolSize = getRenderableGlyphPool(coldState.currentPhase).length;
+            coldTurnStable &&= coldTrack.textContent === selectedFaces &&
+                calmGlyphHover.getVisualText(coldElement) === visibleSymbols(coldTrack)[0]?.textContent;
+        }
+        // Изменяется только размер строки; выбранные грани того же поворота остаются прежними.
+        Object.defineProperty(coldHover, 'offsetWidth', { configurable: true, value: 140 });
+        publishVisualSignals(coldState, audio, stress);
+        layoutTurnStable = coldTrack.textContent === selectedFaces &&
+            calmGlyphHover.getVisualText(coldElement) === visibleSymbols(coldTrack)[0]?.textContent;
+    } finally {
+        calmGlyphHover.stop(coldElement);
+        if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+        else Reflect.deleteProperty(globalThis, 'window');
+        if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+        else Reflect.deleteProperty(globalThis, 'document');
+        invalidateGlyphFontCache();
+    }
+    checks.push({ passed: expandedPoolSize > initialPoolSize && coldTurnStable && layoutTurnStable,
+        description: 'A cold expanding glyph pool and a layout-only refit keep each chosen reel face stable and its logical text equal to the visible glyph throughout the same turn' });
 
     // Один и тот же набор активных кадров должен дать одинаковый Roll/Dwell,
     // даже когда часы симуляции прыгают вперёд/назад при переключении фаз.

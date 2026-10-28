@@ -60,6 +60,8 @@ import { runRendererLifecycleChecks } from './rendererLifecycle.test';
 import { runOuroborosModelChecks } from './ouroborosModel.test';
 import { runOuroborosEpisodeChecks } from './ouroborosEpisode.test';
 import { runOuroborosFieldMorphChecks } from './ouroborosFieldMorph.test';
+import { runFrameDiagnosticsChecks } from './frameDiagnostics.test';
+import { runGlyphFontBudgetChecks } from './glyphFontBudget.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -990,6 +992,8 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     runOuroborosModelChecks(check);
     runOuroborosEpisodeChecks(check);
     runOuroborosFieldMorphChecks(check);
+    runFrameDiagnosticsChecks(check);
+    runGlyphFontBudgetChecks(check);
 
     return {
         passed: passedChecks === totalChecks,

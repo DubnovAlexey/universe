@@ -486,8 +486,11 @@ class UniverseStore {
         const state = this.state;
         if (state.currentPhase !== '05_SINGULARITY' || state.finaleRiseElapsedSec === null ||
             (state.singularityAct !== 'ACT_D_GITHUB_CARD' && state.singularityAct !== 'RESTART_COLLAPSE')) return null;
-        // Restart удерживает фактически показанную позу, включая задержанный наведением финал.
-        if (state.singularityAct === 'RESTART_COLLAPSE' && state.ouroborosRelease !== null) return state.ouroborosRelease;
+        // Передаём в VOID текущую вращающуюся позу, а не начальную позу1.45-секундного restart.
+        if (state.singularityAct === 'RESTART_COLLAPSE' && state.ouroborosRelease !== null) {
+            const elapsed = Number.isFinite(state.restartElapsedSec) ? Math.max(0, state.restartElapsedSec) : 0;
+            return { ageSec: state.ouroborosRelease.ageSec, timeSec: state.ouroborosRelease.timeSec + elapsed };
+        }
         const ageSec = Math.max(0, Math.min(state.finaleRiseElapsedSec, state.telemetry.phaseElapsedSec - 18.55));
         const cycleTime = state.telemetry.simulationTimeSec;
         return { ageSec, timeSec: cycleTime + Math.max(0, state.cycleCount - 1) * 108 };

@@ -295,7 +295,8 @@ try {
                 Object.assign(effect, { attemptedGpu: true, gpuReady: true, gpu: {
                     resize() {}, dispose() {}, getStats: () => ({ initialized: true,
                         submittedFrames: submitted, validationErrors: 0, lastError: null }),
-                    render(frame) { submitted++; sent.push({ time: frame.uniforms.timeSec, centerY: frame.uniforms.centerY }); return true; },
+                    render(frame) { submitted++; sent.push({ time: frame.uniforms.timeSec,
+                        centerX: frame.uniforms.centerX, centerY: frame.uniforms.centerY }); return true; },
                 } });
                 const stillState = { ...state, cycleCount: 2, reducedMotion: true };
                 const stillSignals = { ...signals, reducedMotion: true };
@@ -320,8 +321,20 @@ try {
                 effect.render(context, stillState, stillSignals, 1100, 840, 1, [{ x: 100, y: 200, radius: 1 }]);
                 effect.render(context, stillState, stillSignals, 1100, 840, 1, [{ x: 100, y: 200, radius: 1 }]);
                 assert.equal(submitted, 2);
+                assert.equal(overlay.dataset.viewportWidth, '1100');
+                assert.equal(overlay.dataset.viewportHeight, '840');
+                assert.equal(overlay.dataset.centerX, (550 + stillState.camera.driftX).toFixed(2));
+                assert.equal(overlay.dataset.centerY, (420 + stillState.camera.driftY).toFixed(2));
                 assert(sent.every((frame) => frame.time === 0));
                 assert.notEqual(sent[1].centerY, sent[0].centerY);
+                assert.equal(sent[1].centerX, 550 + stillState.camera.driftX);
+                assert.equal(sent[1].centerY, 420 + stillState.camera.driftY);
+                stillState.camera = { ...stillState.camera, driftX: stillState.camera.driftX + 12 };
+                effect.render(context, stillState, stillSignals, 1100, 840, 1, [{ x: 100, y: 200, radius: 1 }]);
+                effect.render(context, stillState, stillSignals, 1100, 840, 1, [{ x: 100, y: 200, radius: 1 }]);
+                assert.equal(submitted, 3, 'A horizontal camera change refreshes a paused GPU frame exactly once');
+                assert.equal(sent[2].centerX, sent[1].centerX + 12);
+                assert.equal(sent[2].centerY, sent[1].centerY);
                 effect.dispose(); resourceLedger.disposeAllPageResources();
                 assert.equal(resourceLedger.getCounters().underflowCount, 0);
             });

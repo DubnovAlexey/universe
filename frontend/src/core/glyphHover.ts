@@ -3,7 +3,7 @@
 // НАЗНАЧЕНИЕ: Отчётливые символьные барабаны на общем кадре без дрожания вёрстки.
 // РАЗДЕЛЫ: 1. Контракты/метрики; 2. Канонический текст; 3. Барабаны;
 //          4. Жизненный цикл общего кадра.
-// ФУНКЦИИ: ease, fitGlyphInk, symbolFit, setFittedGlyph, setTurn, ensureTextNodes, setCanonical, setVisualText,
+// ФУНКЦИИ: ease, fitGlyphInk, symbolFit, prepareFittedGlyph, setFittedGlyph, setTurn, ensureTextNodes, setCanonical, setVisualText,
 // getVisualText, isActive, createReels, updateReels, start, stop, stopAll, update.
 // ============================================================================
 
@@ -29,9 +29,12 @@ interface GlyphReelCell {
     incoming: HTMLElement;
     outgoingInk: HTMLElement;
     incomingInk: HTMLElement;
+    fromGlyph: string;
+    toGlyph: string;
     turn: number;
     progress: number;
     fitEpoch: number;
+    fitLayoutKey: string;
     state: 'waiting' | 'rolling' | 'locked';
 }
 interface HoverSession {
@@ -63,6 +66,17 @@ export interface GlyphInkFit {
 }
 const fitCache = new Map<string, GlyphInkFit>();
 let fitCacheEpoch = -1;
+interface GlyphSlotMetrics {
+    readonly key: string;
+    readonly availableWidth: number;
+    readonly availableHeight: number;
+    readonly inheritedFont: number;
+    readonly fontStyle: string;
+    readonly fontWeight: string;
+    readonly fontFamily: string;
+    readonly tracking: number;
+}
+const slotMetricsCache = new WeakMap<HTMLElement, GlyphSlotMetrics>();
 
 // НАЧАЛО ФУНКЦИИ ease
 function ease(value: number): number {
@@ -107,7 +121,7 @@ export function fitGlyphInk(metrics: Partial<TextMetrics>, width: number, height
 
 // НАЧАЛО ФУНКЦИИ symbolFit
 /** CSS-размеры локального окна не зависят от внешнего 3D-поворота всей кнопки. */
-function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean): GlyphInkFit {
+function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean, layoutKey?: string): GlyphInkFit {
     if (typeof window === 'undefined' || typeof document === 'undefined') return fitGlyphInk({}, 16, 20.8, 16);
     const fontEpoch = getGlyphFontEpoch();
     if (fontEpoch !== fitCacheEpoch) {
@@ -116,15 +130,24 @@ function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean): G
         fitCacheEpoch = fontEpoch;
     }
     const slot = element.parentElement!;
-    const slotStyle = window.getComputedStyle(slot);
-    const inheritedFont = Number.parseFloat(slotStyle.fontSize) || 16;
+    const metricsKey = `${fontEpoch}:${window.innerWidth}:${window.innerHeight}:${layoutKey ?? ''}`;
+    let slotMetrics = layoutKey === undefined ? undefined : slotMetricsCache.get(slot);
+    if (!slotMetrics || slotMetrics.key !== metricsKey) {
+        const slotStyle = window.getComputedStyle(slot);
+        const inheritedFont = Number.parseFloat(slotStyle.fontSize) || 16;
+        // Каноническая мера остаётся в layout даже когда окно временно display:none.
+        slotMetrics = { key: metricsKey, inheritedFont,
+            availableWidth: slot.clientWidth || slot.parentElement?.offsetWidth || Number.parseFloat(slotStyle.width) || inheritedFont,
+            availableHeight: Number.parseFloat(slotStyle.height) || inheritedFont * 1.3,
+            fontStyle: slotStyle.fontStyle, fontWeight: slotStyle.fontWeight, fontFamily: slotStyle.fontFamily,
+            tracking: Number.parseFloat(slotStyle.letterSpacing) || 0 };
+        if (layoutKey !== undefined) slotMetricsCache.set(slot, slotMetrics);
+    }
+    const { availableWidth, availableHeight, inheritedFont } = slotMetrics;
     const fontPx = isCanonical ? inheritedFont : Math.max(inheritedFont, 13);
-    // Каноническая мера остаётся в layout даже когда окно временно display:none.
-    const availableWidth = slot.clientWidth || slot.parentElement?.offsetWidth || Number.parseFloat(slotStyle.width) || fontPx;
-    const availableHeight = Number.parseFloat(slotStyle.height) || fontPx * 1.3;
-    const tracking = isCanonical ? Number.parseFloat(slotStyle.letterSpacing) || 0 : 0;
-    const font = slotStyle.fontStyle + ' ' + slotStyle.fontWeight + ' ' + fontPx + 'px ' +
-        (isCanonical ? slotStyle.fontFamily : GLYPH_FONT_STACK);
+    const tracking = isCanonical ? slotMetrics.tracking : 0;
+    const font = slotMetrics.fontStyle + ' ' + slotMetrics.fontWeight + ' ' + fontPx + 'px ' +
+        (isCanonical ? slotMetrics.fontFamily : GLYPH_FONT_STACK);
     const key = fontEpoch + ':' + font + ':' + availableWidth.toFixed(3) + ':' +
         availableHeight.toFixed(3) + ':' + tracking + ':' + glyph;
     const cached = fitCache.get(key);
@@ -142,10 +165,18 @@ function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean): G
         metrics = metricsContext.measureText(glyph);
     }
     const fit = fitGlyphInk(metrics, availableWidth, availableHeight, fontPx, tracking);
+    if (fitCache.size >= 4096) fitCache.delete(fitCache.keys().next().value!);
     fitCache.set(key, fit);
     return fit;
 }
 // КОНЕЦ ФУНКЦИИ symbolFit
+
+// НАЧАЛО ФУНКЦИИ prepareFittedGlyph
+/** Подготавливает начертание до любых DOM-записей; ключ описывает измеренный размер строки/сетки. */
+export function prepareFittedGlyph(ink: HTMLElement, glyph: string, canonical: string, layoutKey: string): GlyphInkFit {
+    return symbolFit(ink, glyph, glyph === canonical, layoutKey);
+}
+// КОНЕЦ ФУНКЦИИ prepareFittedGlyph
 
 // НАЧАЛО ФУНКЦИИ setFittedGlyph
 /** Отдельный ink-слой центрируется по начертанию; слой поворота остаётся размером с ячейку. */
@@ -275,7 +306,7 @@ class CalmGlyphHover {
             const waiting = glyph === GLYPH_WAITING_SPACE || /^\s+$/u.test(glyph);
             updates.push({ cell, glyph, canonical: source[index],
                 state: canonicalGlyph ? 'canonical' : waiting ? 'waiting' : 'rolling',
-                fit: !canonicalGlyph && !waiting ? symbolFit(cell.ink, glyph, false) : undefined });
+                fit: !canonicalGlyph && !waiting ? prepareFittedGlyph(cell.ink, glyph, source[index], fitKey) : undefined });
         });
         // Сначала измеряются все изменившиеся окна, затем одним блоком применяются DOM-записи.
         updates.forEach(({ cell, glyph, state, fit, canonical: canonicalGlyph }) => {
@@ -335,7 +366,8 @@ class CalmGlyphHover {
             nodes.push(cell);
             cell.dataset.glyphState = 'waiting';
             cells.push({ index, canonical: characters[index], node: cell, track, outgoing, incoming, outgoingInk, incomingInk,
-                turn: -1, progress: -1, fitEpoch: -1, state: 'waiting' });
+                fromGlyph: GLYPH_WAITING_SPACE, toGlyph: GLYPH_WAITING_SPACE,
+                turn: -1, progress: -1, fitEpoch: -1, fitLayoutKey: '', state: 'waiting' });
         }
         this.ensureTextNodes(element).visual.replaceChildren(...nodes);
         return cells;
@@ -343,8 +375,10 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ createReels
 
     // НАЧАЛО ФУНКЦИИ updateReels
-    private updateReels(session: HoverSession, signals: Readonly<VisualSignalSnapshot>): void {
+    private updateReels(session: HoverSession, signals: Readonly<VisualSignalSnapshot>, element: HTMLElement): void {
         const characters: string[] = [];
+        const writes: (() => void)[] = [];
+        const layoutKey = `${element.offsetWidth}:${element.offsetHeight}`;
         const rollDuration = session.rollMs * REEL_TURNS + REEL_HOLD_MS * (REEL_TURNS - 1);
         const totalMs = session.waveMs + rollDuration;
         const elapsed = session.elapsedMs - session.delayMs;
@@ -353,13 +387,15 @@ class CalmGlyphHover {
                 getOrderedGlyphState(cell.index, session.cells.length, elapsed / totalMs, rollDuration / totalMs);
             if (front.state !== cell.state) {
                 cell.state = front.state;
-                cell.node.dataset.glyphState = front.state;
+                writes.push(() => { cell.node.dataset.glyphState = front.state; });
             }
             if (front.state === 'waiting') {
                 characters[cell.index] = GLYPH_WAITING_SPACE;
                 if (cell.progress !== 0) {
-                    cell.track.style.setProperty('transform', 'none');
-                    setTurn(cell, 0.5);
+                    writes.push(() => {
+                        cell.track.style.setProperty('transform', 'none');
+                        setTurn(cell, 0.5);
+                    });
                     cell.progress = 0;
                 }
                 continue;
@@ -367,10 +403,12 @@ class CalmGlyphHover {
             if (front.state === 'locked') {
                 // Закрепление меняет настоящий DOM, а не только логическую строку.
                 if (cell.turn !== REEL_TURNS) {
-                    cell.outgoingInk.textContent = cell.canonical;
-                    cell.incomingInk.textContent = '';
-                    cell.track.style.setProperty('transform', 'none');
-                    setTurn(cell, 0);
+                    writes.push(() => {
+                        cell.outgoingInk.textContent = cell.canonical;
+                        cell.incomingInk.textContent = '';
+                        cell.track.style.setProperty('transform', 'none');
+                        setTurn(cell, 0);
+                    });
                     cell.turn = REEL_TURNS;
                 }
                 characters[cell.index] = cell.canonical;
@@ -378,27 +416,41 @@ class CalmGlyphHover {
             }
             const localMs = front.progress * rollDuration;
             const turn = Math.min(REEL_TURNS - 1, Math.floor(localMs / (session.rollMs + REEL_HOLD_MS)));
-            const mutable = isMutableGlyph(cell.canonical);
-            const from = mutable ? pickGlyph(signals.phase, cell.index + session.offset, turn, signals.seed) : cell.canonical;
-            const to = !mutable || turn === REEL_TURNS - 1 ? cell.canonical :
-                pickGlyph(signals.phase, cell.index + session.offset, turn + 1, signals.seed);
             const fitEpoch = getGlyphFontEpoch();
-            const refreshSymbols = turn !== cell.turn || fitEpoch !== cell.fitEpoch;
+            const chooseSymbols = turn !== cell.turn || fitEpoch !== cell.fitEpoch;
+            if (chooseSymbols) {
+                const mutable = isMutableGlyph(cell.canonical);
+                // Пополняющийся словарь не меняет выбранные грани посреди одного поворота.
+                cell.fromGlyph = mutable ? pickGlyph(signals.phase, cell.index + session.offset, turn, signals.seed) : cell.canonical;
+                cell.toGlyph = !mutable || turn === REEL_TURNS - 1 ? cell.canonical :
+                    pickGlyph(signals.phase, cell.index + session.offset, turn + 1, signals.seed);
+            }
+            const from = cell.fromGlyph, to = cell.toGlyph;
+            const refreshSymbols = chooseSymbols || cell.fitLayoutKey !== layoutKey;
             if (refreshSymbols) {
                 cell.turn = turn;
                 cell.fitEpoch = fitEpoch;
-                setFittedGlyph(cell.outgoingInk, from, cell.canonical);
-                setFittedGlyph(cell.incomingInk, to, cell.canonical);
+                cell.fitLayoutKey = layoutKey;
+                const outgoingFit = prepareFittedGlyph(cell.outgoingInk, from, cell.canonical, layoutKey);
+                const incomingFit = prepareFittedGlyph(cell.incomingInk, to, cell.canonical, layoutKey);
+                writes.push(() => {
+                    setFittedGlyph(cell.outgoingInk, from, cell.canonical, outgoingFit);
+                    setFittedGlyph(cell.incomingInk, to, cell.canonical, incomingFit);
+                });
             }
             const rollMs = localMs - turn * (session.rollMs + REEL_HOLD_MS);
             const progress = ease(rollMs / session.rollMs);
             if (progress !== cell.progress || refreshSymbols) {
                 cell.progress = progress;
-                cell.track.style.setProperty('transform', 'none');
-                setTurn(cell, progress);
+                writes.push(() => {
+                    cell.track.style.setProperty('transform', 'none');
+                    setTurn(cell, progress);
+                });
             }
             characters[cell.index] = progress > 0.5 ? to : from;
         }
+        // Ни одна следующая ячейка не измеряется после изменения текста/поворота предыдущей.
+        writes.forEach((write) => write());
         session.logicalText = characters.join('');
     }
     // КОНЕЦ ФУНКЦИИ updateReels
@@ -425,7 +477,7 @@ class CalmGlyphHover {
             waveMs: Math.min(MAX_WAVE_MS, Math.max(0, cells.length - 1) * SLOT_WAVE_MS),
             cleanup: () => { element.removeEventListener('pointerleave', restore); element.removeEventListener('blur', restore); },
         });
-        this.updateReels(this.sessions.get(element)!, signals);
+        this.updateReels(this.sessions.get(element)!, signals, element);
         element.dataset.glyphActive = '1';
         element.dataset.scrambling = '1';
         if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot) => this.update(snapshot));
@@ -458,7 +510,7 @@ class CalmGlyphHover {
             const rollDuration = (session.rollMs + REEL_HOLD_MS) * (REEL_TURNS - 1) + session.rollMs;
             const duration = session.delayMs + session.waveMs + rollDuration + session.dwellMs;
             if (session.elapsedMs >= duration) { this.stop(element); return; }
-            this.updateReels(session, signals);
+            this.updateReels(session, signals, element);
             const depth = Math.sin(Math.min(1, Math.max(0, session.elapsedMs - session.delayMs) / (duration - session.delayMs)) * Math.PI);
             element.style.setProperty('--glyph-depth-shift', (-0.65 * depth).toFixed(2) + 'px');
             element.style.setProperty('--glyph-depth-glow', (0.3 + depth * 0.3 + signals.pulse * 0.1).toFixed(3));

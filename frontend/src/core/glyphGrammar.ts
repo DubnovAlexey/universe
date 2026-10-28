@@ -8,6 +8,7 @@
 // formatOrderedGlyphText. Все пулы — полные code points; канон делится на графемы.
 // ============================================================================
 import type { PhaseId } from './contracts';
+import { getVisualSignals } from './visualSignals';
 
 // НАЧАЛО РАЗДЕЛА 1. СЕМЕЙСТВА И ПРОФИЛИ
 export const GLYPH_FONT_STACK = '"Universe Glyphs", "JetBrains Mono", "Fira Code", Consolas, "Segoe UI Historic", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Symbol", monospace';
@@ -51,7 +52,17 @@ export function getGlyphProfile(phase: PhaseId): GlyphProfile { return profiles[
 
 // НАЧАЛО РАЗДЕЛА 2. ПРОВЕРКА ОТОБРАЖЕНИЯ И FALLBACK
 const renderablePools = new Map<PhaseId, readonly string[]>();
+interface GlyphPoolScan {
+    next: number;
+    readonly accepted: string[];
+    snapshot: readonly string[];
+}
+const pendingPools = new Map<PhaseId, GlyphPoolScan>();
 const glyphSupport = new Map<string, boolean>();
+// Общий кадр, а не отдельный pickGlyph: десятки ячеек не расходуют бюджет повторно.
+const MAX_RASTER_PROBES_PER_FRAME = 4;
+let probeFrame: ReturnType<typeof getVisualSignals> | undefined;
+let remainingRasterProbes = 0;
 let probe: CanvasRenderingContext2D | null | undefined;
 let missingInk: Uint8ClampedArray[] = [];
 let fontEpoch = 0;
@@ -59,7 +70,7 @@ let fontLoadRequested = false;
 
 // НАЧАЛО ФУНКЦИИ invalidateGlyphFontCache
 export function invalidateGlyphFontCache(): void {
-    renderablePools.clear(); glyphSupport.clear();
+    renderablePools.clear(); pendingPools.clear(); glyphSupport.clear();
     probe = undefined; missingInk = []; fontEpoch++;
 }
 // КОНЕЦ ФУНКЦИИ invalidateGlyphFontCache
@@ -86,6 +97,7 @@ export function filterGlyphPool(candidates: readonly string[], supported: (glyph
 
 // НАЧАЛО ФУНКЦИИ rasterize
 function rasterize(context: CanvasRenderingContext2D, glyph: string): Uint8ClampedArray {
+    remainingRasterProbes--;
     context.clearRect(0, 0, 48, 40);
     context.fillText(glyph, 4, 28);
     return context.getImageData(0, 0, 48, 40).data;
@@ -93,10 +105,13 @@ function rasterize(context: CanvasRenderingContext2D, glyph: string): Uint8Clamp
 // КОНЕЦ ФУНКЦИИ rasterize
 
 // НАЧАЛО ФУНКЦИИ supportsGlyph
-function supportsGlyph(glyph: string): boolean {
+/** undefined переносит неизвестное начертание на следующий общий кадр. */
+function supportsGlyph(glyph: string): boolean | undefined {
     if ((glyph.codePointAt(0) ?? 0) < 128) return true;
     if (glyphSupport.has(glyph)) return glyphSupport.get(glyph)!;
     if (probe === undefined) {
+        // Три эталона отсутствующего знака также входят в бюджет синхронного readback.
+        if (remainingRasterProbes < 3) return undefined;
         try {
             probe = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
             if (probe) {
@@ -108,6 +123,7 @@ function supportsGlyph(glyph: string): boolean {
         } catch { probe = null; }
     }
     if (!probe) return false;
+    if (remainingRasterProbes === 0) return undefined;
     let ink: Uint8ClampedArray;
     try { ink = rasterize(probe, glyph); } catch {
         glyphSupport.set(glyph, false);
@@ -133,8 +149,33 @@ function supportsGlyph(glyph: string): boolean {
 // НАЧАЛО ФУНКЦИИ getRenderableGlyphPool
 export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
     prepareGlyphFonts();
-    if (!renderablePools.has(phase)) renderablePools.set(phase, filterGlyphPool(profiles[phase].pool, supportsGlyph));
-    return renderablePools.get(phase)!;
+    const complete = renderablePools.get(phase);
+    if (complete) return complete;
+    const frame = getVisualSignals();
+    if (frame !== probeFrame) {
+        probeFrame = frame;
+        remainingRasterProbes = MAX_RASTER_PROBES_PER_FRAME;
+    }
+    let scan = pendingPools.get(phase);
+    if (!scan) {
+        scan = { next: 0, accepted: [], snapshot: GLYPH_FAMILIES.basic };
+        pendingPools.set(phase, scan);
+    }
+    const previousSize = scan.accepted.length;
+    const candidates = profiles[phase].pool;
+    while (scan.next < candidates.length) {
+        const glyph = candidates[scan.next];
+        const supported = supportsGlyph(glyph);
+        if (supported === undefined) break;
+        scan.next++;
+        if (supported) scan.accepted.push(glyph);
+    }
+    if (scan.accepted.length !== previousSize) scan.snapshot = Object.freeze(scan.accepted.slice());
+    if (scan.next === candidates.length) {
+        renderablePools.set(phase, scan.snapshot);
+        pendingPools.delete(phase);
+    }
+    return scan.snapshot;
 }
 // КОНЕЦ ФУНКЦИИ getRenderableGlyphPool
 // КОНЕЦ РАЗДЕЛА 2

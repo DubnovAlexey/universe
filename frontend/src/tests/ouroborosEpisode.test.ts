@@ -5,6 +5,7 @@
 // ФУНКЦИИ: makeState, advance, runOuroborosEpisodeChecks.
 // ============================================================================
 import { evaluateOuroborosEpisode, getOuroborosLayout } from '../core/ouroborosEpisode';
+import { fillOuroborosPoints } from '../core/ouroborosModel';
 import { UNIVERSE_PHASES, universeStore, type UniverseState } from '../store/universeState';
 
 // НАЧАЛО ФУНКЦИИ makeState
@@ -92,11 +93,40 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
     const automatic = new Store(); automatic.setPhase('05_SINGULARITY');
     advance(automatic, 18.55); advance(automatic, 29);
     const held = evaluateOuroborosEpisode(automatic.getState());
+    advance(automatic, 29.725);
+    const midway = evaluateOuroborosEpisode(automatic.getState());
     advance(automatic, 30.45);
     const next = evaluateOuroborosEpisode(automatic.getState());
     check(automatic.getState().cycleCount === 2 && automatic.getState().currentPhase === '01_VOID' &&
-        held.morph === 1 && next.morph === 1 && held.timeSec === next.timeSec && next.timeSec === 108,
-        'Automatic restart captures the visible form and enters cycle2 with the same orientation and fullness');
+        held.morph === 1 && next.morph === 1 && held.timeSec === 108 &&
+        Math.abs(midway.timeSec - held.timeSec - 0.725) < 1e-10 && Math.abs(next.timeSec - held.timeSec - 1.45) < 1e-10,
+        'Automatic restart keeps turning for its whole1.45 seconds and hands the current orientation to cycle2');
+
+    const noStall = new Store(); noStall.setPhase('05_SINGULARITY');
+    advance(noStall, 18.55); advance(noStall, 29);
+    const pose = new Float32Array(6 * 8);
+    let previousTime = evaluateOuroborosEpisode(noStall.getState()).timeSec;
+    fillOuroborosPoints(pose, 104729, 6, previousTime, 1, 0.5);
+    let previousHead = Array.from(pose.subarray(0, 3));
+    let movingThroughRestart = true;
+    for (let frame = 1; frame <= 29; frame++) {
+        advance(noStall, 29 + frame * 0.05);
+        const episode = evaluateOuroborosEpisode(noStall.getState());
+        fillOuroborosPoints(pose, 104729, 6, episode.timeSec, 1, 0.5);
+        movingThroughRestart &&= Math.abs(episode.timeSec - previousTime - 0.05) < 1e-10 &&
+            Math.hypot(pose[0] - previousHead[0], pose[1] - previousHead[1], pose[2] - previousHead[2]) > 1e-5;
+        previousTime = episode.timeSec;
+        previousHead = Array.from(pose.subarray(0, 3));
+    }
+    check(movingThroughRestart && noStall.getState().currentPhase === '01_VOID',
+        'The visible head moves on every50ms step through restart and its VOID handoff instead of freezing for1.45 seconds');
+
+    const restartingState = makeState(29.8, { singularityAct: 'RESTART_COLLAPSE', restartElapsedSec: 0.8,
+        ouroborosRelease: { ageSec: 10.45, timeSec: 108 } });
+    const restartPose = evaluateOuroborosEpisode(restartingState);
+    check([{ ...restartingState, isPaused: true }, { ...restartingState, isTabHidden: true }]
+        .every(stoppedState => JSON.stringify(evaluateOuroborosEpisode(stoppedState)) === JSON.stringify(restartPose)),
+        'Pause and hidden-tab states retain restart orientation when the shared active clock is unchanged');
 
     const delayed = new Store();
     let delayedContinuous = true;
@@ -111,14 +141,16 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
         advance(delayed, 35.7);
         const released = evaluateOuroborosEpisode(delayed.getState());
         delayedContinuous &&= shown.timeSec === 113.25 + (cycle - 1) * 108 &&
-            JSON.stringify(shown) === JSON.stringify(restart) && JSON.stringify(shown) === JSON.stringify(collapsing) &&
-            JSON.stringify(shown) === JSON.stringify(released) && delayed.getState().currentPhase === '01_VOID' &&
+            JSON.stringify(shown) === JSON.stringify(restart) &&
+            Math.abs(collapsing.timeSec - shown.timeSec - 0.725) < 1e-10 &&
+            Math.abs(released.timeSec - shown.timeSec - 1.45) < 1e-10 &&
+            released.morph === shown.morph && released.opacity === shown.opacity && delayed.getState().currentPhase === '01_VOID' &&
             delayed.getState().cycleCount === cycle + 1;
         advance(delayed, 0.25);
-        delayedContinuous &&= evaluateOuroborosEpisode(delayed.getState()).timeSec === shown.timeSec + 0.25;
+        delayedContinuous &&= Math.abs(evaluateOuroborosEpisode(delayed.getState()).timeSec - released.timeSec - 0.25) < 1e-10;
     }
     check(delayedContinuous,
-        'Hover-delayed restarts freeze the actual visible time beyond108 seconds, preserve it into VOID and resume without a cycle-offset jump');
+        'Hover-delayed restarts keep the actual time beyond108 seconds moving through collapse and VOID without a cycle-offset jump');
 
     const earlyRestart = new Store(); earlyRestart.toggleAutoCycle(); earlyRestart.setPhase('05_SINGULARITY');
     advance(earlyRestart, 18.55); advance(earlyRestart, 21.3);
@@ -130,8 +162,10 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
     advance(earlyRestart, 22.75);
     const partialRelease = evaluateOuroborosEpisode(earlyRestart.getState());
     check(partialBefore.morph > 0 && partialBefore.morph < 1 &&
-        [partialStart, partialCollapse, partialRelease].every(e => JSON.stringify(e) === JSON.stringify(partialBefore)),
-        'Manual Restart freezes both orientation and partial gathering at the rendered pose before returning that same shape to VOID');
+        [partialStart, partialCollapse, partialRelease].every(e => e.morph === partialBefore.morph && e.opacity === partialBefore.opacity) &&
+        partialStart.timeSec === partialBefore.timeSec && Math.abs(partialCollapse.timeSec - partialBefore.timeSec - 0.725) < 1e-10 &&
+        Math.abs(partialRelease.timeSec - partialBefore.timeSec - 1.45) < 1e-10,
+        'Manual Restart retains partial gathering while rotation continues smoothly through collapse into VOID');
 
     const staticGather = evaluateOuroborosEpisode(makeState(21, { reducedMotion: true }));
     const staticRelease = evaluateOuroborosEpisode(makeState(2, { ...voidState, reducedMotion: true }));
@@ -155,5 +189,11 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
         return Object.values(layout).every(Number.isFinite) && layout.scale > 0;
     }) && getOuroborosLayout(1920, 1080).scale > 1080 * 0.205,
     'The larger composition keeps finite layout on phones, desktop and malformed viewports');
+    check([[320, 568], [390, 844], [768, 1024], [1920, 1080]].every(([width, height]) =>
+        [[0, 0], [-10.5, 8], [10.5, -8]].every(([driftX, driftY]) => {
+            const layout = getOuroborosLayout(width, height, driftX, driftY);
+            return layout.centerX === width / 2 + driftX && layout.centerY === height / 2 + driftY;
+        })) && getOuroborosLayout(390, 844, NaN, Infinity).centerY === 422,
+    'Ouroboros shares the exact field-camera center on phones and desktop, including drift, without an independent lower offset');
 }
 // КОНЕЦ ФУНКЦИИ runOuroborosEpisodeChecks

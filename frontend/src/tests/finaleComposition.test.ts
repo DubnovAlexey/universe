@@ -6,7 +6,7 @@
 // ФУНКЦИИ: makeLayout, makeQuantumLine, runFinaleRiseClockChecks, runFinaleCompositionChecks.
 // ============================================================================
 import {
-    getFinaleCardPlacement, getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP,
+    getFinaleCardPlacement, getFinaleCardScale, getSingularityPhotonRadii, PHOTON_BRIGHT_STOP, PHOTON_HALO_STOP,
     type FinaleCardLayout,
 } from '../core/finaleComposition';
 import {
@@ -16,6 +16,8 @@ import { CANONICAL_FINALE_LINES, CipherOdometerEngine, formatFinaleStaticLine, g
 import { GLYPH_WAITING_SPACE, getOrderedGlyphState, invalidateGlyphFontCache, splitGlyphText } from '../core/glyphGrammar';
 import { bindFinaleQuantumCells, updateFinaleQuantumCells } from '../layers/Layer5_CipherFinale';
 import { drawFittedCipherGlyph } from '../engine/passes/singularityPass';
+import { getOuroborosLayout } from '../core/ouroborosEpisode';
+import { fillOuroborosPoints, OUROBOROS_CAPACITY, OUROBOROS_STRIDE } from '../core/ouroborosModel';
 
 const PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
 
@@ -208,6 +210,54 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
         mountedNodes.every((node, index) => node === quantum.state.children[index]),
         'Stationary quantum cells refit after a viewport/font change without advancing the symbol clock, remounting nodes or writing unchanged ink');
 
+    // Реальный helper проходит через computed style, чтобы тест заметил чтение после записи.
+    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const access: string[] = [];
+    let computedReads = 0;
+    const probeWindow = { innerWidth: 390, innerHeight: 844,
+        getComputedStyle: (): Partial<CSSStyleDeclaration> => {
+            computedReads++; access.push('read');
+            return { fontSize: '13px', height: '24px', width: '13px', fontStyle: 'normal',
+                fontWeight: '400', fontFamily: 'monospace', letterSpacing: '0px' };
+        } };
+    try {
+        Object.defineProperty(globalThis, 'window', { value: probeWindow, configurable: true });
+        Object.defineProperty(globalThis, 'document', { configurable: true, value: {
+            createElement: (): { getContext: () => object } => ({ getContext: () => ({
+                measureText: (): Partial<TextMetrics> => ({ width: 20, actualBoundingBoxLeft: 2,
+                    actualBoundingBoxRight: 22, actualBoundingBoxAscent: 20, actualBoundingBoxDescent: 5 }),
+            }) }),
+        } });
+        cells.forEach(({ node, ink }) => {
+            Object.defineProperty(node, 'clientWidth', { configurable: true, get: () => { access.push('read'); return 13; } });
+            Object.defineProperty(node, 'clientHeight', { configurable: true, get: () => { access.push('read'); return 24; } });
+            const write = ink.style.setProperty.bind(ink.style);
+            ink.style.setProperty = (name: string, value: string): void => { access.push('write'); write(name, value); };
+        });
+        invalidateGlyphFontCache();
+        updateFinaleQuantumCells(cells, ['∇'], 142, false);
+        const firstWrite = access.indexOf('write');
+        const batched = firstWrite > 0 && !access.slice(firstWrite).includes('read') && computedReads === cells.length;
+        access.length = 0; computedReads = 0;
+        updateFinaleQuantumCells(cells, ['𓂀'], 143, false);
+        const cachedWrite = access.indexOf('write');
+        check(batched && cachedWrite > 0 && !access.slice(cachedWrite).includes('read') && computedReads === 0,
+            'All 25 quantum cells finish geometry/style reads before ink writes, then reuse slot metrics when only glyphs change');
+        probeWindow.innerWidth = 400;
+        updateFinaleQuantumCells(cells, ['∑'], 144, false);
+        const resizedReads = computedReads;
+        computedReads = 0; invalidateGlyphFontCache();
+        updateFinaleQuantumCells(cells, ['∑'], 144, false);
+        check(resizedReads === cells.length && computedReads === cells.length,
+            'Viewport and font generations invalidate cached slot styles without changing quantum node identity or symbol timing');
+    } finally {
+        if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+        else Reflect.deleteProperty(globalThis, 'window');
+        if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+        else Reflect.deleteProperty(globalThis, 'document');
+    }
+
     const radii = getSingularityPhotonRadii(900);
     check(Math.abs(radii.shadowRadius - 61.2) < 1e-10 &&
         Math.abs(radii.innerRadius - 39.78) < 1e-10 &&
@@ -269,6 +319,70 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
             placement.settledTopPx >= topLimit - 1e-9 &&
             placement.settledBottomPx <= layout.viewportHeight - layout.paddingBottom;
     }), 'Height-constrained screens retain the entire card and actions below the HUD instead of clipping content to force ring clearance');
+
+    const scaleTimes = [0, 3, 6, 6.001, 8, 10, 11.999, 12];
+    check([320, 390, 430, 600].every(width => {
+        const scales = scaleTimes.map(time => getFinaleCardScale(width, time));
+        return scales[0] === 1 && scales[2] === 1 && Math.abs(scales.at(-1)! - 0.82) < 1e-12 &&
+            scales.every((scale, index) => scale >= 0.82 && scale <= 1 && (index === 0 || scale <= scales[index - 1])) &&
+            Math.abs((1 - getFinaleCardScale(width, 6.001)) / 0.001) < 1e-6 &&
+            Math.abs((getFinaleCardScale(width, 11.999) - 0.82) / 0.001) < 1e-6;
+    }) && [601, 768, 920, 1920].every(width => scaleTimes.every(time => getFinaleCardScale(width, time) === 1)),
+    'Only phones shrink the card by18% during the last six rise seconds, monotonically with zero endpoint velocity; tablets and desktop keep their original scale');
+
+    check([0, 6, 12].every(time => Math.abs(getFinaleCardScale(390, time, true) - 0.82) < 1e-12) &&
+        getFinaleCardScale(390, NaN) === 1 && getFinaleCardScale(NaN, 12) === 1 &&
+        getFinaleCardScale(390, -10) === 1 && Math.abs(getFinaleCardScale(390, 20) - 0.82) < 1e-12,
+    'Reduced motion selects the settled phone size immediately, while malformed or clamped inputs never publish an invalid scale');
+
+    const phoneLayouts = [[390, 844, 296], [430, 932, 294]].map(([width, height, cardHeight]) => ({
+        ...makeLayout(width, height, cardHeight), paddingBottom: 166, headerBottom: 62,
+    }));
+    check(phoneLayouts.every(layout => {
+        const settled = getFinaleCardPlacement(layout);
+        const phoneCenterY = (layout.paddingTop + layout.viewportHeight - layout.paddingBottom) / 2;
+        const topLimit = Math.max(48, layout.paddingTop - 8, layout.headerBottom + 4);
+        let pathIsSafe = true;
+        for (let frame = 0; frame <= 240; frame++) {
+            const seconds = frame * 0.05;
+            const scale = getFinaleCardScale(layout.viewportWidth, seconds);
+            const limit = getFinaleCardPlacement(layout, scale).risePx;
+            const rise = Math.min(settled.risePx * smootherstep(0, 12, seconds), limit);
+            const scaledHeight = layout.cardHeight * scale;
+            const breath = 2 + scaledHeight / 2 * (0.008 * 1.42 + 0.003);
+            pathIsSafe &&= phoneCenterY - rise - scaledHeight / 2 - breath >= topLimit - 1e-9;
+        }
+        // Максимальная наблюдаемая верхняя граница тела при этих двух viewport — около0.5h−0.232w.
+        const bodyTop = layout.viewportHeight * 0.5 - layout.viewportWidth * 0.232;
+        return pathIsSafe && Math.abs(settled.settledTopPx - topLimit) < 1e-9 &&
+            settled.settledBottomPx + 3 < bodyTop;
+    }), 'Typical390px and430px phones keep every shrinking rise frame below the header and settle above the centered body instead of retaining the old unscaled bottom edge');
+
+    // Высоты соответствуют компактной строке действий desktop и однострочному25-ячеечному tablet.
+    const centeredBodyLayouts = [makeLayout(1280, 720, 155), makeLayout(1920, 1080, 236),
+        { ...makeLayout(768, 1024, 234), headerBottom: 62 }];
+    const bodyPoints = new Float32Array(OUROBOROS_CAPACITY * OUROBOROS_STRIDE);
+    let focalClearance = true;
+    for (const seed of [0, 104729, 0xffffffff]) for (let cycle = 0; cycle < 3; cycle++) {
+        for (const time of [103.05, 105, 108, 110, 112, 115, 117.05, 117.6]) {
+            fillOuroborosPoints(bodyPoints, seed, OUROBOROS_CAPACITY, time + cycle * 108, 1, 0.5);
+            for (const layout of centeredBodyLayouts) {
+                const placement = getFinaleCardPlacement(layout);
+                const focal = getOuroborosLayout(layout.viewportWidth, layout.viewportHeight, 0, -CAMERA_DRIFT_Y_AMPLITUDE);
+                let bodyTop = Infinity;
+                for (let offset = 0; offset < bodyPoints.length; offset += OUROBOROS_STRIDE) {
+                    if (bodyPoints[offset + 7] !== 0) continue;
+                    const perspective = 3 / (3 + bodyPoints[offset + 2]);
+                    bodyTop = Math.min(bodyTop, focal.centerY - bodyPoints[offset + 1] * focal.scale * perspective);
+                }
+                const topLimit = layout.viewportWidth <= 920 ? Math.max(48, layout.headerBottom + 4, layout.paddingTop - 8) : 8;
+                focalClearance &&= getFinaleCardScale(layout.viewportWidth, 12) === 1 &&
+                    Math.abs(placement.settledTopPx - topLimit) < 1e-9 && placement.settledBottomPx + 2 < bodyTop;
+            }
+        }
+    }
+    check(focalClearance,
+        'Compact1280×720, full1920×1080 and tablet768×1024 cards keep their original scale and clear the actual centered3D body across sampled head orientations, seeds, cycles and worst upward camera drift');
 
     const target = getFinaleCardPlacement(makeLayout(1440, 900)).risePx;
     const samples = [0, 0.001, 1, 3, 6, 9, 11.999, 12].map((seconds) => target * smootherstep(0, 12, seconds));

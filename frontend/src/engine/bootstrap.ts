@@ -199,7 +199,10 @@ export function bootstrapUniverseV2(): void {
     // --- НАЧАЛО ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
     const handleVisibilityChange = (): void => {
         // Браузер может приостановить RAF до публикации скрытого кадра.
-        if (document.hidden) calmGlyphHover.stopAll();
+        if (document.hidden) {
+            calmGlyphHover.stopAll();
+            renderer.resetFrameTimingContinuity();
+        }
         universeStore.setTabHidden(document.hidden);
     };
     // --- КОНЕЦ ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
