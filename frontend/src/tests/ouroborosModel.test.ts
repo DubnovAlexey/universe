@@ -1,6 +1,6 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/ouroborosModel.test.ts
-// НАЗНАЧЕНИЕ: Проверить формат, детерминизм, границы формы и мягкое внутреннее течение.
+// НАЗНАЧЕНИЕ: Проверить формат, детерминизм, силуэт головы и мягкое внутреннее течение.
 // РАЗДЕЛЫ: 1. Проверка активных точек; 2. Контракты заполнения и морфинга.
 // ФУНКЦИИ: validPoints, projectedBodyAspectRatio, bodyVolumeRatio, runOuroborosModelChecks.
 // ============================================================================
@@ -129,7 +129,8 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
         for (let time = 0; time <= 216; time += 9) {
             fillOuroborosPoints(points, seed, OUROBOROS_CAPACITY, time, 1, 0.7);
             readableProjection &&= projectedBodyAspectRatio(points) > 0.62 && validPoints(points, OUROBOROS_CAPACITY);
-            substantialVolume &&= bodyVolumeRatio(points) > 0.4;
+            // Общая ковариация включает намеренно уплощённую голову; объём туловища сохраняется.
+            substantialVolume &&= bodyVolumeRatio(points) > 0.38;
         }
     }
     check(readableProjection,
@@ -148,6 +149,32 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
         Array.from(buffer.subarray(index * OUROBOROS_STRIDE, index * OUROBOROS_STRIDE + 3));
     const midpoint = (a: readonly number[], b: readonly number[]): number[] => a.map((v, i) => (v + b[i]) / 2);
     const project = (v: readonly number[]): number[] => [v[0] * 3 / (3 + v[2]), -v[1] * 3 / (3 + v[2])];
+    const distance = (a: readonly number[], b: readonly number[]): number => Math.hypot(...a.map((v, i) => v - b[i]));
+    let elongatedHead = true, flattenedHead = true, taperedHead = true;
+    for (const seed of [0, 104729, 0xffffffff]) {
+        for (let time = 0; time <= 216; time += 9) {
+            for (const energy of [0, 1]) {
+                fillOuroborosPoints(prefix, seed, 512, time, 1, energy);
+                const mouth = midpoint(position(prefix, 2), position(prefix, 3));
+                const neck = midpoint(position(prefix, 8), position(prefix, 9));
+                const cheekWidth = distance(position(prefix, 10), position(prefix, 11));
+                const cheekDepth = distance(position(prefix, 16), position(prefix, 17));
+                const muzzleWidth = distance(position(prefix, 2), position(prefix, 3));
+                const neckWidth = distance(position(prefix, 8), position(prefix, 9));
+                elongatedHead &&= distance(mouth, neck) / cheekWidth > 1.65;
+                flattenedHead &&= cheekDepth / cheekWidth > 0.55 && cheekDepth / cheekWidth < 0.8;
+                taperedHead &&= muzzleWidth < cheekWidth * 0.8 && neckWidth < cheekWidth * 0.8 &&
+                    [2, 3, 8, 9, 10, 11, 16, 17].every(index => prefix[index * OUROBOROS_STRIDE + 7] === 0);
+            }
+        }
+    }
+    check(elongatedHead,
+        'The snake head stays longer from mouth to neck than 1.65 times its cranial width across seeds, music extremes and two cycles');
+    check(flattenedHead,
+        'The snake head retains a flattened but volumetric cranial cross-section through every spatial rotation');
+    check(taperedHead,
+        'The formed head has a narrower muzzle and neck than its cranium at reduced quality across seeds and music extremes');
+
     let tailInsideMouth = true, headLeads = true, minNormalZ = Infinity, maxNormalZ = -Infinity;
     for (const seed of [0, 104729, 0xffffffff]) {
         for (let time = 0; time <= 216; time += 3) {

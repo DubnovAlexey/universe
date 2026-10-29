@@ -101,34 +101,44 @@ pub fn fill_ouroboros_points(
         } else {
             let eye = i < 2;
             let lip = i == 2 || i == 3;
-            // Глаза0/1, губы2/3 и конец хвоста4/5 сохраняются при любом качестве.
-            let u = if eye { 0.035 } else if lip { 0.0 } else if i == 4 { 1.0 } else if i == 5 { 0.975 }
-                else if i < 34 { (if i % 2 == 0 { 0.016 } else { 0.05 }) + h0 * 0.018 } else { h0 };
+            // Ориентиры: глаза0/1, губы2/3, хвост4/5, шея8/9, ширина10/11 и глубина16/17 головы.
+            let neck_landmark = i == 8 || i == 9;
+            let cheek = i == 10 || i == 11;
+            let cheek_depth = i == 16 || i == 17;
+            let u = if eye { 0.055 } else if lip { 0.0 } else if i == 4 { 1.0 } else if i == 5 { 0.975 }
+                else if neck_landmark { 0.125 } else if cheek || cheek_depth { 0.053 }
+                else if i < 34 { 0.008 + h0 * 0.097 } else { h0 };
             // Хвост пересекает плоскость губ и заканчивается внутри объёма головы.
             let theta = -0.06 + u * (TAU + 0.20);
-            let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.55 } else { 0.55 } }
-                else if lip { (i - 2) as f64 * std::f64::consts::PI } else { h1 * TAU };
+            let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.82 } else { 0.82 } }
+                else if lip { (i - 2) as f64 * std::f64::consts::PI }
+                else if neck_landmark { (i - 8) as f64 * std::f64::consts::PI }
+                else if cheek { (i - 10) as f64 * std::f64::consts::PI }
+                else if cheek_depth { (i as f64 - 16.5) * std::f64::consts::PI } else { h1 * TAU };
             let (c, s) = (theta.cos(), theta.sin());
             let (cp, sp) = (phi.cos(), phi.sin());
-            let head_distance = (u - 0.045) / 0.032;
+            // Продольная морда, более широкая скуловая часть и узкая шея с уплощёнными челюстями.
+            let head_distance = (u - 0.053) / 0.031;
             let head = (-head_distance * head_distance).exp();
-            let jaw_distance = (u - 0.012) / 0.020;
-            let jaw = (-jaw_distance * jaw_distance).exp();
+            let neck_distance = (u - 0.105) / 0.019;
+            let head_window = 1.0 - smooth((u - 0.085) / 0.045);
             let tail = 0.13 + 0.87 * smooth((1.0 - u) / 0.17);
-            let tube = (0.110 + 0.015 * (theta * 3.0 + 0.35).sin() + 0.015 * energy) * tail + 0.120 * head + 0.055 * jaw;
+            let body_tube = (0.110 + 0.015 * (theta * 3.0 + 0.35).sin() + 0.015 * energy) * tail;
+            let snake_width = 0.112 + 0.070 * head - 0.027 * (-neck_distance * neck_distance).exp();
+            let tube = body_tube + (snake_width - body_tube) * head_window;
+            let depth_scale = 1.06 - 0.40 * head_window;
             let radius = 0.85 + 0.022 * (theta * 2.0 + time_sec * 0.11).sin() * (0.4 + energy * 0.6);
             let body_x = (radius + tube * cp) * c;
             let body_y = (radius + tube * cp) * s;
-            // Полное эллиптическое сечение читается при пространственном покачивании.
-            let body_z = tube * 1.06 * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
+            let body_z = tube * depth_scale * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
             let materialize = smooth((morph - (0.08 + h3 * 0.68)) / 0.24);
             x = dx + (body_x - dx) * materialize;
             y = dy + (body_y - dy) * materialize;
             z = dz + (body_z - dz) * materialize;
             nx = dust_angle.cos() * (1.0 - materialize) + cp * c * materialize;
             ny = dust_angle.sin() * (1.0 - materialize) + cp * s * materialize;
-            nz = 0.12 * (1.0 - materialize) + sp / 1.06 * materialize;
-            let core_size = if eye { 3.6 } else { 1.20 + h4 * 1.05 + head * 0.78 };
+            nz = 0.12 * (1.0 - materialize) + sp / depth_scale * materialize;
+            let core_size = if eye { 2.8 } else { 1.20 + h4 * 1.05 + head * 0.22 };
             size = (0.4 + h4) + (core_size - (0.4 + h4)) * materialize;
             kind = if materialize < 0.5 { 1.0 } else { 0.0 };
         }

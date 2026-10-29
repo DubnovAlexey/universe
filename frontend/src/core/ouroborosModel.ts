@@ -103,37 +103,44 @@ export function fillOuroborosPoints(
                 size += (0.75 + 0.65 * h4 - size) * flowBlend;
             }
         } else {
-            // Стабильные ориентиры: глаза0/1, противоположные губы2/3, конец хвоста4/5.
+            // Ориентиры: глаза0/1, губы2/3, хвост4/5, шея8/9, ширина10/11 и глубина16/17 головы.
             const eye = i < 2;
             const lip = i === 2 || i === 3;
-            const u = eye ? 0.035 : lip ? 0 : i === 4 ? 1 : i === 5 ? 0.975 :
-                i < 34 ? (i % 2 === 0 ? 0.016 : 0.05) + h0 * 0.018 : h0;
+            const neckLandmark = i === 8 || i === 9;
+            const cheek = i === 10 || i === 11;
+            const cheekDepth = i === 16 || i === 17;
+            const u = eye ? 0.055 : lip ? 0 : i === 4 ? 1 : i === 5 ? 0.975 :
+                neckLandmark ? 0.125 : cheek || cheekDepth ? 0.053 : i < 34 ? 0.008 + h0 * 0.097 : h0;
             // Дуга хвоста проходит через вход пасти и заканчивается внутри объёма головы.
             const theta = -0.06 + u * (TAU + 0.20);
-            const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.55 : 0.55) :
-                lip ? (i - 2) * Math.PI : h1 * TAU;
+            const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.82 : 0.82) :
+                lip ? (i - 2) * Math.PI : neckLandmark ? (i - 8) * Math.PI :
+                cheek ? (i - 10) * Math.PI : cheekDepth ? (i - 16.5) * Math.PI : h1 * TAU;
             const c = Math.cos(theta), s = Math.sin(theta);
             const cp = Math.cos(phi), sp = Math.sin(phi);
-            // Полая поверхность челюстей окружает тонкий хвост, заходящий за плоскость губ.
-            const headDistance = (u - 0.045) / 0.032;
+            // Продольная морда переходит в более широкую скуловую часть и узкую шею.
+            // Уменьшенная глубина сечения даёт уплощённые челюсти вместо шарообразного утолщения.
+            const headDistance = (u - 0.053) / 0.031;
             const head = Math.exp(-headDistance * headDistance);
-            const jawDistance = (u - 0.012) / 0.020;
-            const jaw = Math.exp(-jawDistance * jawDistance);
+            const neckDistance = (u - 0.105) / 0.019;
+            const headWindow = 1 - smooth((u - 0.085) / 0.045);
             const tail = 0.13 + 0.87 * smooth((1 - u) / 0.17);
-            const tube = (0.110 + 0.015 * Math.sin(theta * 3 + 0.35) + 0.015 * energy) * tail + 0.120 * head + 0.055 * jaw;
+            const bodyTube = (0.110 + 0.015 * Math.sin(theta * 3 + 0.35) + 0.015 * energy) * tail;
+            const snakeWidth = 0.112 + 0.070 * head - 0.027 * Math.exp(-neckDistance * neckDistance);
+            const tube = bodyTube + (snakeWidth - bodyTube) * headWindow;
+            const depthScale = 1.06 - 0.40 * headWindow;
             const radius = 0.85 + 0.022 * Math.sin(theta * 2 + timeSec * 0.11) * (0.4 + energy * 0.6);
             const bodyX = (radius + tube * cp) * c;
             const bodyY = (radius + tube * cp) * s;
-            // Полное эллиптическое сечение делает ближнюю и дальнюю стороны различимыми при покачивании.
-            const bodyZ = tube * 1.06 * sp + Math.sin(theta * 2 + timeSec * 0.11) * 0.035;
+            const bodyZ = tube * depthScale * sp + Math.sin(theta * 2 + timeSec * 0.11) * 0.035;
             const materialize = smooth((morph - (0.08 + h3 * 0.68)) / 0.24);
             x = dx + (bodyX - dx) * materialize;
             y = dy + (bodyY - dy) * materialize;
             z = dz + (bodyZ - dz) * materialize;
             nx = Math.cos(dustAngle) * (1 - materialize) + cp * c * materialize;
             ny = Math.sin(dustAngle) * (1 - materialize) + cp * s * materialize;
-            nz = 0.12 * (1 - materialize) + sp / 1.06 * materialize;
-            const coreSize = eye ? 3.6 : 1.20 + h4 * 1.05 + head * 0.78;
+            nz = 0.12 * (1 - materialize) + sp / depthScale * materialize;
+            const coreSize = eye ? 2.8 : 1.20 + h4 * 1.05 + head * 0.22;
             size = (0.4 + h4) + (coreSize - (0.4 + h4)) * materialize;
             kind = materialize < 0.5 ? OUROBOROS_KIND_DUST : OUROBOROS_KIND_BODY;
         }
