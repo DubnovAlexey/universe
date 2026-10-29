@@ -1,8 +1,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/waterfallLifecycle.test.ts
-// НАЗНАЧЕНИЕ: Проверить кеш DOM и остановку реального контроллера водопада.
-// РАЗДЕЛЫ: 1. Минимальные DOM-привязки; 2. Общий кадр и жизненный цикл каскадов.
-// ФУНКЦИИ: makeCascade, runWaterfallLifecycleChecks.
+// НАЗНАЧЕНИЕ: Проверить кеш DOM, каскады телеметрии и редкий фон объяснений.
+// РАЗДЕЛЫ: 1. Минимальные DOM-привязки; 2. Общий кадр; 3. Каскад объяснений.
+// ФУНКЦИИ: makeCascade, runWaterfallLifecycleChecks, runExplanationWaterfallChecks.
 // ============================================================================
 import { TelemetryWaterfallAnimator, setHudText } from '../layers/Layer2_Metrics';
 import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
@@ -155,6 +155,134 @@ export function runWaterfallLifecycleChecks(check: (passed: boolean, description
     shared.listener?.({ ...snapshot, simTimeSec: 6 });
     check(shared.subscriptions === 2 && shared.releases === 2 && shared.listener === null,
         'An externally removed waterfall root releases its cache and shared frame subscription');
+
+    runExplanationWaterfallChecks(check);
 }
 // КОНЕЦ ФУНКЦИИ runWaterfallLifecycleChecks
 // КОНЕЦ РАЗДЕЛА 2
+
+// НАЧАЛО РАЗДЕЛА 3. РЕДКИЙ КАСКАД ОБЪЯСНЕНИЙ
+// НАЧАЛО ФУНКЦИИ runExplanationWaterfallChecks
+function runExplanationWaterfallChecks(check: (passed: boolean, description: string) => void): void {
+    let nowSec = 0;
+    const baselineFrame: { listener: ((snapshot: Readonly<VisualSignalSnapshot>) => void) | null } = { listener: null };
+    const guideFrame: { listener: ((snapshot: Readonly<VisualSignalSnapshot>) => void) | null;
+        subscriptions: number; releases: number } = { listener: null, subscriptions: 0, releases: 0 };
+    const baseline = new TelemetryWaterfallAnimator((listener) => {
+        baselineFrame.listener = listener;
+        return () => { baselineFrame.listener = null; };
+    });
+    const guide = new TelemetryWaterfallAnimator((listener) => {
+        guideFrame.listener = listener;
+        guideFrame.subscriptions++;
+        return () => { guideFrame.listener = null; guideFrame.releases++; };
+    });
+    guide.getTimeSec = () => nowSec;
+    const baseRoots = [makeCascade(), makeCascade(), makeCascade()];
+    const guideRoots = [makeCascade(), makeCascade(), makeCascade()];
+    ([2, 3, 4] as const).forEach((id, index) => {
+        baseline.bindCascade(id, baseRoots[index].root);
+        guide.bindCascade(id, guideRoots[index].root);
+    });
+    const reader = makeCascade();
+    const kicker = new WaterfallNode(reader.counters);
+    const title = new WaterfallNode(reader.counters);
+    const paragraph = new WaterfallNode(reader.counters);
+    kicker.attributes.set('data-breath-slot', 'l5_explain_kicker');
+    kicker.attributes.set('data-breath-seed', '0.4');
+    title.attributes.set('data-breath-slot', 'l5_explain_title');
+    title.attributes.set('data-breath-seed', '1.1');
+    reader.node.selectors.set('[data-breath-slot]', [kicker, title]);
+    guide.bindCascade(5, reader.root);
+    const boundQueries = reader.counters.queries;
+    const snapshot = { ...getVisualSignals(), frameDtSec: 0.05, isPaused: false, reducedMotion: false,
+        pulse: 0.4, low: 0.3 };
+    const seenGuide = new Set<number>();
+    const seenRight = new Set<number>();
+    const spawnTimes: number[] = [];
+    let rightUnchanged = true;
+    let bounded = true;
+    let quietStart = true;
+    let gentleHeadings = false;
+    for (let frame = 0; frame <= 600; frame++) {
+        nowSec = frame * 0.05;
+        const signal = { ...snapshot, simTimeSec: nowSec };
+        baselineFrame.listener?.(signal);
+        guideFrame.listener?.(signal);
+        const drops = guide.getDropletsForCascade(5);
+        if (nowSec < 2 && drops.length) quietStart = false;
+        bounded = bounded && drops.length <= 2 && drops.every((drop) => drop.opacity <= 0.3 && drop.maxLife <= 2.181);
+        for (const drop of drops) {
+            if (!seenGuide.has(drop.id)) { seenGuide.add(drop.id); spawnTimes.push(nowSec); }
+        }
+        for (const drop of guide.getDropletsForCascade(2)) seenRight.add(drop.id);
+        for (const id of [2, 3, 4] as const) {
+            rightUnchanged = rightUnchanged && JSON.stringify(guide.getDropletsForCascade(id)) ===
+                JSON.stringify(baseline.getDropletsForCascade(id));
+        }
+        if (frame === 10) {
+            const normal = guide.computeSlotBreathCss('l5_explain_title', 1.1, nowSec);
+            const readTransform = (value: string): number[] => Array.from(value.matchAll(/-?\d+(?:\.\d+)?/g), (match) => Number(match[0]));
+            const quiet = readTransform(title.style.transform);
+            const full = readTransform(normal.transform);
+            // translate3d contributes its own digit before the coordinate and scale values.
+            gentleHeadings = Math.abs(quiet[2] - full[2] * 0.22) <= 0.011 &&
+                Math.abs((quiet[4] - 1) - (full[4] - 1) * 0.22) <= 0.00011;
+        }
+    }
+    check(guideFrame.subscriptions === 1 && reader.counters.queries === boundQueries,
+        'Explanation starfall joins the existing shared frame and keeps its DOM binding cache');
+    check(quietStart && spawnTimes[0] === 2 && spawnTimes.length >= 3 &&
+        spawnTimes.every((time, index) => index === 0 || time - spawnTimes[index - 1] >= 1.85) &&
+        seenGuide.size < seenRight.size / 2 && bounded,
+        'Explanation starfall waits two seconds, falls rarely at low opacity and keeps at most two short-lived symbols');
+    check(rightUnchanged,
+        'Opening explanation starfall preserves the cadence, glyph sequence and trajectories of cascades 2–4');
+    check(gentleHeadings && JSON.stringify(paragraph.style) === '{}' && kicker.style.color === '#e0f2fe',
+        'Explanation headings breathe at a gentle fraction of telemetry motion while paragraphs remain untouched');
+
+    const frozen = JSON.stringify(reader.counters);
+    const frozenWrites = reader.counters.writes;
+    const frozenQueries = reader.counters.queries;
+    const frozenDrops = JSON.stringify(guide.getDropletsForCascade(5));
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 1, isPaused: true, frameDtSec: 0 });
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 2, reducedMotion: true });
+    check(JSON.stringify(reader.counters) === frozen && JSON.stringify(guide.getDropletsForCascade(5)) === frozenDrops,
+        'Manual pause and reduced motion freeze explanation symbols and headings without DOM work');
+    reader.node.hidden = true;
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 3 });
+    check(reader.counters.writes === frozenWrites && reader.counters.queries === frozenQueries &&
+        JSON.stringify(guide.getDropletsForCascade(5)) === frozenDrops,
+        'A hidden explanation root freezes only its own cached symbols');
+    guide.releaseCascade(5, reader.root);
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 4 });
+    check(guide.getDropletsForCascade(5).length === 0 && guideFrame.releases === 0 &&
+        reader.counters.writes === frozenWrites && reader.counters.queries === frozenQueries,
+        'Closing explanation starfall releases its drops while telemetry retains the shared subscription');
+
+    nowSec += 5;
+    const reopened = makeCascade();
+    guide.bindCascade(5, reopened.root);
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 1.9 });
+    const quietReopen = guide.getDropletsForCascade(5).length === 0;
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 2 });
+    const resumed = guide.getDropletsForCascade(5).length > 0;
+    reopened.node.isConnected = false;
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 2.05 });
+    check(quietReopen && resumed && guide.getDropletsForCascade(5).length === 0 && guideFrame.releases === 0,
+        'Reopening resets the quiet entrance and detaching the guide clears its symbols without stopping telemetry');
+    ([2, 3, 4] as const).forEach((id, index) => {
+        baseline.releaseCascade(id, baseRoots[index].root);
+        guide.releaseCascade(id, guideRoots[index].root);
+    });
+    check(guideFrame.releases === 1 && guideFrame.listener === null,
+        'The final shared cascade release unsubscribes exactly once after explanation open and detach');
+    const isolated = makeCascade();
+    guide.bindCascade(5, isolated.root);
+    isolated.node.isConnected = false;
+    guideFrame.listener?.({ ...snapshot, simTimeSec: nowSec + 3 });
+    check(guideFrame.subscriptions === 2 && guideFrame.releases === 2 && guideFrame.listener === null,
+        'An isolated explanation root releases the shared frame when removed from the page');
+}
+// КОНЕЦ ФУНКЦИИ runExplanationWaterfallChecks
+// КОНЕЦ РАЗДЕЛА 3

@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/core/buttonSolid.ts
 // НАЗНАЧЕНИЕ: CSS-кубоиды с двумя читаемыми гранями внутри семантических элементов HUD.
 // РАЗДЕЛЫ: 1. Контракты и исходный DOM; 2. Грани и размеры; 3. Пакетный жизненный цикл.
-// ФУНКЦИИ: cloneMeasuringNode, makeSpan, measureSolid, setSolidButtonLabel;
+// ФУНКЦИИ: cloneMeasuringNode, makeSpan, copySolidLabels, measureSolid, setSolidButtonLabel;
 //          ButtonSolidManager: constructor, mount, dispose.
 // Размеры берутся из layout box; измеритель не зависит от вращения тела.
 // ============================================================================
@@ -27,6 +27,7 @@ interface SolidRecord {
     readonly canonicalNode: HTMLElement | null;
     readonly label: HTMLElement;
     readonly backLabel: HTMLElement;
+    readonly configuredBackLabel: string | undefined;
     readonly visual: HTMLElement;
     readonly measurer: HTMLElement;
     readonly kind: 'status' | 'control';
@@ -60,6 +61,26 @@ function makeSpan(host: HTMLElement, className: string): HTMLSpanElement {
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. ШЕСТЬ ГРАНЕЙ, ПОДПИСИ И LAYOUT-РАЗМЕРЫ
+// НАЧАЛО ФУНКЦИИ copySolidLabels
+/** Сохраняет отдельный перевод сзади; наложенные измерители резервируют большую из двух подписей. */
+function copySolidLabels(record: SolidRecord): void {
+    if (record.configuredBackLabel === undefined) {
+        record.backLabel.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
+        record.measurer.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
+        return;
+    }
+    record.backLabel.textContent = record.configuredBackLabel;
+    const front = makeSpan(record.host, 'solid-button-measure-label');
+    const back = makeSpan(record.host, 'solid-button-measure-label');
+    front.dataset.solidMeasureFace = 'front';
+    back.dataset.solidMeasureFace = 'back';
+    for (const node of [front, back]) node.style.setProperty('grid-area', '1 / 1');
+    front.append(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
+    back.append(...Array.from(record.backLabel.childNodes).map(cloneMeasuringNode));
+    record.measurer.replaceChildren(front, back);
+}
+// КОНЕЦ ФУНКЦИИ copySolidLabels
+
 // НАЧАЛО ФУНКЦИИ measureSolid
 /** Только offset box: CSS-повороты потомков не меняют геометрию и область клика. */
 function measureSolid(record: SolidRecord): void {
@@ -88,8 +109,7 @@ export function setSolidButtonLabel(host: HTMLElement, text: string): boolean {
     if (record.text !== text) {
         record.text = text;
         if (record.visual.textContent !== text) record.visual.textContent = text;
-        record.measurer.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
-        record.backLabel.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
+        copySolidLabels(record);
         record.measure();
     }
     return true;
@@ -129,6 +149,11 @@ export class ButtonSolidManager {
             const measurer = makeSpan(host, 'solid-button-measurer');
             measurer.setAttribute('aria-hidden', 'true');
             measurer.setAttribute('inert', '');
+            const configuredBackLabel = host.dataset.solidBackLabel;
+            if (configuredBackLabel !== undefined) {
+                measurer.style.setProperty('display', 'inline-grid');
+                measurer.style.setProperty('grid-template-columns', 'max-content');
+            }
             const body = makeSpan(host, 'solid-button-body');
             body.setAttribute('aria-hidden', 'true');
             const restoredContainers = [originalVisual, originalCanonicalNode]
@@ -140,7 +165,7 @@ export class ButtonSolidManager {
                 originalMarker: host.dataset.buttonSolid, originalKind: host.dataset.buttonSolidKind,
                 originalStyles: SOLID_PROPERTIES.map((property) => ({ property,
                     value: host.style.getPropertyValue(property), priority: host.style.getPropertyPriority(property) })),
-                canonicalNode, label, backLabel, visual: originalVisual ?? label, measurer, kind,
+                canonicalNode, label, backLabel, configuredBackLabel, visual: originalVisual ?? label, measurer, kind,
                 text, dimensions: '', measure: () => measureSolid(record),
             };
             originalChildren.filter((node) => node !== originalCanonicalNode).forEach((node) => label.appendChild(node));
@@ -149,9 +174,8 @@ export class ButtonSolidManager {
                 canonicalNode.textContent = text;
             } else host.setAttribute('aria-label', text);
             host.dataset.canonicalText = text;
-            measurer.append(...Array.from(label.childNodes).map(cloneMeasuringNode));
             // Обратная грань показывает канон, не копирует glyph-привязки и не создаёт второй tab stop.
-            backLabel.append(...Array.from(label.childNodes).map(cloneMeasuringNode));
+            copySolidLabels(record);
             SOLID_FACES.forEach((faceName) => {
                 const face = makeSpan(host, `solid-button-face solid-button-face--${faceName}`);
                 face.dataset.solidFace = faceName;

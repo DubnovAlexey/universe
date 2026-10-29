@@ -1,3 +1,5 @@
+<!-- НАЗНАЧЕНИЕ: Объяснение математических моделей, параметров реализации и границ применимости. -->
+<!-- РАЗДЕЛЫ: Область применения; Путеводитель; Русское руководство; English specification. -->
 # 📐 Математические, биофизические и астрофизические модели UNIVERSE (v2.5)
 # 📐 Mathematical, Biophysical, and Astrophysical Models of UNIVERSE (v2.5)
 
@@ -7,6 +9,10 @@
 **Область применения:** Rust/WASM и TS рассчитывают общие фазы Курамото, отдельный контрольный ансамбль REF64 и декоративную объёмную геометрию Уробороса. Художественная композиция остаётся хореографией; она не является полной N-body симуляцией. NEXUS исполняется в TypeScript, Python предоставляет независимые эталоны. Основные пять фаз рисует Canvas 2D, отдельный WebGPU-проход исполняет `ouroboros.wgsl`; `illusion.wgsl`, `truth.wgsl` и `breach.wgsl` остаются спецификациями. [Архитектурные контракты](../ARCHITECTURE.md).
 
 The static application uses Rust/WASM with a TypeScript fallback, a synchronous TS graph engine and Canvas 2D for the five main phases. A separate transparent WebGPU pass executes `ouroboros.wgsl` on shared Rust/TS decorative geometry, with a Canvas fallback. The other WGSL files remain specifications. Python provides independent numerical references. Kuramoto phases affect artistic targets; energy telemetry belongs to the separate REF64 reference ensemble.
+
+**Путеводитель в сцене:** строка `SCRAMBLER · KURAMOTO · fBm · VERLET · PLUMMER` содержит пять кнопок объяснений и предшествует обычной текстовой строке технологий. Объёмная кнопка внизу по центру показывает `HOW IT WORKS` спереди и `КАК ЭТО УСТРОЕНО` сзади. Все входы используют один `layers/ExplanationDialog.ts` и неизменяемый каталог `core/explainerTopics.ts` из 15 тем с режимами «Просто» / «Технически», формулами MathML, текстовой записью и ссылками на исходники. На desktop панель раскрывается слева под заголовком, на телефоне используется читаемая область; короткий звёздный след связывает её с нажатым элементом, редкие символы Starfall идут за текстом. Во время чтения сцена, музыка, фазы и остальные кнопки продолжают работать. Закрытие — кнопкой или `Esc` при фокусе внутри панели. Стили находятся в `styles/07-explanations.css`, седьмом модуле точки входа `styles/universe.css`.
+
+The in-scene guide uses five model buttons, followed by a plain technology row, plus a rotating bottom-center overview button labelled `HOW IT WORKS` on the front and `КАК ЭТО УСТРОЕНО` on the back. A short star trail links the trigger to the opening panel, placed below the brand on the left on desktop and adapted for readable phone viewing. A nonmodal native dialog offers 15 topics at simple and technical levels with formulas and source links; the scene, music, phases and other controls continue while it is open. Sparse falling symbols appear behind the text. These explanations distinguish procedural appearance and rhythm from the separate REF64 orbit model; they do not imply that every visible particle obeys all five models.
 
 ---
 
@@ -37,20 +43,20 @@ The static application uses Rust/WASM with a TypeScript fallback, a synchronous 
 
 ---
 
-## 1. Детерминизм, ГПСЧ (`Mulberry32` + `SplitMix32`) и цифровой отпечаток `FNV-1a`
+## 1. Детерминизм, ГПСЧ (`Mulberry32`), индексный хеш `fmix32` и цифровой отпечаток `FNV-1a`
 
 ### 1.1. Что такое детерминированный ГПСЧ простыми словами и зачем он нужен
 В обычных программах для получения случайных чисел вызывают стандартную функцию `Math.random()`. Проблема в том, что в разных браузерах и разных языках (`JavaScript`, `Python`, `Rust`) она устроена по-разному и при каждом запуске выдаёт совершенно новые числа. Если строить космос на `Math.random()`, то на компьютере и телефоне (или в TypeScript и Python) получатся две разные Вселенные, которые невозможно сверить между собой.
 
 **Детерминированный генератор псевдослучайных чисел (ГПСЧ)** решает эту проблему. На старте задаётся **зерно (`Seed`)**, в проекте по умолчанию равное простому числу **`104729` (`GOLDEN_SEED`)**. Это публичный воспроизводимый параметр.
 * Для зрителя результат выглядит как живой, природный хаос звёзд и туманностей.
-* Но для математика этот «хаос» на 100% предсказуем: и в браузере на `TypeScript`, и на сервере `Python`, и в модуле `Rust` генератор выдаёт **побитово одну и ту же последовательность чисел**.
+* При одинаковом зерне и порядке вызовов целочисленный генератор в `TypeScript`, независимом эталоне `Python` и модуле `Rust` выдаёт **одинаковую последовательность 32-битных чисел**. Это не означает побитового совпадения любых последующих вычислений с плавающей точкой.
 
-### 1.2. Как устроены `Mulberry32` и `SplitMix32` в нашем коде
-Мы используем два взаимодополняющих 32-битных алгоритма (`frontend/src/core/prng.ts`, `backend/core/prng.py`, `physics_engine/src/prng.rs`):
+### 1.2. Как устроены `Mulberry32` и индексный хеш в нашем коде
+Мы используем потоковый генератор и отдельную индексную хеш-функцию (`frontend/src/core/prng.ts`, `backend/core/prng.py`, `physics_engine/src/prng.rs`):
 
 1. **Потоковый генератор `nextU32()` (алгоритм `Mulberry32`):**
-   Последовательно переводит внутреннее 32-битное состояние $S_k$ в следующее состояние $S_{k+1}$, прибавляя нечётную константу золотого сечения $\text{0x6D2B79F5}$ и перемешивая биты побитовыми сдвигами и умножениями по модулю $2^{32}$:
+   Последовательно переводит внутреннее 32-битное состояние $S_k$ в следующее состояние $S_{k+1}$, прибавляя нечётную константу $\text{0x6D2B79F5}$ и перемешивая биты побитовыми сдвигами и умножениями по модулю $2^{32}$:
    $$S_{k+1} = (S_k + \text{0x6D2B79F5}) \bmod 2^{32}$$
    $$z_1 = \left( S_{k+1} \oplus (S_{k+1} \gg 15) \right) \cdot (S_{k+1} \mid 1) \bmod 2^{32}$$
    $$z_2 = \left( z_1 \oplus \left( z_1 + \left( (z_1 \oplus (z_1 \gg 7)) \cdot (z_1 \mid 61) \right) \right) \right) \bmod 2^{32}$$
@@ -58,12 +64,13 @@ The static application uses Rust/WASM with a TypeScript fallback, a synchronous 
    При стартовом зерне `GOLDEN_SEED = 104729` первые четыре числа во всех трёх языках строго равны:
    $$\text{GOLDEN\_U32\_VECTORS} = [325253669, \; 3481002091, \; 881690241, \; 2630884050]$$
 
-2. **Бессостоянийная хеш-функция `hashU32(seed, index)` (алгоритм `SplitMix32`):**
-   Когда нам нужно мгновенно узнать свойство конкретной частицы по её номеру `id` (например, в каком спиральном рукаве она родилась), не прокручивая весь генератор с начала, используется биективный скремблер Дэвида Стаффорда `SplitMix32`:
+2. **Индексная хеш-функция `hashU32(seed, index)` без состояния:**
+   Чтобы получить значение по номеру частицы без прокрутки потока, код смешивает `seed` и `index`, затем применяет 32-битный финализатор `fmix32` из [MurmurHash3 Остина Эпплби](https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp). Его сдвиги `16/13/16` и множители `0x85EBCA6B`, `0xC2B2AE35` отличаются от 64-битного Stafford Mix13. Название `SplitMix32` в некоторых исторических комментариях исходников не является точной атрибуцией этого финализатора:
    $$h_0 = \text{seed} \oplus (\text{index} \cdot \text{0x9E3779B9} \bmod 2^{32})$$
    $$h_1 = (h_0 \oplus (h_0 \gg 16)) \cdot \text{0x85EBCA6B} \bmod 2^{32}$$
    $$h_2 = (h_1 \oplus (h_1 \gg 13)) \cdot \text{0xC2B2AE35} \bmod 2^{32}, \qquad \text{hashU32} = h_2 \oplus (h_2 \gg 16)$$
 
+   Повторяемость полезна для проверок и устойчивых свойств частиц. Она не означает криптографической непредсказуемости или бесконечной неповторяемости: аргументы приводятся к 32 битам, а отображаемые признаки могут совпадать после преобразования результата.
 
 ### 1.3. Контрольная сумма `FNV-1a State Digest` (Цифровой отпечаток Вселенной)
 * **Что это простыми словами:** короткий код (например, `0x6AB09A72`) помогает обнаружить изменения выбранных полей состояния. В проекте проверяется каждая четвёртая частица после квантования; малые изменения могут остаться незаметными, а коллизии 32-битного хеша возможны. Поэтому совпадение кода не доказывает полного совпадения двух сцен.
@@ -110,7 +117,9 @@ $$R_k(\theta, t) = r_k(t) \cdot \left[ 1 + \underbrace{\sum_{m \in \{2,3,5\}} a_
 
 ### 3.2. Что такое фрактальный шум `FBM` и `Domain Warping` (Пылевые рукава Андромеды `M31`)
 * **Простыми словами:** Если попытаться нарисовать космическое облако обычной гладкой функцией (вроде синуса), получатся скучные мыльные пузыри. В природе облака, горные хребты и клубы дыма устроены **фрактально** (самоподобно): на большой волне сидят волны поменьше, на них — мелкая рябь, а на ней — тончайшие прожилки.
-  Метод **Фрактального Броуновского Движения (`FBM` — Fractional Brownian Motion)** складывает несколько слоёв («октав») плавного шума. В активном Canvas-рендерере функция `fbm2D` из `frontend/src/engine/math/noise2d.ts` начинает с амплитуды `0.52` и частоты `1.0`; каждая октава умножает частоту на `2.03`, а амплитуду — на `0.51`.
+  Графический приём **fBm** складывает несколько слоёв («октав») плавного шума. В активном Canvas-рендерере функция `fbm2D` из `frontend/src/engine/math/noise2d.ts` начинает с амплитуды `0.52` и частоты `1.0`; каждая октава умножает частоту на `2.03`, а амплитуду — на `0.51`. Основа — интерполированный `valueNoise2D`, а не градиентный шум. Активные проходы эха, пыли и линзы используют три октавы:
+  $$F(x,y)=\sum_{k=0}^{2}0.52\cdot0.51^k\,n(2.03^kx,2.03^ky).$$
+  Это конечная процедурная сумма по мотивам многоштабного шума, а не точная реализация стохастического процесса дробного броуновского движения.
 * **Что такое искривление области (`Domain Warping`):**
   В Canvas-проходе `renderSpiralDustAndCanyons` (`engine/passes/cosmosPass.ts`) отрисовываются 48 градиентных облаков; часть из них образует тёмные каньоны поглощения. Угол каждого облака получает трёхоктавное шумовое смещение:
   $$\theta_{\text{warp}} = \theta + 0.26\,\operatorname{fbm2D}(\,1.5\cos\theta,\;1.5\sin\theta + 0.1t,\;3\,).$$
@@ -143,11 +152,11 @@ Raw ABI v1 использует `f64` для шага, накопленного 
 
 **Симплектический интегратор Верле в скоростной форме (`Velocity Verlet`, или схема «Пинок — Дрейф — Пинок» / *Kick-Drift-Kick*)** устроен гораздо тоньше:
 * Он считает скорость и ускорение совершенно симметрично относительно начала и конца шага времени (использует полусумму старого ускорения $\vec{a}_n$ и нового ускорения $\vec{a}_{n+1}$).
-* Благодаря этой симметрии он обладает фундаментальным свойством классической механики — **обратимостью во времени** и сохранением фазового объёма (**Теорема Лиувилля**). Ошибка энергии в нём не накапливается бесконечно в одну сторону, а лишь слабо колеблется вокруг истинного уровня начальной энергии $E_0$.
+* Для консервативного поля, постоянного шага и идеальной арифметики схема имеет второй порядок точности, **обратимость во времени** и симплектическое свойство, в частности сохранение фазового объёма. На подходящем малом шаге энергия обычно испытывает ограниченные колебания; точное сохранение энергии или неограниченная устойчивость этим не гарантируются. В реализации шаг кадра меняется, а состояние округляется до `f32`, поэтому качество оценивается численно в контрольных сценариях.
 
 ### 4.2. Полные уравнения `Velocity Verlet` и расчёт истинного дрейфа $\Delta E / E_0$ (`wasmBridge.ts` / `gravity.rs`)
 1. **Смягчённый гравитационный потенциал Пламмера (Plummer Softening):**
-   В законе всемирного тяготения Ньютона сила растёт как $1/r^2$. Если две точечные частицы пролетят на расстоянии $r \to 0$, ускорение уйдёт в бесконечность (`Infinity`), и симуляция взорвётся. Чтобы этого не происходило (и чтобы точно моделировать притяжение не точечного камня, а распределённого звёздного ядра), астрофизики добавляют под корень квадрат радиуса смягчения Пламмера $\varepsilon^2 = 64.0$ ($GM = 4900.0$):
+   У точечного источника ускорение растёт как $1/r^2$ и не ограничено при $r\to0$. В контрольной модели используется гладкий потенциал Пламмера: под корнем добавляется квадрат длины смягчения $\varepsilon^2=64.0$, то есть $\varepsilon=8.0$ в координатных единицах модели, при $GM=4900.0$. Каждая орбита — независимая пробная частица в статическом центральном поле; взаимные силы между всеми видимыми частицами здесь не рассчитываются:
    $$\Phi(\vec{r}) = -\frac{GM}{\sqrt{\|\vec{r}\|^2 + \varepsilon^2}}, \qquad \vec{a}(\vec{r}) = -\nabla \Phi(\vec{r}) = -\frac{GM \, \vec{r}}{\left(\|\vec{r}\|^2 + \varepsilon^2\right)^{3/2}}$$
 2. **Многошаговое разбиение времени без потерь ($\sum \delta t = \Delta t$):**
    Положительный входной интервал ограничивается $\Delta t_{\text{safe}} = \min(\Delta t, 0.05\text{ с})$ и разбивается на $M = \lceil \Delta t_{\text{safe}} / 0.004 \rceil$ равных малых подшагов $\delta t = \Delta t_{\text{safe}} / M \le 4\text{ мс}$. Сумма сохраняет допущенный шаг с обычной погрешностью float, а не весь интервал длительно скрытой вкладки. Накопленное время увеличивается по выполненным подшагам; `dt <= 0` или count `0` не продвигают его. На каждом подшаге выполняются 4 действия:
@@ -165,7 +174,7 @@ Raw ABI v1 использует `f64` для шага, накопленного 
 ---
 
 ### 4.3. Что такое осцилляторы Курамото (`Kuramoto Model`) простыми словами
-Представь тёмный тропический лес, в котором сидят тысячи светлячков (или зал с тысячей метрономов, запущенных вразнобой). Сначала каждый светлячок мигает со своей собственной скоростью — в лесу царит полный разнобой. Но каждый светлячок видит соседей и чуть-чуть подстраивает свой ритм под общее свечение. Когда сила этой взаимной подстройки ($K$) превышает критический порог, происходит чудо самоорганизации: весь лес внезапно начинает вспыхивать и гаснуть **одновременно, как одно гигантское сердце**!
+Представьте светлячков или метрономы, запущенные вразнобой. У каждого свой внутренний ритм, но связь с общим сигналом немного меняет его фазу. При подходящих частотах и силе связи может возникать согласованное движение. Эта аналогия помогает увидеть смысл связанных осцилляторов; полная синхронизация при любом выборе параметров не обещается.
 
 В 1975 году японский физик **Ёсики Курамото** записал это явление в виде элегантной системы дифференциальных уравнений, которая сегодня используется для описания синхронизации нейронов коры головного мозга, сердечного ритма и квантовых конденсатов.
 
@@ -184,19 +193,22 @@ $$r(t) = \sqrt{ \left(\frac{1}{N}\sum_{j=1}^N \cos\theta_j(t)\right)^2 + \left(\
 $$\frac{d\theta_i}{dt} = \omega_i + K(t) \sin\left(\psi(t) - \theta_i(t)\right)$$
 Показатель `KURAMOTO r(t)` выводится в реальном времени в панели `LAYER_02`.
 
+Это **вариант связи по среднему углу**, вдохновлённый Курамото. Каноническая глобально связанная модель при переходе к среднему полю содержит $Kr\sin(\psi-\theta_i)$; в текущем TS/Rust-коде множитель $r$ в связи отсутствует, а сам параметр порядка измеряется отдельно. Малое $r$ также может означать компенсацию нескольких упорядоченных групп, поэтому не доказывает полную хаотичность фаз.
+
 Provider выполняется до расчёта художественных целей. Его индивидуальные фазы влияют на дыхание частиц и геометрию позднего GENESIS; параметр порядка описывает согласованность фаз. Видимые архетипы, пять фаз и их 108-секундный таймлайн сохраняются.
 
 ---
 
 ## 5. Фаза 03 (`03_EVOLUTION`, 39–64 с): Топология мозга `NEXUS` — Прим, Габриэль и закон Мюррея
 
-Когда спиральная галактика перестраивается в два полушария Головного Мозга вокруг 5 встречных кеплеровских колец (`frontend/src/phases/03_evolution.ts`), графовый движок `NexusGraphEngine` (`frontend/src/bridge/simulationWorker.ts` и `backend/core/graph_logic.py`) соединяет нейроны тремя биологически осмысленными классами связей:
+Когда спиральная галактика перестраивается в два полушария вокруг 5 встречных колец (`frontend/src/phases/03_evolution.ts`), графовый движок `NexusGraphEngine` (`frontend/src/bridge/simulationWorker.ts` и независимый эталон `backend/core/graph_logic.py`) соединяет узлы тремя классами связей. Это художественная топология по мотивам геометрических и биофизических правил, а не восстановленный биологический коннектом:
 
 ### 5.1. Класс A — Магистральные аксоны и Минимальное остовное дерево Прима (`Prim's MST`)
 * **Простыми словами:** Представь, что нужно проложить главные оптоволоконные кабели между 36 крупными городами (опорными хабами мозга) так, чтобы из любого города можно было дозвониться в любой другой, не было ни одной лишней кольцевой петли, а суммарная длина кабеля была **абсолютно минимальной**. В теории графов такая конструкция называется **Минимальным остовным деревом (`Minimum Spanning Tree — MST`)**.
 * **Алгоритм Прима в коде:** Мы начинаем с первого хаба и на каждом шаге жадно присоединяем к растущему дереву ближайший ещё не подключённый хаб:
   $$E_{\text{Class A}} = \arg\min_{T} \sum_{(u, v) \in T} \sqrt{(x_u - x_v)^2 + (y_u - y_v)^2}$$
   Эти рёбра получают максимальную толщину `murrayRadiusPx = 1.95 px` и образуют несущий каркас коры мозга (`CLASS A / MST TRUNKS` в панели `LAYER_03`).
+  Формула выше задаёт классическую задачу MST. Реализация берёт первые не более 36 активных узлов и допускает только очередное ребро короче `1.65 * maxConnectDist`. Если такого ребра нет, рост останавливается; полный остов и связность всех хабов гарантированы лишь при достаточной доступности рёбер. Остальные узлы подключаются локальными правилами.
 
 ### 5.2. Класс B — Межкластерные мосты и Граф Габриэля (`Gabriel Graph`)
 * **Простыми словами:** Одного дерева магистралей недостаточно для мышления — разным отделам мозга нужны прямые ассоциативные мосты. Но как понять, какие два нейрона $A$ и $B$ являются «истинными прямыми соседями», а между какими уже стоит посредник $C$?
@@ -205,15 +217,15 @@ Provider выполняется до расчёта художественных
    * Если же внутрь круга попал хотя бы один посторонний узел $C$, значит, сигнал выгоднее пустить в обход через $C$, и прямую хорду $AB$ проводить не нужно.
 * **Формула в коде (с релаксацией `0.85` в локальном окне соседей $k \in [i-10, i+10]$):**
   $$\left(x_c - \frac{x_a + x_b}{2}\right)^2 + \left(y_c - \frac{y_a + y_b}{2}\right)^2 \ge 0.85 \cdot \frac{(x_b - x_a)^2 + (y_b - y_a)^2}{4}$$
+  Классическое правило в предыдущем абзаце объясняет идею. В коде проверяется только окно **индексов**, а не все геометрические соседи; круг уменьшен коэффициентом `0.85`. Это локальная эвристика по мотивам графа Габриэля. Короткая связь может пройти даже при отрицательной проверке и получить класс `DENDRITE`; класс `BRIDGE` требует разных кластеров и успешной проверки. Локальная степень ограничивается при добавлении этих связей, но уже созданные trunk-рёбра могут иметь большую степень.
 
 ### 5.3. Класс C — Дендритные ветви и биофизический закон Мюррея ($r_p^3 = \sum r_c^3$)
 * **Простыми словами:** Почему ствол дерева толстый, ветви тоньше, а веточки у листьев совсем тонкие? И почему точно так же ветвятся кровеносные сосуды и дендриты нейронов?
-  В 1926 году физиолог **Сесил Мюррей** доказал, что живая природа решает задачу энергетической оптимизации: слишком узкий сосуд оказывает огромное трение потоку (по закону Пуазёйля сопротивление растёт обратно пропорционально четвёртой степени радиуса $R^{-4}$), а слишком широкий сосуд требует слишком много метаболической энергии на поддержание самого объёма ткани ($\propto R^2$).
-  Если сложить эти две затраты и найти минимум с помощью производной, получается универсальный **Кубический закон Мюррея**: **куб радиуса родительской ветви равен сумме кубов радиусов дочерних ветвей!**
+  **Закон Мюррея** получается в модели сосудистой сети при определённых предположениях о ламинарном течении и стоимости поддержания объёма. Узкий сосуд увеличивает сопротивление, широкий — затраты на поддержание ткани; оптимизация этих затрат приводит к кубическому соотношению. Применимость зависит от модели и не является универсальным законом любой нейронной ветви:
   $$r_{\text{parent}}^3 = r_{\text{child}, 1}^3 + r_{\text{child}, 2}^3 + \dots + r_{\text{child}, k}^3$$
   Для симметричного ветвления порядка $k_{\text{branch}}$ радиус дочерней дендритной ветви убывает по закону степени $-1/3$:
   $$r_{\text{Murray}}(k_{\text{branch}}) = \text{round}_2\left( 1.65 \cdot k_{\text{branch}}^{-1/3} \right)\text{ px}$$
-  Благодаря этому закону нейронная сеть в фазе `03_EVOLUTION` выглядит не как чертёжная сетка из одинаковых палочек, а как живая биологическая ткань.
+  В NEXUS это визуальное правило толщины по локальному порядку ветви. Полная модель потоков и проверка кубического баланса в каждом узле не выполняются.
 
 ### 5.4. Натуральная параметризация кривых Безье (`Arc-Length LUT`) и метрики `BFS-28`
 * **Как LUT уменьшает неравномерность скорости на изгибах:**
@@ -347,12 +359,12 @@ WebGPU рисует billboard-ядра с depth buffer, освещением п�
 
 | Подсистема / Явление | Фундаментальный закон / Прообраз | Вычислительная модель в коде UNIVERSE v2.5 | Единицы и параметры | Область применимости и инженерные допущения |
 | :--- | :--- | :--- | :--- | :--- |
-| **Детерминированная стохастика** | Кольцо вычетов $\mathbb{Z}_{2^{32}}$ | Потоковый `Mulberry32` (`nextU32`) + индексный `SplitMix32` (`hashU32`) | `seed = 104729`, `uint32`, выход $[0, 1)$ | **Точное совпадение (100% Parity)** между TS, Python и Rust. |
+| **Детерминированная стохастика** | Арифметика по модулю $2^{32}$ | Потоковый `Mulberry32` (`nextU32`) + индексный хеш с финализатором `fmix32` (`hashU32`) | `seed = 104729`, `uint32`, выход $[0, 1)$ | Согласованная целочисленная схема TS/Python/Rust; эталонные векторы проверяются тестами. |
 | **Диагностический отпечаток буфера** | Хеширование состояния `SoA` | Квантование `floor(v + 0.5)` ($\times 10, \times 100$) по шагу `stride = 4` + `FNV-1a 32-bit` | `uint32` (`0x811C9DC5`, `0x01000193`) | Снижает чувствительность к малым float-различиям; не доказывает тождества всего состояния. |
 | **Световое эхо и чирп (`01_VOID`)** | Цефеида `RS Puppis` и гравитационный чирп сближения | 7 деформируемых колец (120 сегментов) с гармониками $m \in \{2,3,5\}$ и `fbm2D` | `t ∈ [0, 17] с`, $f_{\text{chirp}} \in [1.0, 1.52]$ | **Научно-художественная модель (Science-Inspired):** масштаб времени сжат с десятилетий до 17 секунд. |
 | **Контрольная орбитальная динамика `REF64`** | Движение в статическом потенциале Пламмера | Общий TS/Rust `Velocity Verlet`, допущенный шаг $\le 50\text{ мс}$ и подшаги $\le 4\text{ мс}$ | $GM = 4900$, $\varepsilon^2 = 64$, 64 отдельные орбиты | $\Delta E / E_0 = \|E(t)-E_0\|/\|E_0\|$ относится к reference-ансамблю, а не ко всей видимой сцене. |
-| **Синхронизация (`KURAMOTO r(t)`)** | Модель связанных осцилляторов Курамото (1975) | Интегрирование фаз $\theta_i$ к среднему полю $\psi(t)$ для всех активных частиц | $\theta_i \in [0, 2\pi)$, $r(t) \in [0, 1]$, $K \in [0.4, 2.2]$ | Вычисление в поле среднего угла $O(N)$ за кадр вместо попарного $O(N^2)$. |
-| **Когнитивный граф (`03_EVOLUTION`)** | Остов Прима (`MST`), граф Габриэля, закон Мюррея ($r_p^3 = \sum r_c^3$) | 3 класса кривых Безье с 5-точечной таблицей длины дуги `lengthLUT` и `BFS-28` | Радиусы `1.95 px` (MST), `1.35 px` (Bridge), $1.65 k^{-1/3}$ | TS/Python точно сравниваются на fixture6 и общей transport fixture24/40 рёбрах; sampling, hub cap36 и прореживание этими fixtures не покрываются. При $N > 260$ браузерный TS использует `stride = 2` и выборочный `BFS-28`; Worker не подключён. |
+| **Синхронизация (`KURAMOTO r(t)`)** | Вариант связи по среднему углу по мотивам Курамото | Интегрирование фаз $\theta_i$ к $\psi(t)$ для всех активных частиц; связь $K\sin(\psi-\theta_i)$ без множителя $r$ | $\theta_i \in [0, 2\pi)$, $r(t) \in [0, 1]$, $K \in [0.4, 2.2]$ | Средние sin/cos и обновление фаз имеют сложность $O(N)$ на подшаг. |
+| **Когнитивный граф (`03_EVOLUTION`)** | Рост по Приму с порогом длины, локальная эвристика Габриэля, толщина по мотивам Мюррея | 3 класса кривых Безье с 5-точечной таблицей длины дуги `lengthLUT` и `BFS-28` | Радиусы `1.95 px` (trunk), `1.35 px` (bridge), $1.65 k^{-1/3}$ | TS/Python точно сравниваются на fixture6 и общей transport fixture24/40 рёбрах; sampling, hub cap36 и прореживание этими fixtures не покрываются. При $N > 260$ браузерный TS использует `stride = 2` и выборочный `BFS-28`; Worker не подключён. |
 | **Мембранная оптика (`04_COLLAPSE`)** | Упругая рефракция с гладким граничным сопряжением | Компактный колокол 4-й степени $g(u)=(1-u^2)^2$ в кольце $w = 0.24$ | $u = \|d - 1\|/0.24$, $g(1)=g'(1)=0$ | **Строгая $C^1$-гладкость на границе кольца** ($u=1$) и $C^\infty$ внутри кольца. |
 | **Оптика Чёрной дыры (`05_SINGULARITY`)** | Метрика Шварцшильда, оболочки `NGC 6543`, релятивистский допплер | Аналитическое отклонение $\alpha = \min(2, 2R_s/b)$, кольцо $1.48 R_s$, фактор $D^{2.2}$ | $R_s = 38\text{ px}$, $\beta \in [-0.55, 0.55]$ | Быстрая аналитическая аппроксимация в экранном пространстве вместо 4D-трассировки геодезических Керра. |
 
@@ -363,24 +375,26 @@ WebGPU рисует billboard-ядра с depth buffer, освещением п�
 
 ## 0. Philosophical Axis & Dramatic Arc: "From Zero to Zero" in 108 Seconds
 
-**UNIVERSE (Neuroverse)** explores a profound structural parallel in nature: *why does the large-scale cosmic web of galaxies and filaments mirror the synaptic architecture of the human brain?* Both systems evolve under physical optimization laws to route energy and information across space.
+**UNIVERSE (Neuroverse)** places cosmic filaments and neural networks beside each other as a visual analogy. Their resemblance motivates the artistic journey; it does not establish identical physics or biological equivalence.
 
 Across a continuous **108-second cycle**, shared final particle geometry supplies three optical views (`ILLUSION`, `NEXUS`, and `X-RAY`), with a separate `SceneBufferSoA` publication:
 1. **`01. VOID` (`0–17s`):** A quantum fluctuation at the Zero Point emits 7 deforming light-echo rings inspired by the supergiant Cepheid variable **`RS Puppis`**, sweeping across dark interstellar dust with a gravitational chirp frequency ramp.
 2. **`02. GENESIS` (`17–39s`):** Gravity condenses matter into a tilted 4-arm logarithmic spiral galaxy inspired by **`M31 (Andromeda)`** and **`NGC 3169`**, while **Kuramoto phase coupling** synchronizes individual stellar oscillators into collective coherence.
-3. **`03. EVOLUTION` (`39–64s`):** Spiral arms morph via $C^2$-continuous Perlin `smootherstep` envelopes into two bilateral cortical hemispheres around 5 counter-rotating Keplerian rings, wired by **Prim's MST**, **Gabriel Graph bridges**, and **Murray's cube law** dendrites.
+3. **`03. EVOLUTION` (`39–64s`):** Spiral arms morph via $C^2$-continuous quintic `smootherstep` envelopes into two bilateral cortical hemispheres around 5 counter-rotating rings, wired by **Prim-style trunks**, **local Gabriel-inspired bridges**, and **Murray-inspired thickness scaling**.
 4. **`04. COLLAPSE / BREACH` (`64–79s`):** Gravitational anomalies and the interactive **`BREACH LENS`** refract starlight through a $C^1$-continuous quartic bell, peeling back the cosmos to expose the coordinate grid and the deep **`Z4`** sub-quantum lattice.
 5. **`05. SINGULARITY` (`79–108s`):** Seven harmonic gas shells inspired by the **"Cat's Eye" Nebula (`NGC 6543`)** and a relativistic accretion disk spiral strictly into the central Zero Point (`87.5–92.6s`), flash for `0.45s`, and unfold into the frameless **`DUBNOV ALEXEY`** manifesto card and quantum odometer (`18–26 Hz`).
 
 ---
 
-## 1. Deterministic PRNG (`Mulberry32` + `SplitMix32`) & Quantized `FNV-1a` State Digest
+## 1. Deterministic PRNG (`Mulberry32`), Indexed `fmix32` Hash & Quantized `FNV-1a` State Digest
 
 ### 1.1. Plain-Language Meaning & Mathematical Formulation
-Standard `Math.random()` produces different sequences on every run and across languages. By combining a stateful 32-bit **Mulberry32** stream generator (`nextU32`) with a stateless **SplitMix32** indexed scrambler (`hashU32`) seeded at `GOLDEN_SEED = 104729`, TypeScript, Rust, and Python generate matching reference integer streams (`GOLDEN_U32_VECTORS = [325253669, 3481002091, 881690241, 2630884050]`):
+The application uses an explicitly seeded stateful 32-bit **Mulberry32** stream (`nextU32`) and a separate stateless indexed hash (`hashU32`). The hash applies the **MurmurHash3 fmix32 finalizer** to `seed XOR imul(index, 0x9E3779B9)`; its shifts `16/13/16` and multipliers `0x85EBCA6B / 0xC2B2AE35` are not Stafford's 64-bit Mix13. Historical `SplitMix32` source comments do not accurately attribute this finalizer. With `GOLDEN_SEED = 104729`, TypeScript, Rust and the independent Python reference produce matching integer stream vectors (`GOLDEN_U32_VECTORS = [325253669, 3481002091, 881690241, 2630884050]`):
 
 $$S_{k+1} = (S_k + \text{0x6D2B79F5}) \bmod 2^{32}, \qquad z_1 = \left(S_{k+1} \oplus (S_{k+1} \gg 15)\right) \cdot (S_{k+1} \mid 1) \bmod 2^{32}$$
 $$z_2 = \left(z_1 \oplus \left(z_1 + ((z_1 \oplus (z_1 \gg 7)) \cdot (z_1 \mid 61))\right)\right) \bmod 2^{32}, \qquad \text{nextU32}() = z_2 \oplus (z_2 \gg 14)$$
+
+Reproducibility requires the same seed and stream call order. It does not imply cryptographic unpredictability, equality of all downstream floating-point computations, or endlessly unique displayed attributes. Indexed inputs are coerced to 32 bits and mapped visual properties can collide.
 
 ### 1.2. Quantized `FNV-1a` State Digest
 Every 4th entity's position, velocity, and energy are quantized via `quantizeHalfUp(v) = floor(v + 0.5)` and folded into a 32-bit Fowler-Noll-Vo hash (`0x811C9DC5`, prime `0x01000193`). This sampled diagnostic can reveal state changes; it does not prove equality of complete states or screen transforms.
@@ -390,10 +404,10 @@ Every 4th entity's position, velocity, and energy are quantized via `quantizeHal
 ## 2. Multi-Substep Symplectic `Velocity Verlet` & True Energy Drift ($\Delta E / E_0$)
 
 ### 2.1. Plain-Language Meaning
-Naive Euler integration artificially injects energy into orbital systems, causing planets to spiral outward. The symplectic **Velocity Verlet** (*Kick-Drift-Kick*) integrator is time-reversible and preserves phase-space volume under Liouville's theorem.
+For a conservative position-dependent force, ideal arithmetic and a fixed step, **Velocity Verlet** (*Kick-Drift-Kick*) is second order, time-reversible and symplectic, preserving phase-space volume. It does not exactly conserve energy or guarantee stability for arbitrary steps. This implementation varies the admitted frame step and stores orbit state in `f32`, so numerical behavior is checked in bounded reference scenarios.
 
 ### 2.2. Lossless Multi-Substep Integration (`wasmBridge.ts` / `gravity.rs`)
-The admitted positive step $\Delta t_{\text{safe}} = \min(\Delta t, 0.05\text{ s})$ is partitioned into $M = \lceil \Delta t_{\text{safe}} / 0.004 \rceil$ equal substeps $\delta t = \Delta t_{\text{safe}} / M$. Their sum preserves the admitted step up to floating-point rounding; time above the cap is not replayed. Integrated time accumulates from performed substeps; nonpositive steps and zero active count are no-ops. Velocity Verlet applies to a separate 64-orbit reference ensemble in a static Plummer potential (`GM = 4900`, `ε² = 64`), rather than all visible particles:
+The admitted positive step $\Delta t_{\text{safe}} = \min(\Delta t, 0.05\text{ s})$ is partitioned into $M = \lceil \Delta t_{\text{safe}} / 0.004 \rceil$ equal substeps $\delta t = \Delta t_{\text{safe}} / M$. Their sum preserves the admitted step up to floating-point rounding; time above the cap is not replayed. There is no fixed `1/120 s` step. Integrated time accumulates from performed substeps; nonpositive steps and zero active count are no-ops. Velocity Verlet applies to a separate ensemble of 64 independent test-particle orbits in a static central Plummer potential (`GM = 4900`, `ε² = 64`, hence `ε = 8`), rather than mutual gravity between all visible particles:
 
 $$\vec{a}(\vec{r}) = -\frac{GM \, \vec{r}}{\left(\|\vec{r}\|^2 + \varepsilon^2\right)^{3/2}}, \qquad \vec{r}_{n+1} = \vec{r}_n + \vec{v}_n \delta t + \frac{1}{2}\vec{a}(\vec{r}_n)\delta t^2, \qquad \vec{v}_{n+1} = \vec{v}_n + \frac{1}{2}\left(\vec{a}(\vec{r}_n) + \vec{a}(\vec{r}_{n+1})\right)\delta t$$
 
@@ -409,10 +423,11 @@ Drift starts at zero; a later zero-duration step preserves the existing drift. T
 
 1. **Kuramoto Order Parameter $r(t) \in [0, 1]$:** Measures global phase synchronization across all active oscillators as individual phases $\theta_i(t)$ relax toward the mean field angle $\psi(t)$. Both TS and Rust compute these phases before artistic targets; phase output affects particle breathing and late-GENESIS triad geometry:
    $$\frac{d\theta_i}{dt} = \omega_i + K(t)\sin(\psi(t) - \theta_i(t)), \qquad r(t) = \frac{1}{N}\left|\sum_{j=1}^N e^{i\theta_j(t)}\right|$$
+   This is a Kuramoto-inspired mean-angle coupling variant. The canonical globally coupled mean-field equation has the factor `Kr`; this implementation omits `r` from the coupling and measures it separately. A small `r` can also result from cancellation of ordered phase groups. Timeline transitions are scripted, not triggered by `r`.
 2. **Three-Tier `NEXUS` Connectome (`simulationWorker.ts` / `graph_logic.py`):**
-   * **Class A (`AXON_TRUNK`):** Prim's Euclidean Minimum Spanning Tree across hub somas (`1.95 px`).
-   * **Class B (`BRIDGE`):** Inter-cluster connections satisfying the Gabriel empty-diametral-ball criterion.
-   * **Class C (`DENDRITE`):** Peripheral branches obeying **Murray's Biophysical Cube Law** ($r_{\text{parent}}^3 = \sum r_{\text{child}}^3 \implies r = \text{round}_2(1.65 \cdot k^{-1/3})$).
+   * **Class A (`AXON_TRUNK`):** Prim-style growth on at most the first 36 active hubs, with a `1.65 * maxConnectDist` edge-length cutoff (`1.95 px` radius). Growth may stop before spanning all hubs; full connectivity is conditional.
+   * **Class B (`BRIDGE`):** Inter-cluster connections passing a local Gabriel-inspired heuristic. Only the index window `i ± 10` is checked, using `0.85` of the squared diametral-circle radius, so this is not the exact Gabriel graph.
+   * **Class C (`DENDRITE`):** Peripheral thickness inspired by symmetric **Murray cube-law scaling**, $r = \text{round}_2(1.65 \cdot k^{-1/3})$. The engine does not solve flows or enforce $r_{\text{parent}}^3 = \sum r_{\text{child}}^3$ at every node. Short local edges can be admitted despite failing the Gabriel heuristic.
    * **Arc-Length LUT & Exact Cross-Language Parity:** 5-point cumulative chord-length tables approximate arc-length routing; inverse interval interpolation reduces speed variation rather than guaranteeing exact constant speed. Python and TypeScript match complete edge objects and metrics on fixture6 and the shared 24-node/40-edge transport fixture. These fixtures do not cover sampled BFS, the 36-hub cap, or large-graph thinning.
 3. **$C^1$-Continuous `BREACH LENS` Bell & Analytical Black Hole Optics:**
    * The quartic bell $g(u) = (1 - u^2)^2$ for $u = |d - 1|/0.24 < 1$ satisfies $g(1) = 0$ and $g'(1) = 0$, providing a seamless $C^1$ boundary transition.

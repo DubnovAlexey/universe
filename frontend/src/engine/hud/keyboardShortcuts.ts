@@ -16,6 +16,7 @@ function handleUniverseShortcut(event: KeyboardEvent): void {
         event.altKey || event.ctrlKey || event.metaKey) return;
 
     const target = event.target as HTMLElement | null;
+    if (target?.closest?.('dialog[open]')) return;
     if (target?.isContentEditable || target?.closest?.(
         'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
         '[role="textbox"], [role="combobox"], [role="spinbutton"]'

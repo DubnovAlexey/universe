@@ -6,6 +6,8 @@
 //             постоянного полупрозрачного режима на фоне цикла (MASTER 05 v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
+//   СЕМАНТИЧЕСКИЕ ТЕМЫ: FINALE_TOPIC_TERMS и renderFinaleTermParts сохраняют
+//             пять кнопок моделей при посимвольной сборке строки.
 //   РАЗДЕЛ 0. Постоянная Unicode-сетка (bindFinaleQuantumCells,
 //             updateFinaleQuantumCells) без скачков высоты при смене знаков.
 //   РАЗДЕЛ 1. Делегирование фазового перебора общему контроллеру наведения
@@ -36,6 +38,54 @@ import { calmGlyphHover, prepareFittedGlyph, setFittedGlyph, type GlyphInkFit } 
 import { getFinaleCardPlacement, getFinaleCardScale, type FinaleCardLayout } from '../core/finaleComposition';
 
 const FINALE_PEAK_ZOOM = Math.max(...Object.values(UNIVERSE_PHASES).map((phase) => phase.targetZoom)) + CAMERA_ZOOM_SWAY;
+
+// НАЧАЛО РАЗДЕЛА. СЕМАНТИЧЕСКИЕ ТЕМЫ И НЕПРЕРЫВНАЯ СБОРКА СТРОК
+export const FINALE_TOPIC_TERMS: readonly { lineIndex: number; label: string; topicId: string }[] = [
+    { lineIndex: 3, label: 'SCRAMBLER', topicId: 'prng' },
+    { lineIndex: 3, label: 'KURAMOTO', topicId: 'kuramoto' },
+    { lineIndex: 3, label: 'fBm', topicId: 'fbm' },
+    { lineIndex: 3, label: 'VERLET', topicId: 'symplectic' },
+    { lineIndex: 3, label: 'PLUMMER', topicId: 'plummer' },
+];
+
+// НАЧАЛО ФУНКЦИИ renderFinaleTermParts
+/** Стабильные кнопки содержат собственный перебор; разделители сохраняют общие позиции строки. */
+function renderFinaleTermParts(lineIndex: number, interactive: boolean): Element[] {
+    const canonical = CANONICAL_FINALE_LINES[lineIndex];
+    const parts: Element[] = [];
+    let offset = 0;
+    const append = (text: string, start: number, topicId?: string): void => {
+        if (!text) return;
+        const props = {
+            'data-finale-term-part': 'true', 'data-term-start': String(splitGlyphText(canonical.slice(0, start)).length),
+            'data-term-length': String(splitGlyphText(text).length), 'data-canonical-text': text,
+        };
+        if (topicId) {
+            parts.push(<button {...props} type="button" className="finale-term" data-explain-topic={topicId}
+                aria-haspopup="dialog" aria-controls="explanation-dialog" aria-label={`Пояснение: ${text}`}
+                title={`Что означает ${text}?`} tabIndex={interactive ? 0 : -1} disabled={!interactive}
+                onPointerEnter={(event: PointerEvent): void => {
+                    triggerLineOrButtonScramble(event.currentTarget as HTMLElement, text);
+                }} onFocus={(event: FocusEvent): void => {
+                    triggerLineOrButtonScramble(event.currentTarget as HTMLElement, text);
+                }} onClick={(): void => {
+                    universeStore.setFinaleCardHovered(false);
+                }}>{text}</button>);
+        } else {
+            parts.push(<span {...props} className="finale-term-separator" aria-hidden="true">{text}</span>);
+        }
+    };
+    for (const term of FINALE_TOPIC_TERMS.filter((entry) => entry.lineIndex === lineIndex)) {
+        const start = canonical.indexOf(term.label, offset);
+        append(canonical.slice(offset, start), offset);
+        append(term.label, start, term.topicId);
+        offset = start + term.label.length;
+    }
+    append(canonical.slice(offset), offset);
+    return parts;
+}
+// КОНЕЦ ФУНКЦИИ renderFinaleTermParts
+// КОНЕЦ РАЗДЕЛА. СЕМАНТИЧЕСКИЕ ТЕМЫ И НЕПРЕРЫВНАЯ СБОРКА СТРОК
 
 // НАЧАЛО РАЗДЕЛА 0. ПОСТОЯННЫЕ ЯЧЕЙКИ КВАНТОВОЙ СТРОКИ
 interface FinaleQuantumCell {
@@ -139,6 +189,7 @@ class FinaleCardDomAnimator {
     private quantumCells: readonly FinaleQuantumCell[] = [];
     private line3El: HTMLElement | null = null;
     private line4El: HTMLElement | null = null;
+    private readonly topicParts = new Map<HTMLElement, readonly { node: HTMLElement; start: number; length: number }[]>();
 
     // ------------------------------------------------------------------------
     // ПОДРАЗДЕЛ 2.1. ПРИВЯЗКА DOM-УЗЛОВ И ЖИЗНЕННЫЙ ЦИКЛ ПОДПИСКИ КАДРА
@@ -161,11 +212,18 @@ class FinaleCardDomAnimator {
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
+        this.topicParts.clear();
         staticLines.forEach((el, index) => {
-            calmGlyphHover.setCanonical(el, CANONICAL_FINALE_LINES[index]);
+            if (!el) return;
+            const parts = Array.from(el.querySelectorAll<HTMLElement>('[data-finale-term-part]'));
+            if (parts.length) {
+                this.topicParts.set(el, parts.map((node) => ({ node,
+                    start: Number(node.dataset.termStart), length: Number(node.dataset.termLength) })));
+                parts.forEach((node) => calmGlyphHover.setCanonical(node, node.dataset.canonicalText ?? ''));
+            } else calmGlyphHover.setCanonical(el, CANONICAL_FINALE_LINES[index]);
             // Холодные ячейки создаются при скрытом монтировании, а не в кадре выхода из Точки Нуля.
             if (!universeStore.getState().finaleReachedOnce) {
-                calmGlyphHover.setVisualText(el, GLYPH_WAITING_SPACE.repeat(splitGlyphText(CANONICAL_FINALE_LINES[index]).length));
+                this.setLineVisualText(el, GLYPH_WAITING_SPACE.repeat(splitGlyphText(CANONICAL_FINALE_LINES[index]).length));
             }
         });
         root.querySelectorAll<HTMLElement>('.btn-cipher-action').forEach((el) => {
@@ -173,6 +231,21 @@ class FinaleCardDomAnimator {
         });
     }
     // --- КОНЕЦ ФУНКЦИИ bindElements ---
+
+    // НАЧАЛО ФУНКЦИИ setLineVisualText
+    /** Общий фронт слева направо проходит через границы терминов, не заменяя их кнопки. */
+    private setLineVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[]): void {
+        if (!element) return;
+        const parts = this.topicParts.get(element);
+        if (!parts) { calmGlyphHover.setVisualText(element, text, writes); return; }
+        const glyphs = splitGlyphText(text);
+        for (const part of parts) {
+            if (!calmGlyphHover.isActive(part.node)) {
+                calmGlyphHover.setVisualText(part.node, glyphs.slice(part.start, part.start + part.length).join(''), writes);
+            }
+        }
+    }
+    // КОНЕЦ ФУНКЦИИ setLineVisualText
 
     // --- НАЧАЛО ФУНКЦИИ startIfNeeded ---
     public startIfNeeded(): void {
@@ -324,7 +397,7 @@ class FinaleCardDomAnimator {
 
             if (p < 0.76 && !state.reducedMotion) {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    calmGlyphHover.setVisualText(this.line0El, this.formatOdometerLineForProgress(
+                    this.setLineVisualText(this.line0El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[0],
                         0,
                         p,
@@ -333,7 +406,7 @@ class FinaleCardDomAnimator {
                     ), glyphWrites);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    calmGlyphHover.setVisualText(this.line1El, this.formatOdometerLineForProgress(
+                    this.setLineVisualText(this.line1El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[1],
                         1,
                         p,
@@ -342,7 +415,7 @@ class FinaleCardDomAnimator {
                     ), glyphWrites);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    calmGlyphHover.setVisualText(this.line3El, this.formatOdometerLineForProgress(
+                    this.setLineVisualText(this.line3El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[3],
                         3,
                         p,
@@ -351,7 +424,7 @@ class FinaleCardDomAnimator {
                     ), glyphWrites);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    calmGlyphHover.setVisualText(this.line4El, this.formatOdometerLineForProgress(
+                    this.setLineVisualText(this.line4El, this.formatOdometerLineForProgress(
                         CANONICAL_FINALE_LINES[4],
                         4,
                         p,
@@ -361,16 +434,16 @@ class FinaleCardDomAnimator {
                 }
             } else {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    calmGlyphHover.setVisualText(this.line0El, CANONICAL_FINALE_LINES[0], glyphWrites);
+                    this.setLineVisualText(this.line0El, CANONICAL_FINALE_LINES[0], glyphWrites);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    calmGlyphHover.setVisualText(this.line1El, CANONICAL_FINALE_LINES[1], glyphWrites);
+                    this.setLineVisualText(this.line1El, CANONICAL_FINALE_LINES[1], glyphWrites);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    calmGlyphHover.setVisualText(this.line3El, CANONICAL_FINALE_LINES[3], glyphWrites);
+                    this.setLineVisualText(this.line3El, CANONICAL_FINALE_LINES[3], glyphWrites);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    calmGlyphHover.setVisualText(this.line4El, CANONICAL_FINALE_LINES[4], glyphWrites);
+                    this.setLineVisualText(this.line4El, CANONICAL_FINALE_LINES[4], glyphWrites);
                 }
             }
 
@@ -451,7 +524,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 className={`finale-manifesto-card${ambientLoopClass}`}
                 data-bind="l5-card-box"
                 onMouseEnter={(): void => {
-                    universeStore.setFinaleCardHovered(true);
+                    if (document.body.dataset.explanationOpen !== 'true') universeStore.setFinaleCardHovered(true);
                 }}
                 onMouseLeave={(): void => {
                     universeStore.setFinaleCardHovered(false);
@@ -475,13 +548,8 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 <p
                     className="finale-line-subtitle"
                     data-bind="l5-line-1"
-                    onPointerEnter={(e: PointerEvent): void => {
-                        if (e.currentTarget instanceof HTMLElement) {
-                            triggerLineOrButtonScramble(
-                                e.currentTarget,
-                                CANONICAL_FINALE_LINES[1]
-                            );
-                        }
+                    onPointerEnter={(event: PointerEvent): void => {
+                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, CANONICAL_FINALE_LINES[1]);
                     }}
                 >
                     {CANONICAL_FINALE_LINES[1]}
@@ -496,30 +564,17 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 </div>
 
                 <p
-                    className="finale-line-stack"
+                    className="finale-line-math"
                     data-bind="l5-line-3"
-                    onPointerEnter={(e: PointerEvent): void => {
-                        if (e.currentTarget instanceof HTMLElement) {
-                            triggerLineOrButtonScramble(
-                                e.currentTarget,
-                                CANONICAL_FINALE_LINES[3]
-                            );
-                        }
-                    }}
                 >
-                    {CANONICAL_FINALE_LINES[3]}
+                    {renderFinaleTermParts(3, isInteractive)}
                 </p>
 
                 <p
-                    className="finale-line-math"
+                    className="finale-line-stack"
                     data-bind="l5-line-4"
-                    onPointerEnter={(e: PointerEvent): void => {
-                        if (e.currentTarget instanceof HTMLElement) {
-                            triggerLineOrButtonScramble(
-                                e.currentTarget,
-                                CANONICAL_FINALE_LINES[4]
-                            );
-                        }
+                    onPointerEnter={(event: PointerEvent): void => {
+                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, CANONICAL_FINALE_LINES[4]);
                     }}
                 >
                     {CANONICAL_FINALE_LINES[4]}
@@ -672,13 +727,17 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
             restartBtn.disabled = !showActions;
             restartBtn.tabIndex = showActions ? 0 : -1;
         }
+        rootEl.querySelectorAll<HTMLButtonElement>('.finale-term').forEach((button) => {
+            button.disabled = !showActions;
+            button.tabIndex = showActions ? 0 : -1;
+        });
     };
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer5CipherFinale) ---
 
     const unsubscribe = universeStore.subscribe(update);
     return () => {
         finaleCardAnimator.stop();
-        rootEl?.querySelectorAll<HTMLElement>('[data-bind^="l5-line-"], .btn-cipher-action')
+        rootEl?.querySelectorAll<HTMLElement>('[data-bind^="l5-line-"], [data-finale-term-part], .btn-cipher-action')
             .forEach((el) => calmGlyphHover.stop(el));
         unsubscribe();
     };

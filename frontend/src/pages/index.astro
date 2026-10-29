@@ -105,6 +105,15 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 				</div>
 			</nav>
 
+			<section class="hud-panel explanation-dock" data-ui-panel="true" aria-label="Пояснения к технологиям и математике">
+				<button type="button" class="btn-cyber" id="btn-explanation-overview"
+					data-solid-back-label="КАК ЭТО УСТРОЕНО"
+					data-explain-topic="overview" aria-haspopup="dialog" aria-controls="explanation-dialog"
+					title="Открыть простые объяснения, формулы и устройство проекта">
+					HOW IT WORKS
+				</button>
+			</section>
+
 			<section
 				class="hud-panel controls-dock"
 				data-ui-panel="true"

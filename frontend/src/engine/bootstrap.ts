@@ -16,6 +16,7 @@ import { mountLayer2Metrics } from '../layers/Layer2_Metrics';
 import { mountLayer3Topology } from '../layers/Layer3_Topology';
 import { mountLayer4Terminal } from '../layers/Layer4_Terminal';
 import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
+import { mountExplanationDialog } from '../layers/ExplanationDialog';
 import { bindHudDockLayout, syncHudDomWithState } from './hud/hudDomOrchestrator';
 import { bindUniverseKeyboardShortcuts } from './hud/keyboardShortcuts';
 
@@ -73,6 +74,8 @@ export function bootstrapUniverseV2(): void {
     const unsubL3 = mountLayer3Topology(document.getElementById('layer3-topology-root'));
     const unsubL4 = mountLayer4Terminal(document.getElementById('layer4-terminal-root'));
     const unsubL5 = mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
+    const explanations = mountExplanationDialog();
+    resourceLedger.registerPageDisposable(explanations.dispose);
 
     // 2. Подписываем обновление верхнего паспорта фазы и нижнего дока кнопок на UniverseStore
     const unsubHud = universeStore.subscribe((nextState: Readonly<UniverseState>) => {
@@ -94,7 +97,8 @@ export function bootstrapUniverseV2(): void {
     // 3. Закрытые шестигранные тела вращаются внутри неподвижных областей нажатия.
     const cornerControls = Array.from(document.querySelectorAll<HTMLElement>(
         '.brand-card .phase-codename, .brand-card .phase-title, .brand-card .phase-subtitle, .brand-card .phase-philosophy, ' +
-        '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber'
+        '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber, ' +
+        '.explanation-dock button.btn-cyber'
     ));
     const buttonSolids = buttonSolidManager.mount(cornerControls);
     const buttonMotion = buttonMotionController.mount(cornerControls);

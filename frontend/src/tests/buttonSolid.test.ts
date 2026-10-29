@@ -248,6 +248,57 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
     current.dispose();
     check(remountedBody && observer.disconnects === 2 && button.childNodes[0] === visual,
         'An old binding cannot dispose a newer mount; the current binding restores the original DOM');
+
+    const bilingualHarness = makeHarness();
+    const bilingual = new SolidNode('button');
+    bilingual.textContent = 'HOW IT WORKS';
+    const bilingualOriginal = bilingual.childNodes[0];
+    bilingual.dataset.solidBackLabel = 'КАК ЭТО УСТРОЕНО';
+    bilingual.layoutWidth = 224;
+    bilingual.values.set('--solid-width', '99px');
+    bilingual.priorities.set('--solid-width', 'important');
+    const bilingualBinding = bilingualHarness.manager.mount([bilingual] as unknown as HTMLElement[]);
+    const bilingualBody = bilingual.childNodes.find(node => node.className === 'solid-button-body')!;
+    const bilingualFaces = bilingualBody.childNodes.slice();
+    const bilingualFront = bilingualFaces.find(node => node.dataset.solidFace === 'front')!.childNodes[0];
+    const bilingualBack = bilingualFaces.find(node => node.dataset.solidFace === 'back')!.childNodes[0];
+    const bilingualMeasurer = bilingual.childNodes.find(node => node.className === 'solid-button-measurer')!;
+    const measuredCaptions = (): string[] => bilingualMeasurer.childNodes.map(node => node.textContent);
+    check(bilingualFront.textContent === 'HOW IT WORKS' && bilingualBack.textContent === 'КАК ЭТО УСТРОЕНО' &&
+        bilingual.getAttribute('aria-label') === 'HOW IT WORKS' && bilingualBack.hasAttribute('inert') &&
+        bilingual.dataset.solidBackLabel === 'КАК ЭТО УСТРОЕНО' &&
+        bilingualMeasurer.getAttribute('aria-hidden') === 'true' && bilingualMeasurer.hasAttribute('inert'),
+        'An optional translated back caption retains the canonical front accessible name and creates no additional interactive or spoken label');
+    check(bilingualMeasurer.values.get('display') === 'inline-grid' &&
+        bilingualMeasurer.values.get('grid-template-columns') === 'max-content' &&
+        measuredCaptions().join('|') === 'HOW IT WORKS|КАК ЭТО УСТРОЕНО' &&
+        bilingualMeasurer.childNodes.every(node => node.values.get('grid-area') === '1 / 1') &&
+        bilingual.values.get('--solid-width') === '224px',
+        'Both bilingual captions share one normal-flow max-content grid cell so the wider face reserves host layout and cuboid geometry without doubling height');
+
+    bilingual.layoutWidth = 308;
+    setSolidButtonLabel(bilingual as unknown as HTMLElement, 'HOW THIS UNIVERSE WORKS');
+    check(bilingualFront.textContent === 'HOW THIS UNIVERSE WORKS' && bilingualBack.textContent === 'КАК ЭТО УСТРОЕНО' &&
+        bilingual.getAttribute('aria-label') === 'HOW THIS UNIVERSE WORKS' &&
+        measuredCaptions().join('|') === 'HOW THIS UNIVERSE WORKS|КАК ЭТО УСТРОЕНО' &&
+        bilingualBody.childNodes.every((face, index) => face === bilingualFaces[index]) &&
+        bilingual.values.get('--solid-width') === '308px',
+        'A front label change updates its accessible name and width reservation while preserving the configured Russian back and all six existing faces');
+    const bilingualWrites = bilingual.writes;
+    const bilingualMeasureNodes = bilingualMeasurer.childNodes.slice();
+    setSolidButtonLabel(bilingual as unknown as HTMLElement, 'HOW THIS UNIVERSE WORKS');
+    bilingualHarness.observer.callbacks[0]();
+    check(bilingual.writes === bilingualWrites &&
+        bilingualMeasurer.childNodes.every((node, index) => node === bilingualMeasureNodes[index]),
+        'Unchanged bilingual text and layout retain their measuring nodes without CSS writes or resize feedback');
+
+    bilingualBinding.dispose();
+    check(bilingual.childNodes.length === 1 && bilingual.childNodes[0] === bilingualOriginal &&
+        bilingual.textContent === 'HOW IT WORKS' && bilingual.getAttribute('aria-label') === null &&
+        bilingual.dataset.solidBackLabel === 'КАК ЭТО УСТРОЕНО' && bilingual.dataset.canonicalText === undefined &&
+        bilingual.values.get('--solid-width') === '99px' && bilingual.priorities.get('--solid-width') === 'important' &&
+        bilingualHarness.observer.disconnects === 1,
+        'Disposing a bilingual solid restores its original front nodes, accessible state and CSS while leaving the caller-provided translation attribute intact');
 }
 // КОНЕЦ ФУНКЦИИ runButtonSolidChecks
 // КОНЕЦ РАЗДЕЛА 2

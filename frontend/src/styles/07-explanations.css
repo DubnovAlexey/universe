@@ -1,0 +1,212 @@
+/* ============================================================================
+ * ФАЙЛ: frontend/src/styles/07-explanations.css
+ * НАЗНАЧЕНИЕ: Термины визитки, объёмный вход и читаемое окно объяснений.
+ * РАЗДЕЛЫ: 1. Термины; 2. Нижний док; 3. Диалог; 4. Формулы; 5. Адаптация.
+ * ============================================================================ */
+
+/* НАЧАЛО РАЗДЕЛА 1. СТАБИЛЬНЫЕ ТЕРМИНЫ ВИЗИТКИ */
+.finale-line-subtitle,
+.finale-line-stack,
+.finale-line-math { cursor: default; }
+
+.finale-line-math {
+    font-size: clamp(0.82rem, 1.15vw, 0.95rem);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.045em;
+    color: #add9ef;
+}
+
+.finale-term {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    padding: 0.16em 0.08em;
+    margin: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    letter-spacing: inherit;
+    line-height: inherit;
+    color: inherit;
+    text-shadow: inherit;
+    white-space: nowrap;
+    vertical-align: baseline;
+    cursor: pointer;
+    text-decoration: underline dotted rgba(125, 211, 252, 0.48);
+    text-underline-offset: 0.24em;
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+.finale-term::after { content: ''; position: absolute; inset: -4px; }
+.finale-term:hover,
+.finale-term:focus-visible {
+    background: rgba(56, 189, 248, 0.09);
+    color: #edf9ff;
+    text-decoration-color: #7dd3fc;
+}
+.finale-term:focus-visible { outline: 1px solid #7dd3fc; outline-offset: 3px; }
+.finale-term:disabled { cursor: default; text-decoration-color: transparent; }
+.finale-term-separator { white-space: pre-wrap; }
+/* КОНЕЦ РАЗДЕЛА 1. СТАБИЛЬНЫЕ ТЕРМИНЫ ВИЗИТКИ */
+
+/* НАЧАЛО РАЗДЕЛА 2. НИЖНИЙ ОБЪЁМНЫЙ ДОК */
+.explanation-dock {
+    zoom: var(--hud-compact-scale);
+    margin-inline: auto;
+    padding: 0.75rem 1.1rem;
+    border-radius: 20px 26px 18px 24px;
+}
+.explanation-dock .btn-cyber {
+    white-space: nowrap;
+    color: #bce9f6;
+    min-height: 36px;
+    letter-spacing: 0.04em;
+}
+/* КОНЕЦ РАЗДЕЛА 2. НИЖНИЙ ОБЪЁМНЫЙ ДОК */
+
+/* НАЧАЛО РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
+.explanation-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 81;
+    color-scheme: dark;
+    width: min(920px, calc(100vw - 2rem));
+    max-width: none;
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    padding: 0;
+    border: 1px solid rgba(125, 211, 252, 0.45);
+    border-radius: 20px;
+    color: #e2ecf6;
+    background: radial-gradient(ellipse at 0 0, #12243b 0, #080f1e 55%, #050b16 100%);
+    box-shadow: 0 28px 110px #000, 0 0 36px rgba(70, 144, 196, 0.17);
+    font-family: system-ui, sans-serif;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: #385c7c #0b1423;
+}
+.explanation-dialog[open][data-entry-animation="true"] { animation: explanationReveal 1s cubic-bezier(0.22, 1, 0.36, 1); transform-origin: center; }
+.explanation-panel { position: relative; z-index: 1; padding: clamp(1rem, 3vw, 2rem); }
+.explanation-symbol-anchor { position: sticky; top: 0; height: 0; pointer-events: none; z-index: 0; }
+.explanation-symbol-field {
+    position: absolute;
+    inset: 0 0 auto;
+    height: min(82dvh, 900px);
+    z-index: 0;
+    opacity: 0.62;
+    pointer-events: none;
+}
+.explanation-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 0.5rem;
+    background: #0b1728;
+}
+.explanation-kicker { color: #7dd3fc; font: 0.68rem var(--font-mono), monospace; letter-spacing: 0.12em; margin: 0 0 0.65rem; }
+.explanation-title { font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.2; margin: 0; font-weight: 650; }
+.explanation-close {
+    flex: 0 0 auto;
+    min-height: 44px;
+    border: 1px solid #47627e;
+    border-radius: 12px;
+    background: #111e32;
+    color: #e1f4ff;
+    padding-inline: 0.75rem;
+    font: 0.85rem system-ui, sans-serif;
+    cursor: pointer;
+}
+.explanation-summary { max-width: 72ch; margin: 1rem 0; line-height: 1.65; color: #d4e5f3; }
+.explanation-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0; }
+.explanation-mode { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.explanation-mode-button,
+.explanation-topic {
+    font: inherit;
+    font-size: 0.83rem;
+    color: #bed4e7;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #2c435d;
+    background: #0c1728;
+    border-radius: 8px;
+    cursor: pointer;
+    min-height: 38px;
+}
+.explanation-mode-button[aria-pressed="true"],
+.explanation-topic[aria-current="page"] { color: #e9f9ff; border-color: #75b5d5; background: #18324b; }
+.explanation-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 8.8rem; overflow: auto; padding: 0.15rem 0.15rem 0.6rem; border-bottom: 1px solid #263b52; }
+.explanation-content { line-height: 1.75; font-size: 1rem; padding-top: 0.6rem; }
+.explanation-section { margin: 0.9rem 0 1.2rem; max-width: 76ch; }
+.explanation-section h3 { margin: 0 0 0.4rem; font-size: 1rem; color: #a9d9ed; }
+.explanation-section p { margin: 0.45rem 0; }
+.explanation-technical { padding-left: 1.15rem; }
+.explanation-technical li { margin-block: 0.65rem; }
+.explanation-sources { display: flex; flex-wrap: wrap; gap: 0.65rem 1.2rem; margin-top: 0.7rem; }
+.explanation-sources a { color: #8ed1f3; text-underline-offset: 0.22em; overflow-wrap: anywhere; }
+.explanation-pause-note { color: #94abc0; font-size: 0.76rem; margin: 1.25rem 0 0; border-top: 1px solid #263b52; padding-top: 0.75rem; }
+.explanation-dialog :is(button, a):focus-visible { outline: 2px solid #a3dfff; outline-offset: 3px; }
+.explanation-dialog button:hover { border-color: #8fc6df; }
+@keyframes explanationReveal {
+    0%, 30% { opacity: 0; transform: scale(0.008); }
+    35% { opacity: 0.8; transform: scale(0.018); }
+    100% { opacity: 1; transform: none; }
+}
+/* КОНЕЦ РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
+
+/* НАЧАЛО РАЗДЕЛА 4. НАТИВНЫЕ МАТЕМАТИЧЕСКИЕ ФОРМУЛЫ */
+.explanation-formulas { display: grid; gap: 0.9rem; }
+.explanation-formula { margin: 0; padding: 1rem; background: rgba(2, 7, 16, 0.64); border: 1px solid #263b52; border-radius: 10px; min-width: 0; }
+.explanation-formula figcaption { font-size: 0.8rem; color: #a8c9df; margin-bottom: 0.65rem; }
+.explanation-math { overflow: auto; padding-block: 0.3rem; color: #edf6ff; }
+.explanation-math math { font-size: 1.15rem; }
+.explanation-formula-text { font-family: var(--font-mono), monospace; font-size: 0.8rem; color: #abc2d5; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* КОНЕЦ РАЗДЕЛА 4. НАТИВНЫЕ МАТЕМАТИЧЕСКИЕ ФОРМУЛЫ */
+
+/* НАЧАЛО РАЗДЕЛА 5. ТЕЛЕФОН И УМЕНЬШЕННОЕ ДВИЖЕНИЕ */
+@media (min-width: 921px) {
+    .explanation-dock { position: absolute; left: 50%; bottom: 0; margin: 0; transform: translateX(-50%); }
+    .explanation-dialog {
+        inset: var(--hud-top-inset) auto var(--hud-bottom-inset) 1.25rem;
+        margin: 0;
+        width: min(422px, 22vw);
+        max-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
+        border-radius: 18px 26px 20px 24px;
+    }
+    .explanation-panel { padding: 1rem; }
+    .explanation-title { font-size: 1.2rem; }
+    .explanation-close { padding-inline: 0.45rem; font-size: 0.75rem; }
+    .explanation-header { gap: 0.6rem; }
+    .explanation-nav { max-height: 7rem; }
+    .explanation-topic { padding: 0.4rem 0.5rem; font-size: 0.74rem; }
+    .explanation-content { font-size: 0.9rem; }
+    .explanation-summary { font-size: 0.9rem; }
+}
+@media (min-width: 921px) and (max-width: 1649px) {
+    /* На среднем экране отдельное место над доками сохраняет прежние размеры кнопок. */
+    .hud-bottom-bar { padding-top: 58px; }
+    .explanation-dock { top: 0; bottom: auto; }
+    .explanation-dialog { width: min(390px, 32vw); }
+}
+@media (max-width: 920px) {
+    .explanation-dock { padding: 0.35rem 0.9rem; }
+    .explanation-dock .btn-cyber { min-height: 60px; font-size: 0.9rem; }
+    .finale-term { padding-block: 0.3em; }
+}
+@media (max-width: 600px) {
+    .explanation-dialog { width: calc(100vw - 0.75rem); max-height: calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); border-radius: 14px; }
+    .explanation-panel { padding: 1rem; }
+    .explanation-nav { max-height: 7rem; }
+    .explanation-title { font-size: 1.4rem; }
+    .explanation-topic { font-size: 0.76rem; min-height: 40px; }
+    .explanation-mode-button { min-height: 44px; }
+    .explanation-formula { padding: 0.75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .explanation-dialog[open][data-entry-animation="true"] { animation: none; }
+    .finale-term { transition: none; }
+}
+/* КОНЕЦ РАЗДЕЛА 5. ТЕЛЕФОН И УМЕНЬШЕННОЕ ДВИЖЕНИЕ */

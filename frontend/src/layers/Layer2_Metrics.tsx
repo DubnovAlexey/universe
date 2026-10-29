@@ -1,8 +1,8 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/Layer2_Metrics.tsx
-// НАЗНАЧЕНИЕ: Автономная DOM/SVG JSX-фабрика, 60-FPS контроллер «Цифрового
-//             водопада / Звездопада» с синхронизацией от музыки и каскад LAYER_02
+// НАЗНАЧЕНИЕ: DOM/SVG JSX-фабрика, общий музыкальный кадр водопада телеметрии
+//             и редкого декоративного звездопада панели объяснений.
 // ============================================================================
 // ОГЛАВЛЕНИЕ АРХИТЕКТУРНЫХ РАЗДЕЛОВ МОДУЛЯ:
 //   РАЗДЕЛ 1. Нативная DOM/SVG фабрика React.createElement: создание узлов HTML и SVG
@@ -139,7 +139,7 @@ export const React = {
 
 export interface StarfallDroplet {
     id: number;
-    cascadeId: 2 | 3 | 4;
+    cascadeId: 2 | 3 | 4 | 5;
     glyph: string;
     xPercent: number;
     startYPercent: number;
@@ -254,7 +254,7 @@ export function buildLivingHorizontalWavePath(
 // РАЗДЕЛ 3. КОНТРОЛЛЕР ОБЩЕГО КАДРА И КЕШ DOM ПРИВЯЗОК КАСКАДОВ
 // ============================================================================
 
-type CascadeId = 2 | 3 | 4;
+type CascadeId = 2 | 3 | 4 | 5;
 interface WaterfallCascadeBinding {
     root: HTMLElement;
     contours: SVGPathElement[];
@@ -267,8 +267,9 @@ interface WaterfallCascadeBinding {
 export class TelemetryWaterfallAnimator {
     private droplets: StarfallDroplet[] = [];
     private ignitedSlots: Map<string, number> = new Map();
-    private nextSpawnSec: Record<2 | 3 | 4, number> = { 2: 0.5, 3: 0.85, 4: 1.2 };
+    private nextSpawnSec: Record<CascadeId, number> = { 2: 0.5, 3: 0.85, 4: 1.2, 5: 2.0 };
     private dropCounter = 1;
+    private explanationDropCounter = 1;
     private unsubscribeSignals: (() => void) | null = null;
     private cascades = new Map<CascadeId, WaterfallCascadeBinding>();
     private smoothedMusicPulse = 0.22;
@@ -296,6 +297,9 @@ export class TelemetryWaterfallAnimator {
     // --- НАЧАЛО ФУНКЦИИ bindCascade (TelemetryWaterfallAnimator) ---
     /** Привязки статичных узлов собираются один раз после монтирования каскада. */
     public bindCascade(id: CascadeId, root: HTMLElement): void {
+        if (id === 5 && this.cascades.get(id)?.root !== root) {
+            this.nextSpawnSec[5] = this.getTimeSec() + 2.0;
+        }
         const drops = Array.from(root.querySelectorAll<HTMLElement>('.starfall-drops-layer[data-cascade-drops]'))
             .map((container) => ({
                 container,
@@ -353,7 +357,7 @@ export class TelemetryWaterfallAnimator {
         const dt = signals.frameDtSec;
         const timeSec = signals.simTimeSec;
         if (timeSec < this.lastSignalSec) {
-            this.nextSpawnSec = { 2: timeSec + 0.5, 3: timeSec + 0.85, 4: timeSec + 1.2 };
+            this.nextSpawnSec = { 2: timeSec + 0.5, 3: timeSec + 0.85, 4: timeSec + 1.2, 5: timeSec + 2.0 };
             this.droplets = [];
             this.ignitedSlots.clear();
         }
@@ -373,10 +377,11 @@ export class TelemetryWaterfallAnimator {
         cascades: readonly CascadeId[],
         signals: Readonly<VisualSignalSnapshot>
     ): void {
-        const slotPools: Record<2 | 3 | 4, ReadonlyArray<string>> = {
+        const slotPools: Record<CascadeId, ReadonlyArray<string>> = {
             2: ['l2_fps', 'l2_drift', 'l2_kuramoto', 'l2_nodes', 'l2_core', 'l2_audio'],
             3: ['l3_trunks', 'l3_bridges', 'l3_dendrites', 'l3_deg', 'l3_diam', 'l3_pulses'],
             4: ['l4_mod0', 'l4_mod1', 'l4_mod2', 'l4_ledger', 'l4_log0'],
+            5: ['l5_explain_kicker', 'l5_explain_title'],
         };
 
         for (let c = 0; c < cascades.length; c++) {
@@ -384,27 +389,32 @@ export class TelemetryWaterfallAnimator {
             if (timeSec >= this.nextSpawnSec[cId]) {
                 const interval =
                     0.58 + Math.abs(Math.sin(timeSec * 1.35 + cId * 1.7)) * 0.92;
-                this.nextSpawnSec[cId] = timeSec + interval;
+                this.nextSpawnSec[cId] = timeSec + interval * (cId === 5 ? 3.2 : 1);
+                if (cId === 5 && this.getDropletsForCascade(5).length >= 2) continue;
+
+                // Отдельная последовательность панели сохраняет прежние символы каскадов 2–4.
+                const counter = cId === 5 ? this.explanationDropCounter++ : this.dropCounter++;
+                const nextCounter = counter + 1;
 
                 const pool = slotPools[cId];
-                const slotKey = pool[(this.dropCounter * 3 + cId) % pool.length];
+                const slotKey = pool[(counter * 3 + cId) % pool.length];
                 this.ignitedSlots.set(slotKey, timeSec);
 
-                const glyph = pickGlyph(signals.phase, this.dropCounter, Math.floor(timeSec * 3), signals.seed);
+                const glyph = pickGlyph(signals.phase, counter, Math.floor(timeSec * 3), signals.seed);
 
                 this.droplets.push({
-                    id: this.dropCounter++,
+                    id: cId === 5 ? -counter : counter,
                     cascadeId: cId,
                     glyph,
-                    xPercent: 18 + ((this.dropCounter * 29) % 68),
-                    startYPercent: 22 + ((this.dropCounter * 19) % 54),
+                    xPercent: 18 + ((nextCounter * 29) % 68),
+                    startYPercent: 22 + ((nextCounter * 19) % 54),
                     yOffsetPx: 0,
                     xDriftPx: 0,
-                    velocityPx: 30 + ((this.dropCounter * 13) % 22),
-                    opacity: 0.86,
+                    velocityPx: 30 + ((nextCounter * 13) % 22),
+                    opacity: cId === 5 ? 0.3 : 0.86,
                     scale: 1.03,
                     life: 0,
-                    maxLife: 1.48 + ((this.dropCounter * 7) % 8) * 0.1,
+                    maxLife: 1.48 + ((nextCounter * 7) % 8) * 0.1,
                 });
             }
         }
@@ -420,7 +430,7 @@ export class TelemetryWaterfallAnimator {
             if (nextLife >= d.maxLife) continue;
             const prog = nextLife / d.maxLife;
             const nextVel = d.velocityPx + 42 * dt;
-            const nextOpacity = Math.max(0, (1 - prog) * (1 - prog * 0.55) * 0.86);
+            const nextOpacity = Math.max(0, (1 - prog) * (1 - prog * 0.55) * (d.cascadeId === 5 ? 0.3 : 0.86));
             if (nextOpacity <= 0.02) continue;
 
             active.push({
@@ -441,7 +451,8 @@ export class TelemetryWaterfallAnimator {
     public computeSlotBreathCss(
         slotKey: string,
         phaseSeed: number,
-        timeSec: number
+        timeSec: number,
+        strength = 1
     ): { transform: string; color: string; textShadow: string } {
         const ignitedAt = this.ignitedSlots.get(slotKey) ?? -10;
         const elapsed = timeSec - ignitedAt;
@@ -457,14 +468,18 @@ export class TelemetryWaterfallAnimator {
             reigniteWave * 0.032;
         const gentleY =
             0.75 * Math.cos(timeSec * 1.05 + phaseSeed * 0.8) - reigniteWave * 2.2;
+        const scaledBreath = strength === 1 ? breathScale : 1 + (breathScale - 1) * strength;
+        const scaledY = strength === 1 ? gentleY : gentleY * strength;
 
         return {
-            transform: `translate3d(0, ${gentleY.toFixed(2)}px, 0) scale(${breathScale.toFixed(
+            transform: `translate3d(0, ${scaledY.toFixed(2)}px, 0) scale(${scaledBreath.toFixed(
                 4
             )})`,
-            color: reigniteWave > 0.35 ? '#f8fafc' : '#e0f2fe',
+            color: strength === 1 && reigniteWave > 0.35 ? '#f8fafc' : '#e0f2fe',
             textShadow:
-                reigniteWave > 0.35
+                strength < 1
+                    ? `0 0 ${(2 + this.smoothedMusicLow * 2).toFixed(1)}px rgba(125, 211, 252, ${(0.1 + this.smoothedMusicPulse * 0.08 + reigniteWave * 0.06).toFixed(2)})`
+                    : reigniteWave > 0.35
                     ? '0 0 11px rgba(186, 230, 253, 0.78), 0 0 18px rgba(56, 189, 248, 0.45)'
                     : `0 0 ${(6 + this.smoothedMusicLow * 6).toFixed(
                         1
@@ -497,7 +512,7 @@ export class TelemetryWaterfallAnimator {
                 node.style.backgroundPosition = `0px ${y.toFixed(1)}px`;
             });
             binding.breaths.forEach(({ node, slotKey, seed }) => {
-                const css = this.computeSlotBreathCss(slotKey, seed, timeSec);
+                const css = this.computeSlotBreathCss(slotKey, seed, timeSec, id === 5 ? 0.22 : 1);
                 node.style.transform = css.transform;
                 node.style.color = css.color;
                 node.style.textShadow = css.textShadow;
@@ -534,7 +549,7 @@ export class TelemetryWaterfallAnimator {
     // --- КОНЕЦ ФУНКЦИИ updateLiveDomElements (TelemetryWaterfallAnimator) ---
 
     // --- НАЧАЛО ФУНКЦИИ getDropletsForCascade (TelemetryWaterfallAnimator) ---
-    public getDropletsForCascade(cascadeId: 2 | 3 | 4): ReadonlyArray<StarfallDroplet> {
+    public getDropletsForCascade(cascadeId: CascadeId): ReadonlyArray<StarfallDroplet> {
         return this.droplets.filter((d: StarfallDroplet) => d.cascadeId === cascadeId);
     }
     // --- КОНЕЦ ФУНКЦИИ getDropletsForCascade (TelemetryWaterfallAnimator) ---
