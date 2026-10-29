@@ -150,7 +150,13 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     const midpoint = (a: readonly number[], b: readonly number[]): number[] => a.map((v, i) => (v + b[i]) / 2);
     const project = (v: readonly number[]): number[] => [v[0] * 3 / (3 + v[2]), -v[1] * 3 / (3 + v[2])];
     const distance = (a: readonly number[], b: readonly number[]): number => Math.hypot(...a.map((v, i) => v - b[i]));
-    let elongatedHead = true, flattenedHead = true, taperedHead = true;
+    const difference = (a: readonly number[], b: readonly number[]): number[] => a.map((v, i) => v - b[i]);
+    const dot = (a: readonly number[], b: readonly number[]): number => a.reduce((sum, v, i) => sum + v * b[i], 0);
+    const unit = (v: readonly number[]): number[] => v.map(component => component / Math.hypot(...v));
+    const normal = (buffer: Float32Array, index: number): number[] =>
+        Array.from(buffer.subarray(index * OUROBOROS_STRIDE + 3, index * OUROBOROS_STRIDE + 6));
+    let elongatedHead = true, flattenedHead = true, taperedHead = true, continuousNeck = true;
+    let surfaceNormals = true, smoothNeckLighting = true;
     for (const seed of [0, 104729, 0xffffffff]) {
         for (let time = 0; time <= 216; time += 9) {
             for (const energy of [0, 1]) {
@@ -161,10 +167,42 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
                 const cheekDepth = distance(position(prefix, 16), position(prefix, 17));
                 const muzzleWidth = distance(position(prefix, 2), position(prefix, 3));
                 const neckWidth = distance(position(prefix, 8), position(prefix, 9));
+                const throatWidth = distance(position(prefix, 12), position(prefix, 13));
+                const joinWidth = distance(position(prefix, 18), position(prefix, 19));
+                const neckDepth = distance(position(prefix, 20), position(prefix, 21));
+                const joinDepth = distance(position(prefix, 24), position(prefix, 25));
+                const throatDepth = distance(position(prefix, 26), position(prefix, 27));
+                const torsoWidth = distance(position(prefix, 28), position(prefix, 29));
                 elongatedHead &&= distance(mouth, neck) / cheekWidth > 1.65;
                 flattenedHead &&= cheekDepth / cheekWidth > 0.55 && cheekDepth / cheekWidth < 0.8;
-                taperedHead &&= muzzleWidth < cheekWidth * 0.8 && neckWidth < cheekWidth * 0.8 &&
-                    [2, 3, 8, 9, 10, 11, 16, 17].every(index => prefix[index * OUROBOROS_STRIDE + 7] === 0);
+                taperedHead &&= muzzleWidth < cheekWidth * 0.8 && cheekWidth > throatWidth &&
+                    throatWidth > neckWidth && neckWidth >= joinWidth && joinWidth > torsoWidth &&
+                    [2, 3, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 32, 33]
+                        .every(index => prefix[index * OUROBOROS_STRIDE + 7] === 0);
+                const minimumArea = Math.min(cheekWidth * cheekDepth, joinWidth * joinDepth);
+                const maximumArea = Math.max(cheekWidth * cheekDepth, joinWidth * joinDepth);
+                continuousNeck &&= [throatWidth * throatDepth, neckWidth * neckDepth]
+                    .every(area => area >= minimumArea * 0.9 && area <= maximumArea * 1.2) &&
+                    throatDepth >= cheekDepth * 0.95 && neckDepth >= throatDepth * 0.95 &&
+                    neckDepth < joinDepth * 1.15 && joinDepth / joinWidth > 0.98 && joinDepth / joinWidth < 1.12;
+
+                // Секущие поверхности проверяют освещение без повторения формул профиля модели.
+                const widthAxis = unit(difference(position(prefix, 8), position(prefix, 9)));
+                const depthAxis = unit(difference(position(prefix, 21), position(prefix, 20)));
+                for (const [index, before, after, crossSectionAxis] of [
+                    [8, 12, 18, depthAxis], [9, 13, 19, depthAxis],
+                    [20, 26, 24, widthAxis], [21, 27, 25, widthAxis]
+                ] as const) {
+                    const n = normal(prefix, index);
+                    const tangent = unit(difference(position(prefix, after), position(prefix, before)));
+                    const outward = unit(difference(position(prefix, index), neck));
+                    surfaceNormals &&= Math.abs(dot(n, tangent)) < 0.03 &&
+                        Math.abs(dot(n, crossSectionAxis)) < 1e-5 && dot(n, outward) > 0.9;
+                }
+                for (const [rearHead, join, torso] of [[8, 18, 28], [9, 19, 29], [20, 24, 32], [21, 25, 33]]) {
+                    smoothNeckLighting &&= dot(normal(prefix, rearHead), normal(prefix, join)) > 0.94 &&
+                        dot(normal(prefix, join), normal(prefix, torso)) > 0.94;
+                }
             }
         }
     }
@@ -173,7 +211,51 @@ export function runOuroborosModelChecks(check: (passed: boolean, description: st
     check(flattenedHead,
         'The snake head retains a flattened but volumetric cranial cross-section through every spatial rotation');
     check(taperedHead,
-        'The formed head has a narrower muzzle and neck than its cranium at reduced quality across seeds and music extremes');
+        'The formed head widens from muzzle to cranium and narrows continuously through throat and neck into the torso at reduced quality');
+    check(continuousNeck,
+        'The neck rounds into the body without a collapsed cross-section, a pinched waist or a second bulge across seeds, music extremes and spatial rotations');
+    check(surfaceNormals && smoothNeckLighting,
+        'Neck lighting normals follow both longitudinal surface slopes and cross-section tangents, and remain aligned through the body join');
+
+    let surfaceCoverage = true;
+    for (const count of [512, 1536, OUROBOROS_CAPACITY]) {
+        for (const seed of [0, 104729, 0xffffffff]) {
+            for (const time of [0, 17, 108]) {
+                for (const energy of [0, 1]) {
+                    fillOuroborosPoints(points, seed, count, time, 1, energy);
+                    const mouth = midpoint(position(points, 2), position(points, 3));
+                    const join = midpoint(position(points, 18), position(points, 19));
+                    const radialAxis = unit(difference(position(points, 2), position(points, 3)));
+                    const joinAxis = unit(difference(position(points, 18), position(points, 19)));
+                    const axisDot = dot(joinAxis, radialAxis);
+                    const tangentAxis = unit(joinAxis.map((value, axis) => value - axisDot * radialAxis[axis]));
+                    const depthAxis = [radialAxis[1] * tangentAxis[2] - radialAxis[2] * tangentAxis[1],
+                        radialAxis[2] * tangentAxis[0] - radialAxis[0] * tangentAxis[2],
+                        radialAxis[0] * tangentAxis[1] - radialAxis[1] * tangentAxis[0]];
+                    // Пересечение осей сечений восстанавливает центр кольца без знания его радиуса или поворота.
+                    const centerTravel = difference(join, mouth);
+                    const joinRadius = dot(centerTravel, tangentAxis) / dot(joinAxis, tangentAxis);
+                    const mouthRadius = joinRadius * axisDot - dot(centerTravel, radialAxis);
+                    const origin = mouth.map((value, axis) => value - mouthRadius * radialAxis[axis]);
+                    const sectors = new Uint16Array(12 * 4);
+                    for (let index = 0; index < count; index++) {
+                        if (points[index * OUROBOROS_STRIDE + 7] !== 0) continue;
+                        const relative = difference(position(points, index), origin);
+                        let angle = Math.atan2(dot(relative, tangentAxis), dot(relative, radialAxis));
+                        if (angle < 0) angle += Math.PI * 2;
+                        const radial = radialAxis.map((value, axis) =>
+                            value * Math.cos(angle) + tangentAxis[axis] * Math.sin(angle));
+                        const n = normal(points, index);
+                        const quadrant = (dot(n, radial) < 0 ? 1 : 0) + (dot(n, depthAxis) < 0 ? 2 : 0);
+                        sectors[Math.min(11, Math.floor(angle / (Math.PI * 2) * 12)) * 4 + quadrant]++;
+                    }
+                    surfaceCoverage &&= sectors.every(samples => samples >= count / 256);
+                }
+            }
+        }
+    }
+    check(surfaceCoverage,
+        'Every quality prefix covers twelve body sectors on all four sides of the tube, avoiding empty surface bands across seeds and music extremes');
 
     let tailInsideMouth = true, headLeads = true, minNormalZ = Infinity, maxNormalZ = -Infinity;
     for (const seed of [0, 104729, 0xffffffff]) {

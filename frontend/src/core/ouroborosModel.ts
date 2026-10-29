@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/core/ouroborosModel.ts
 // НАЗНАЧЕНИЕ: Объёмные точки Уробороса, внутреннее течение пыли, ореол и спутники.
 // РАЗДЕЛЫ: 1. Формат и проверка входов; 2. Заполнение геометрии без выделения памяти.
-// ФУНКЦИИ: isValidOuroborosSample, smooth, fillOuroborosPoints.
+// ФУНКЦИИ: isValidOuroborosSample, smooth, smoother, smootherDerivative, fillOuroborosPoints.
 // Позиции и нормали уже повёрнуты; size хранит базовый радиус в CSS-пикселях.
 // ============================================================================
 import { DeterministicPRNG } from './prng';
@@ -31,6 +31,21 @@ function smooth(value: number): number {
     return t * t * (3 - 2 * t);
 }
 // КОНЕЦ ФУНКЦИИ smooth
+
+// НАЧАЛО ФУНКЦИИ smoother
+/** C²-профиль соединяет морду, череп и туловище без ступеней кривизны. */
+function smoother(value: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    return t * t * t * (t * (t * 6 - 15) + 10);
+}
+// КОНЕЦ ФУНКЦИИ smoother
+
+// НАЧАЛО ФУНКЦИИ smootherDerivative
+function smootherDerivative(value: number): number {
+    if (value <= 0 || value >= 1) return 0;
+    return 30 * value * value * (value - 1) * (value - 1);
+}
+// КОНЕЦ ФУНКЦИИ smootherDerivative
 // КОНЕЦ РАЗДЕЛА 1. ФОРМАТ И ПРОВЕРКА ВХОДОВ
 
 // НАЧАЛО РАЗДЕЛА 2. ЗАПОЛНЕНИЕ ГЕОМЕТРИИ
@@ -59,6 +74,8 @@ export function fillOuroborosPoints(
     const f00 = flowCos * cy, f01 = flowCos * sy * sx - flowSin * cx, f02 = flowCos * sy * cx + flowSin * sx;
     const f10 = flowSin * cy, f11 = flowSin * sy * sx + flowCos * cx, f12 = flowSin * sy * cx - flowCos * sx;
     const flowBlend = smooth(morph);
+    const surfaceShiftU = DeterministicPRNG.hashFloat(seed, 0x7ffffffe);
+    const surfaceShiftPhi = DeterministicPRNG.hashFloat(seed, 0x7fffffff);
 
     for (let i = 0; i < count; i++) {
         // Независимые hash-каналы не расходуют PRNG физики и сохраняют prefix при смене качества.
@@ -103,43 +120,73 @@ export function fillOuroborosPoints(
                 size += (0.75 + 0.65 * h4 - size) * flowBlend;
             }
         } else {
-            // Ориентиры: глаза0/1, губы2/3, хвост4/5, шея8/9, ширина10/11 и глубина16/17 головы.
+            // Парные ориентиры сечений сохраняются даже в коротком префиксе качества.
             const eye = i < 2;
             const lip = i === 2 || i === 3;
             const neckLandmark = i === 8 || i === 9;
             const cheek = i === 10 || i === 11;
             const cheekDepth = i === 16 || i === 17;
+            const throat = i === 12 || i === 13 || i === 26 || i === 27;
+            const join = i === 18 || i === 19 || i === 24 || i === 25;
+            const neckDepth = i === 20 || i === 21;
+            const torso = i === 28 || i === 29 || i === 32 || i === 33;
+            const depthLandmark = cheekDepth || neckDepth || i === 24 || i === 25 ||
+                i === 26 || i === 27 || i === 32 || i === 33;
+            // Равномерное R2-покрытие не оставляет случайных пустых полос на шее.
+            const surfaceIndex = Math.floor(i / 8) * 6 + i % 8;
+            const sequenceU = ((surfaceIndex + 0.5) * 0.7548776662466927 + surfaceShiftU) % 1;
+            const sequencePhi = ((surfaceIndex + 0.5) * 0.5698402909980532 + surfaceShiftPhi) % 1;
+            const surfaceU = surfaceIndex % 5 === 0 ? sequenceU * 0.15 : 0.15 + sequenceU * 0.85;
             const u = eye ? 0.055 : lip ? 0 : i === 4 ? 1 : i === 5 ? 0.975 :
-                neckLandmark ? 0.125 : cheek || cheekDepth ? 0.053 : i < 34 ? 0.008 + h0 * 0.097 : h0;
+                neckLandmark || neckDepth ? 0.125 : cheek || cheekDepth ? 0.05 :
+                throat ? 0.10 : join ? 0.15 : torso ? 0.18 : surfaceU;
             // Дуга хвоста проходит через вход пасти и заканчивается внутри объёма головы.
             const theta = -0.06 + u * (TAU + 0.20);
             const phi = eye ? -Math.PI / 2 + (i === 0 ? -0.82 : 0.82) :
-                lip ? (i - 2) * Math.PI : neckLandmark ? (i - 8) * Math.PI :
-                cheek ? (i - 10) * Math.PI : cheekDepth ? (i - 16.5) * Math.PI : h1 * TAU;
+                depthLandmark ? (i % 2 - 0.5) * Math.PI :
+                lip || neckLandmark || cheek || throat || join || torso ? (i % 2) * Math.PI : sequencePhi * TAU;
             const c = Math.cos(theta), s = Math.sin(theta);
             const cp = Math.cos(phi), sp = Math.sin(phi);
-            // Продольная морда переходит в более широкую скуловую часть и узкую шею.
-            // Уменьшенная глубина сечения даёт уплощённые челюсти вместо шарообразного утолщения.
-            const headDistance = (u - 0.053) / 0.031;
-            const head = Math.exp(-headDistance * headDistance);
-            const neckDistance = (u - 0.105) / 0.019;
-            const headWindow = 1 - smooth((u - 0.085) / 0.045);
+            // Уплощённая морда расширяется к черепу; затылок плавно округляется в туловище.
+            // Отрицательная перетяжка отсутствует: площадь шеи не проваливается за головой.
             const tail = 0.13 + 0.87 * smooth((1 - u) / 0.17);
-            const bodyTube = (0.110 + 0.015 * Math.sin(theta * 3 + 0.35) + 0.015 * energy) * tail;
-            const snakeWidth = 0.112 + 0.070 * head - 0.027 * Math.exp(-neckDistance * neckDistance);
-            const tube = bodyTube + (snakeWidth - bodyTube) * headWindow;
-            const depthScale = 1.06 - 0.40 * headWindow;
+            const tailT = Math.max(0, Math.min(1, (1 - u) / 0.17));
+            const baseline = 0.110 + 0.015 * Math.sin(theta * 3 + 0.35) + 0.015 * energy;
+            const bodyTube = baseline * tail;
+            const bodyDerivative = 0.045 * (TAU + 0.20) * Math.cos(theta * 3 + 0.35) * tail -
+                baseline * 0.87 / 0.17 * 6 * tailT * (1 - tailT);
+            const profileT = u <= 0.05 ? u / 0.05 : (u - 0.05) / 0.10;
+            const blend = smoother(profileT);
+            const slope = smootherDerivative(profileT) / (u <= 0.05 ? 0.05 : 0.10);
+            const tube = u <= 0.05 ? 0.106 + 0.050 * blend : 0.156 + (bodyTube - 0.156) * blend;
+            const depth = u <= 0.05 ? 0.066 + 0.034 * blend : 0.100 + (1.06 * bodyTube - 0.100) * blend;
+            const tubeDerivative = u <= 0.05 ? 0.050 * slope :
+                bodyDerivative * blend + (bodyTube - 0.156) * slope;
+            const depthDerivative = u <= 0.05 ? 0.034 * slope :
+                1.06 * bodyDerivative * blend + (1.06 * bodyTube - 0.100) * slope;
+            const head = u <= 0.05 ? blend : 1 - blend;
             const radius = 0.85 + 0.022 * Math.sin(theta * 2 + timeSec * 0.11) * (0.4 + energy * 0.6);
             const bodyX = (radius + tube * cp) * c;
             const bodyY = (radius + tube * cp) * s;
-            const bodyZ = tube * depthScale * sp + Math.sin(theta * 2 + timeSec * 0.11) * 0.035;
+            const bodyZ = depth * sp + Math.sin(theta * 2 + timeSec * 0.11) * 0.035;
+            // Аналитическая нормаль учитывает продольный наклон каждой поверхности.
+            const radiusDerivative = 0.044 * (TAU + 0.20) * Math.cos(theta * 2 + timeSec * 0.11) * (0.4 + energy * 0.6);
+            const zDerivative = 0.070 * (TAU + 0.20) * Math.cos(theta * 2 + timeSec * 0.11);
+            const tangent = (TAU + 0.20) * (radius + tube * cp);
+            const normalRadial = tangent * depth * cp;
+            const normalTangent = -(depth * cp * (radiusDerivative + tubeDerivative * cp) +
+                tube * sp * (zDerivative + depthDerivative * sp));
+            const normalZ = tangent * tube * sp;
+            const normalX = normalRadial * c - normalTangent * s;
+            const normalY = normalRadial * s + normalTangent * c;
+            const normalLength = Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
             const materialize = smooth((morph - (0.08 + h3 * 0.68)) / 0.24);
             x = dx + (bodyX - dx) * materialize;
             y = dy + (bodyY - dy) * materialize;
             z = dz + (bodyZ - dz) * materialize;
-            nx = Math.cos(dustAngle) * (1 - materialize) + cp * c * materialize;
-            ny = Math.sin(dustAngle) * (1 - materialize) + cp * s * materialize;
-            nz = 0.12 * (1 - materialize) + sp / depthScale * materialize;
+            nx = Math.cos(dustAngle) * (1 - materialize) + normalX / normalLength * materialize;
+            ny = Math.sin(dustAngle) * (1 - materialize) + normalY / normalLength * materialize;
+            nz = 0.12 * (1 - materialize) + normalZ / normalLength * materialize;
             const coreSize = eye ? 2.8 : 1.20 + h4 * 1.05 + head * 0.22;
             size = (0.4 + h4) + (coreSize - (0.4 + h4)) * materialize;
             kind = materialize < 0.5 ? OUROBOROS_KIND_DUST : OUROBOROS_KIND_BODY;

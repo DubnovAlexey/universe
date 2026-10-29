@@ -2,7 +2,7 @@
 // ФАЙЛ: physics_engine/src/ouroboros.rs
 // НАЗНАЧЕНИЕ: Геометрия Уробороса, внутреннее течение пыли и optional raw ABI v1.
 // РАЗДЕЛЫ: 1. Формат; 2. Заполнение точек; 3. Статическая память и ABI; 4. Тесты.
-// ФУНКЦИИ: smooth, hash_float, fill_ouroboros_points, get_ouroboros_abi_version,
+// ФУНКЦИИ: smooth, smoother, smoother_derivative, hash_float, fill_ouroboros_points, get_ouroboros_abi_version,
 // get_ouroboros_capacity, get_ouroboros_points_ptr, sample_ouroboros.
 // ============================================================================
 use crate::prng::DeterministicPrng;
@@ -22,6 +22,21 @@ fn smooth(value: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 // --- КОНЕЦ ФУНКЦИИ smooth ---
+
+// --- НАЧАЛО ФУНКЦИИ smoother ---
+/// C²-профиль соединяет морду, череп и туловище без ступеней кривизны.
+fn smoother(value: f64) -> f64 {
+    let t = value.clamp(0.0, 1.0);
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+// --- КОНЕЦ ФУНКЦИИ smoother ---
+
+// --- НАЧАЛО ФУНКЦИИ smoother_derivative ---
+fn smoother_derivative(value: f64) -> f64 {
+    if value <= 0.0 || value >= 1.0 { return 0.0; }
+    30.0 * value * value * (value - 1.0) * (value - 1.0)
+}
+// --- КОНЕЦ ФУНКЦИИ smoother_derivative ---
 
 // --- НАЧАЛО ФУНКЦИИ hash_float ---
 fn hash_float(seed: u32, index: u32) -> f64 {
@@ -58,6 +73,8 @@ pub fn fill_ouroboros_points(
     let (f00, f01, f02) = (flow_cos * cy, flow_cos * sy * sx - flow_sin * cx, flow_cos * sy * cx + flow_sin * sx);
     let (f10, f11, f12) = (flow_sin * cy, flow_sin * sy * sx + flow_cos * cx, flow_sin * sy * cx - flow_cos * sx);
     let flow_blend = smooth(morph);
+    let surface_shift_u = hash_float(seed, 0x7ffffffe);
+    let surface_shift_phi = hash_float(seed, 0x7fffffff);
 
     for i in 0..count {
         let h0 = hash_float(seed, (i * 11) as u32);
@@ -101,43 +118,72 @@ pub fn fill_ouroboros_points(
         } else {
             let eye = i < 2;
             let lip = i == 2 || i == 3;
-            // Ориентиры: глаза0/1, губы2/3, хвост4/5, шея8/9, ширина10/11 и глубина16/17 головы.
+            // Парные ориентиры сечений сохраняются даже в коротком префиксе качества.
             let neck_landmark = i == 8 || i == 9;
             let cheek = i == 10 || i == 11;
             let cheek_depth = i == 16 || i == 17;
+            let throat = i == 12 || i == 13 || i == 26 || i == 27;
+            let join = i == 18 || i == 19 || i == 24 || i == 25;
+            let neck_depth = i == 20 || i == 21;
+            let torso = i == 28 || i == 29 || i == 32 || i == 33;
+            let depth_landmark = cheek_depth || neck_depth || i == 24 || i == 25
+                || i == 26 || i == 27 || i == 32 || i == 33;
+            // Равномерное R2-покрытие не оставляет случайных пустых полос на шее.
+            let surface_index = i / 8 * 6 + i % 8;
+            let sequence_u = ((surface_index as f64 + 0.5) * 0.7548776662466927 + surface_shift_u) % 1.0;
+            let sequence_phi = ((surface_index as f64 + 0.5) * 0.5698402909980532 + surface_shift_phi) % 1.0;
+            let surface_u = if surface_index % 5 == 0 { sequence_u * 0.15 } else { 0.15 + sequence_u * 0.85 };
             let u = if eye { 0.055 } else if lip { 0.0 } else if i == 4 { 1.0 } else if i == 5 { 0.975 }
-                else if neck_landmark { 0.125 } else if cheek || cheek_depth { 0.053 }
-                else if i < 34 { 0.008 + h0 * 0.097 } else { h0 };
+                else if neck_landmark || neck_depth { 0.125 } else if cheek || cheek_depth { 0.05 }
+                else if throat { 0.10 } else if join { 0.15 } else if torso { 0.18 } else { surface_u };
             // Хвост пересекает плоскость губ и заканчивается внутри объёма головы.
             let theta = -0.06 + u * (TAU + 0.20);
             let phi = if eye { -std::f64::consts::PI / 2.0 + if i == 0 { -0.82 } else { 0.82 } }
-                else if lip { (i - 2) as f64 * std::f64::consts::PI }
-                else if neck_landmark { (i - 8) as f64 * std::f64::consts::PI }
-                else if cheek { (i - 10) as f64 * std::f64::consts::PI }
-                else if cheek_depth { (i as f64 - 16.5) * std::f64::consts::PI } else { h1 * TAU };
+                else if depth_landmark { ((i % 2) as f64 - 0.5) * std::f64::consts::PI }
+                else if lip || neck_landmark || cheek || throat || join || torso { (i % 2) as f64 * std::f64::consts::PI }
+                else { sequence_phi * TAU };
             let (c, s) = (theta.cos(), theta.sin());
             let (cp, sp) = (phi.cos(), phi.sin());
-            // Продольная морда, более широкая скуловая часть и узкая шея с уплощёнными челюстями.
-            let head_distance = (u - 0.053) / 0.031;
-            let head = (-head_distance * head_distance).exp();
-            let neck_distance = (u - 0.105) / 0.019;
-            let head_window = 1.0 - smooth((u - 0.085) / 0.045);
+            // Уплощённая морда расширяется к черепу; затылок плавно округляется в туловище.
+            // Отрицательная перетяжка отсутствует: площадь шеи не проваливается за головой.
             let tail = 0.13 + 0.87 * smooth((1.0 - u) / 0.17);
-            let body_tube = (0.110 + 0.015 * (theta * 3.0 + 0.35).sin() + 0.015 * energy) * tail;
-            let snake_width = 0.112 + 0.070 * head - 0.027 * (-neck_distance * neck_distance).exp();
-            let tube = body_tube + (snake_width - body_tube) * head_window;
-            let depth_scale = 1.06 - 0.40 * head_window;
+            let tail_t = ((1.0 - u) / 0.17).clamp(0.0, 1.0);
+            let baseline = 0.110 + 0.015 * (theta * 3.0 + 0.35).sin() + 0.015 * energy;
+            let body_tube = baseline * tail;
+            let body_derivative = 0.045 * (TAU + 0.20) * (theta * 3.0 + 0.35).cos() * tail
+                - baseline * 0.87 / 0.17 * 6.0 * tail_t * (1.0 - tail_t);
+            let profile_t = if u <= 0.05 { u / 0.05 } else { (u - 0.05) / 0.10 };
+            let blend = smoother(profile_t);
+            let slope = smoother_derivative(profile_t) / if u <= 0.05 { 0.05 } else { 0.10 };
+            let tube = if u <= 0.05 { 0.106 + 0.050 * blend } else { 0.156 + (body_tube - 0.156) * blend };
+            let depth = if u <= 0.05 { 0.066 + 0.034 * blend } else { 0.100 + (1.06 * body_tube - 0.100) * blend };
+            let tube_derivative = if u <= 0.05 { 0.050 * slope } else {
+                body_derivative * blend + (body_tube - 0.156) * slope };
+            let depth_derivative = if u <= 0.05 { 0.034 * slope } else {
+                1.06 * body_derivative * blend + (1.06 * body_tube - 0.100) * slope };
+            let head = if u <= 0.05 { blend } else { 1.0 - blend };
             let radius = 0.85 + 0.022 * (theta * 2.0 + time_sec * 0.11).sin() * (0.4 + energy * 0.6);
             let body_x = (radius + tube * cp) * c;
             let body_y = (radius + tube * cp) * s;
-            let body_z = tube * depth_scale * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
+            let body_z = depth * sp + (theta * 2.0 + time_sec * 0.11).sin() * 0.035;
+            // Аналитическая нормаль учитывает продольный наклон каждой поверхности.
+            let radius_derivative = 0.044 * (TAU + 0.20) * (theta * 2.0 + time_sec * 0.11).cos() * (0.4 + energy * 0.6);
+            let z_derivative = 0.070 * (TAU + 0.20) * (theta * 2.0 + time_sec * 0.11).cos();
+            let tangent = (TAU + 0.20) * (radius + tube * cp);
+            let normal_radial = tangent * depth * cp;
+            let normal_tangent = -(depth * cp * (radius_derivative + tube_derivative * cp)
+                + tube * sp * (z_derivative + depth_derivative * sp));
+            let normal_z = tangent * tube * sp;
+            let normal_x = normal_radial * c - normal_tangent * s;
+            let normal_y = normal_radial * s + normal_tangent * c;
+            let normal_length = (normal_x * normal_x + normal_y * normal_y + normal_z * normal_z).sqrt();
             let materialize = smooth((morph - (0.08 + h3 * 0.68)) / 0.24);
             x = dx + (body_x - dx) * materialize;
             y = dy + (body_y - dy) * materialize;
             z = dz + (body_z - dz) * materialize;
-            nx = dust_angle.cos() * (1.0 - materialize) + cp * c * materialize;
-            ny = dust_angle.sin() * (1.0 - materialize) + cp * s * materialize;
-            nz = 0.12 * (1.0 - materialize) + sp / depth_scale * materialize;
+            nx = dust_angle.cos() * (1.0 - materialize) + normal_x / normal_length * materialize;
+            ny = dust_angle.sin() * (1.0 - materialize) + normal_y / normal_length * materialize;
+            nz = 0.12 * (1.0 - materialize) + normal_z / normal_length * materialize;
             let core_size = if eye { 2.8 } else { 1.20 + h4 * 1.05 + head * 0.22 };
             size = (0.4 + h4) + (core_size - (0.4 + h4)) * materialize;
             kind = if materialize < 0.5 { 1.0 } else { 0.0 };
