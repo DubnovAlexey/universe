@@ -44,9 +44,11 @@ export function runLensDispersionChecks(check: (passed: boolean, description: st
         let arcs = 0;
         let maxShift = 0;
         let savedAlpha = 0.7;
-        const drawing = { globalAlpha: 0.7, fillStyle: '', save() { savedAlpha = this.globalAlpha; },
+        // Литерал без `as` сохраняет свой тип для `this` в методах; приведение — отдельной строкой.
+        const drawingFixture = { globalAlpha: 0.7, fillStyle: '', save() { savedAlpha = this.globalAlpha; },
             restore() { this.globalAlpha = savedAlpha; }, beginPath() {}, fill() {},
-            arc(x: number, y: number) { arcs++; maxShift = Math.max(maxShift, Math.hypot(x - 101, y - 2)); } } as unknown as CanvasRenderingContext2D;
+            arc(x: number, y: number) { arcs++; maxShift = Math.max(maxShift, Math.hypot(x - 101, y - 2)); } };
+        const drawing = drawingFixture as unknown as CanvasRenderingContext2D;
         const preview = new LensDispersionPass(true);
         for (let frame = 0; frame < 120; frame++) { arcs = 0; preview.render(drawing, particles, frame / 60, { ...state, isPaused: false, reducedMotion: false }); }
         check(arcs === 48 && maxShift <= 1.4 + 1e-9 && JSON.stringify(particles) === source && drawing.globalAlpha === 0.7,

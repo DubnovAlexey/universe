@@ -78,7 +78,10 @@ export function runAudioCommandChecks(check: (passed: boolean, description: stri
             Object.defineProperties(event, { target: { value: audioButton }, code: { value: 'KeyM' }, key: { value: 'm' } });
             handlers.get(type)?.forEach(handler => handler(event));
         }
-        check(audio.playCalls === 0 && engine.toggleFromUserCommand() && audio.playCalls === 1 && Boolean(audio.src),
+        // Счётчик читаем до команды отдельно: иначе TS сужает playCalls до 0 и сравнение с 1 не компилируется.
+        const playCallsBeforeCommand = audio.playCalls;
+        const firstCommandAccepted = engine.toggleFromUserCommand();
+        check(playCallsBeforeCommand === 0 && firstCommandAccepted && audio.playCalls === 1 && Boolean(audio.src),
             'AUDIO/M capture gestures do not race the explicit first command; that command requests playback once');
         const duplicate = new Event('pointerup');
         handlers.get('pointerup')?.forEach(handler => handler(duplicate));

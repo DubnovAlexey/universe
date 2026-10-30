@@ -369,6 +369,9 @@ export class AudioSyncEngine {
                     })
                     .catch(() => {
                         if (attempt !== this.playbackAttempt || !this.enabled) return;
+                        // После отказа (например, источник не загрузился) paused может остаться false;
+                        // без pause() следующий AUDIO уйдёт в ветку «уже играет» и не вызовет play().
+                        this.audioEl?.pause();
                         this.playbackPending = false;
                         this.isPlayingMp3 = false;
                         integrationRegistry.updateModuleStatus('web-audio', 'fallback');

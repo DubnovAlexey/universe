@@ -69,6 +69,10 @@ import { runParticleGlowAtlasChecks } from './particleGlowAtlas.test';
 import { runQualityGovernorChecks } from './qualityGovernor.test';
 import { runSceneExplanationFocusChecks } from './sceneExplanationFocus.test';
 import { runLensDispersionChecks } from './lensDispersion.test';
+import { runAudioCommandChecks } from './audioCommands.test';
+import { runLocaleResolutionChecks } from './localeResolution.test';
+import { runNodeCalloutChecks } from './nodeCallout.test';
+import { runPointerControlChecks } from './pointerControls.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -1017,10 +1021,14 @@ function runUniverseVerificationChecks(): VerificationSuiteResult {
     runQualityGovernorChecks(check);
     runSceneExplanationFocusChecks(check);
     runLensDispersionChecks(check);
+    runNodeCalloutChecks(check);
+    runPointerControlChecks(check);
+    runAudioCommandChecks(check);
     runGlyphFontBudgetChecks(check);
     setLocale('ru');
     runExplanationDialogChecks(check);
     runLocaleChecks(check);
+    runLocaleResolutionChecks(check);
 
     return {
         passed: passedChecks === totalChecks,
