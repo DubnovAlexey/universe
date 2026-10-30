@@ -2,7 +2,8 @@
 // ФАЙЛ: frontend/src/core/locale.ts
 // НАЗНАЧЕНИЕ: Общий язык интерфейса, подписки и переводы подписей без изменения физики.
 // РАЗДЕЛЫ: 1. Контракт; 2. Словарь UI; 3. Фазы и сообщения; 4. Выбор и подписки.
-// ФУНКЦИИ: getLocale, setLocale, subscribeLocale, translateUi, hasUiTranslation, translateLog.
+// ФУНКЦИИ: normalizeLocaleTag, resolveInitialLocale, readInitialLocale, getLocale,
+// setLocale, subscribeLocale, translateUi, hasUiTranslation, translateLog.
 // ============================================================================
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ
@@ -167,11 +168,44 @@ logParts.forEach((words) => add(words[0], ...words));
 // КОНЕЦ РАЗДЕЛА 3
 
 // НАЧАЛО РАЗДЕЛА 4. ПУБЛИЧНЫЙ ВЫБОР ЯЗЫКА
-let current: Locale = 'ru';
-try {
-    const saved = typeof window === 'undefined' ? null : window.localStorage?.getItem('universe-locale');
-    if (LOCALES.includes(saved as Locale)) current = saved as Locale;
-} catch { /* Ограниченное хранилище не мешает работе интерфейса. */ }
+// НАЧАЛО ФУНКЦИИ normalizeLocaleTag
+function normalizeLocaleTag(tag: string | null | undefined): Locale | undefined {
+    const match = /^([a-z]{2})(?:[-_][a-z0-9]{2,8})*$/i.exec(tag?.trim() ?? '');
+    const code = match?.[1].toLowerCase();
+    const normalized = code === 'iw' ? 'he' : code;
+    return LOCALES.includes(normalized as Locale) ? normalized as Locale : undefined;
+}
+// КОНЕЦ ФУНКЦИИ normalizeLocaleTag
+
+// НАЧАЛО ФУНКЦИИ resolveInitialLocale
+/** Явная ссылка важнее сохранённого выбора; региональный тег не меняет набор языков. */
+export function resolveInitialLocale(search: string, saved: string | null, languages: readonly string[]): Locale {
+    const fromUrl = normalizeLocaleTag(new URLSearchParams(search).get('lang'));
+    if (fromUrl) return fromUrl;
+    const fromStorage = normalizeLocaleTag(saved);
+    if (fromStorage) return fromStorage;
+    for (const tag of languages) {
+        const locale = normalizeLocaleTag(tag);
+        if (locale) return locale;
+    }
+    return 'en';
+}
+// КОНЕЦ ФУНКЦИИ resolveInitialLocale
+
+// НАЧАЛО ФУНКЦИИ readInitialLocale
+function readInitialLocale(): Locale {
+    if (typeof window === 'undefined') return 'ru';
+    let search = '', saved: string | null = null;
+    let languages: readonly string[] = [];
+    try { search = window.location?.search ?? ''; } catch { /* Закрытый адрес не мешает переводу. */ }
+    try { saved = window.localStorage?.getItem('universe-locale') ?? null; } catch { /* Выбор работает без хранения. */ }
+    try {
+        if (typeof navigator !== 'undefined') languages = navigator.languages?.length ? navigator.languages : [navigator.language];
+    } catch { /* Ограниченный navigator оставляет английский fallback. */ }
+    return resolveInitialLocale(search, saved, languages);
+}
+// КОНЕЦ ФУНКЦИИ readInitialLocale
+let current: Locale = readInitialLocale();
 const listeners = new Set<(locale: Locale) => void>();
 // НАЧАЛО ФУНКЦИИ getLocale
 export function getLocale(): Locale { return current; }

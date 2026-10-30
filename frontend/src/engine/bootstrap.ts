@@ -19,6 +19,7 @@ import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
 import { mountExplanationDialog } from '../layers/ExplanationDialog';
 import { bindHudDockLayout, syncHudDomWithState } from './hud/hudDomOrchestrator';
 import { bindUniverseKeyboardShortcuts } from './hud/keyboardShortcuts';
+import { bindUniversePointerControls } from './hud/pointerControls';
 import { mountLocaleControls } from './hud/localeController';
 
 // НАЧАЛО РАЗДЕЛА 1. АКТИВНЫЙ ЭКЗЕМПЛЯР
@@ -135,7 +136,7 @@ export function bootstrapUniverseV2(): void {
         universeStore.toggleAutoCycle();
     });
     document.getElementById('btn-toggle-audio')?.addEventListener('click', () => {
-        audioSync.toggleMute();
+        audioSync.toggleFromUserCommand();
     });
     document.getElementById('ui-audio-unlock-banner')?.addEventListener('click', () => {
         audioSync.startPlayback(true);
@@ -158,49 +159,12 @@ export function bootstrapUniverseV2(): void {
     window.addEventListener('resize', handleUniverseResize, { passive: true });
     resourceLedger.trackPageLifetimeAllocation('listeners', 1);
 
-    window.addEventListener(
-        'pointermove',
-        (e: PointerEvent): void => {
-            renderer.setPointerState(e.clientX, e.clientY, undefined, true);
-        },
-        { passive: true }
-    );
-    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
-
-    window.addEventListener(
-        'pointerdown',
-        (e: PointerEvent): void => {
-            const isUiClick = Boolean(
-                (e.target as HTMLElement | null)?.closest(
-                    '[data-ui-panel], [data-github-card], button, a'
-                )
-            );
-            audioSync.startPlayback();
-            if (!isUiClick) {
-                renderer.setPointerState(e.clientX, e.clientY, true, true);
-            }
-        },
-        { passive: true }
-    );
-    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
-
-    window.addEventListener(
-        'pointerup',
-        (e: PointerEvent): void => {
-            renderer.setPointerState(e.clientX, e.clientY, false, true);
-        },
-        { passive: true }
-    );
-    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
-
-    window.addEventListener(
-        'pointerleave',
-        (): void => {
-            renderer.setPointerState(-9999, -9999, false, false);
-        },
-        { passive: true }
-    );
-    resourceLedger.trackPageLifetimeAllocation('listeners', 1);
+    const pointerControls = bindUniversePointerControls(renderer, window, document.documentElement);
+    resourceLedger.trackPageLifetimeAllocation('listeners', pointerControls.listenerCount);
+    resourceLedger.registerPageDisposable(() => {
+        pointerControls.dispose();
+        resourceLedger.trackPageLifetimeRelease('listeners', pointerControls.listenerCount);
+    });
 
     // --- НАЧАЛО ФУНКЦИИ handleVisibilityChange (bootstrapUniverseV2) ---
     const handleVisibilityChange = (): void => {

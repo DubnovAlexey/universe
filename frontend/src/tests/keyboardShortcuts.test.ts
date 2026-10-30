@@ -51,7 +51,7 @@ export function runKeyboardShortcutChecks(check: (passed: boolean, description: 
         { object: universeStore, name: 'toggleLayer', spy: (layer: unknown): void => { calls.push(`layer:${layer}`); } },
         { object: universeStore, name: 'togglePause', spy: (): void => { calls.push('pause'); } },
         { object: universeStore, name: 'triggerUniverseRestart', spy: (): void => { calls.push('restart'); } },
-        { object: audioSync, name: 'toggleMute', spy: (): boolean => { calls.push('mute'); return true; } },
+        { object: audioSync, name: 'toggleFromUserCommand', spy: (): boolean => { calls.push('mute'); return true; } },
     ].map((action) => ({ ...action, descriptor: Object.getOwnPropertyDescriptor(action.object, action.name) }));
     let dispose: (() => void) | null = null;
 

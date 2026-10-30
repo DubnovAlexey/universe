@@ -8,9 +8,9 @@
 //   1. Зависимости, константы и контракты данных.
 //   2. Функции модуля: smoothAudioEnvelope.
 //   3. AudioSyncEngine: constructor, configureIosAudioSession, resolveAudioUrl, prepareAudioElement,
-//      trySilentAutoplayWithoutWarning, bindAutoStartListeners, removeUnlockListeners, onFirstUserGesture,
+//      bindAutoStartListeners, removeUnlockListeners, onFirstUserGesture, isExplicitAudioCommand,
 //      ensureAnalyserGraph, startPlayback, setEnabled, isEnabled, toggleMute, triggerShockwavePulse,
-//      transitionToPhase, updateRealtimeModulation, getSnapshot.
+//      toggleFromUserCommand, transitionToPhase, updateRealtimeModulation, getSnapshot.
 // ============================================================================
 
 
@@ -87,6 +87,8 @@ export class AudioSyncEngine {
 
     private enabled = true;
     private isPlayingMp3 = false;
+    private playbackPending = false;
+    private playbackAttempt = 0;
     private unlockBound = false;
     private removeUnlockListenersFn: (() => void) | null = null;
     private isMobileWebKit = false;
@@ -163,9 +165,11 @@ export class AudioSyncEngine {
         integrationRegistry.updateModuleStatus('web-audio', 'loading');
 
         try {
-            const el = new Audio(this.resolveAudioUrl());
+            // Источник назначается только в пользовательском жесте: даже заблокированный
+            // autoplay с src способен начать загрузку до отклонения play().
+            const el = new Audio();
             el.loop = true;
-            el.preload = 'auto';
+            el.preload = 'none';
             el.setAttribute('playsinline', 'true');
             el.setAttribute('webkit-playsinline', 'true');
             el.volume = this.TARGET_VOLUME;
@@ -189,7 +193,9 @@ export class AudioSyncEngine {
             });
 
             el.addEventListener('playing', () => {
+                if (!this.enabled) { el.pause(); return; }
                 this.isPlayingMp3 = true;
+                this.playbackPending = false;
                 this.removeUnlockListenersFn?.();
                 integrationRegistry.updateModuleStatus('web-audio', 'ready');
                 universeStore.setAudioEnabled(true, 'PLAYING_MP3');
@@ -205,7 +211,6 @@ export class AudioSyncEngine {
                 }
             });
 
-            el.load();
             this.audioEl = el;
         } catch {
             this.audioEl = null;
@@ -213,31 +218,6 @@ export class AudioSyncEngine {
         }
     }
     // --- КОНЕЦ ФУНКЦИИ prepareAudioElement (AudioSyncEngine) ---
-
-    // --- НАЧАЛО ФУНКЦИИ trySilentAutoplayWithoutWarning (AudioSyncEngine) ---
-    private trySilentAutoplayWithoutWarning(): void {
-        if (!this.audioEl || !this.enabled || this.isPlayingMp3) return;
-
-        const playPromise = this.audioEl.play();
-        if (playPromise !== undefined) {
-            playPromise
-                .then(() => {
-                    this.isPlayingMp3 = true;
-                    this.removeUnlockListenersFn?.();
-                    if (!this.isMobileWebKit) {
-                        this.ensureAnalyserGraph();
-                    }
-                    integrationRegistry.updateModuleStatus('web-audio', 'ready');
-                    universeStore.setAudioEnabled(true, 'PLAYING_MP3');
-                })
-                .catch(() => {
-                    this.isPlayingMp3 = false;
-                    integrationRegistry.updateModuleStatus('web-audio', 'fallback');
-                    universeStore.setAudioEnabled(true, 'AWAITING_GESTURE');
-                });
-        }
-    }
-    // --- КОНЕЦ ФУНКЦИИ trySilentAutoplayWithoutWarning (AudioSyncEngine) ---
 
     // --- НАЧАЛО ФУНКЦИИ bindAutoStartListeners (AudioSyncEngine) ---
     private bindAutoStartListeners(): void {
@@ -264,8 +244,10 @@ export class AudioSyncEngine {
         // --- КОНЕЦ ФУНКЦИИ removeUnlockListeners (AudioSyncEngine) ---
 
         // --- НАЧАЛО ФУНКЦИИ onFirstUserGesture (AudioSyncEngine) ---
-        const onFirstUserGesture = (): void => {
+        const onFirstUserGesture = (event: Event): void => {
             if (!this.enabled) return;
+            // AUDIO/M обрабатываются одной явной командой, а не связкой unlock→mute.
+            if (AudioSyncEngine.isExplicitAudioCommand(event)) return;
             if (!this.isPlayingMp3) {
                 this.startPlayback(true);
             } else {
@@ -283,9 +265,6 @@ export class AudioSyncEngine {
             });
         }
 
-        setTimeout(() => {
-            this.trySilentAutoplayWithoutWarning();
-        }, 40);
     }
     // --- КОНЕЦ ФУНКЦИИ bindAutoStartListeners (AudioSyncEngine) ---
 
@@ -335,12 +314,7 @@ export class AudioSyncEngine {
         if (!this.audioEl) {
             this.prepareAudioElement();
         }
-        if (!this.audioEl || !this.enabled) return;
-
-        if (!fromUserGesture && !this.ctx) {
-            this.trySilentAutoplayWithoutWarning();
-            return;
-        }
+        if (!this.audioEl || !this.enabled || !fromUserGesture || this.playbackPending) return;
 
         if (!this.isMobileWebKit) {
             this.ensureAnalyserGraph();
@@ -361,6 +335,7 @@ export class AudioSyncEngine {
             }
         }
 
+        if (!this.audioEl.getAttribute('src')) this.audioEl.src = this.resolveAudioUrl();
         this.audioEl.muted = false;
         this.audioEl.volume = this.ctx ? 1.0 : this.TARGET_VOLUME;
 
@@ -371,22 +346,37 @@ export class AudioSyncEngine {
         }
 
         if (this.audioEl.paused) {
-            const playPromise = this.audioEl.play();
+            const attempt = ++this.playbackAttempt;
+            this.playbackPending = true;
+            let playPromise: Promise<void> | undefined;
+            try { playPromise = this.audioEl.play(); }
+            catch {
+                this.playbackPending = false;
+                this.isPlayingMp3 = false;
+                integrationRegistry.updateModuleStatus('web-audio', 'fallback');
+                universeStore.setAudioEnabled(true, 'AWAITING_GESTURE');
+                return;
+            }
             if (playPromise !== undefined) {
                 playPromise
                     .then(() => {
+                        if (attempt !== this.playbackAttempt || !this.enabled) return;
+                        this.playbackPending = false;
                         this.isPlayingMp3 = true;
                         this.removeUnlockListenersFn?.();
                         integrationRegistry.updateModuleStatus('web-audio', 'ready');
                         universeStore.setAudioEnabled(true, 'PLAYING_MP3');
                     })
                     .catch(() => {
+                        if (attempt !== this.playbackAttempt || !this.enabled) return;
+                        this.playbackPending = false;
                         this.isPlayingMp3 = false;
                         integrationRegistry.updateModuleStatus('web-audio', 'fallback');
                         universeStore.setAudioEnabled(true, 'AWAITING_GESTURE');
                     });
-            }
+            } else this.playbackPending = false;
         } else {
+            this.playbackPending = false;
             this.isPlayingMp3 = true;
             this.removeUnlockListenersFn?.();
             integrationRegistry.updateModuleStatus('web-audio', 'ready');
@@ -401,6 +391,8 @@ export class AudioSyncEngine {
         if (this.enabled) {
             this.startPlayback(true);
         } else {
+            this.playbackAttempt++;
+            this.playbackPending = false;
             if (this.audioEl && !this.audioEl.paused) {
                 this.audioEl.pause();
             }
@@ -424,6 +416,28 @@ export class AudioSyncEngine {
         return this.setEnabled(nextEnabled);
     }
     // --- КОНЕЦ ФУНКЦИИ toggleMute (AudioSyncEngine) ---
+
+    // --- НАЧАЛО ФУНКЦИИ isExplicitAudioCommand (AudioSyncEngine) ---
+    /** Команда звука не должна одновременно запускать общий обработчик разблокировки. */
+    public static isExplicitAudioCommand(event: Event): boolean {
+        if (event.type === 'keydown') {
+            const keyboard = event as KeyboardEvent;
+            return keyboard.code === 'KeyM' || (!keyboard.code && keyboard.key?.toLowerCase() === 'm');
+        }
+        return Boolean((event.target as Element | null)?.closest?.('#btn-toggle-audio'));
+    }
+    // --- КОНЕЦ ФУНКЦИИ isExplicitAudioCommand (AudioSyncEngine) ---
+
+    // --- НАЧАЛО ФУНКЦИИ toggleFromUserCommand (AudioSyncEngine) ---
+    /** Первая команда при ожидании жеста запускает трек; повторная команда выключает его. */
+    public toggleFromUserCommand(): boolean {
+        if (this.enabled && !this.isPlayingMp3 && !this.playbackPending) {
+            this.startPlayback(true);
+            return true;
+        }
+        return this.toggleMute();
+    }
+    // --- КОНЕЦ ФУНКЦИИ toggleFromUserCommand (AudioSyncEngine) ---
 
     // --- НАЧАЛО ФУНКЦИИ triggerShockwavePulse (AudioSyncEngine) ---
     public triggerShockwavePulse(

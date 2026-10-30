@@ -43,11 +43,13 @@ export function runLensDispersionChecks(check: (passed: boolean, description: st
         const source = JSON.stringify(particles);
         let arcs = 0;
         let maxShift = 0;
-        const drawing = { globalAlpha: 0.7, fillStyle: '', save() {}, restore() {}, beginPath() {}, fill() {},
+        let savedAlpha = 0.7;
+        const drawing = { globalAlpha: 0.7, fillStyle: '', save() { savedAlpha = this.globalAlpha; },
+            restore() { this.globalAlpha = savedAlpha; }, beginPath() {}, fill() {},
             arc(x: number, y: number) { arcs++; maxShift = Math.max(maxShift, Math.hypot(x - 101, y - 2)); } } as unknown as CanvasRenderingContext2D;
         const preview = new LensDispersionPass(true);
         for (let frame = 0; frame < 120; frame++) { arcs = 0; preview.render(drawing, particles, frame / 60, { ...state, isPaused: false, reducedMotion: false }); }
-        check(arcs === 48 && maxShift <= 1.4 && JSON.stringify(particles) === source,
+        check(arcs === 48 && maxShift <= 1.4 + 1e-9 && JSON.stringify(particles) === source && drawing.globalAlpha === 0.7,
             'Lens sketch is bounded to24 pairs within1.4px of the existing refracted coordinates and never changes source particles');
     } finally {
         if (savedState) Object.defineProperty(stressStore, 'getState', savedState); else delete (stressStore as unknown as Record<string, unknown>).getState;

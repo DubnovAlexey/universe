@@ -129,6 +129,18 @@
     height: 100%;
     width: 100%;
 }
+
+/* Резерв для очень короткого desktop: реестр не обрезается внешним контуром.
+   На обычных высотах содержимое помещается и дополнительного скроллбара нет. */
+@media (min-width: 921px) {
+    .terminal-inspector-v2 .waterfall-panel-content {
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        pointer-events: auto;
+    }
+}
 /* КОНЕЦ РАЗДЕЛА 2. КОНТУРЫ, ПОТОКИ, ПАДАЮЩИЕ СИМВОЛЫ И СОДЕРЖИМОЕ */
 
 /* НАЧАЛО РАЗДЕЛА 3. ЗАГОЛОВКИ И ПОКАЗАТЕЛИ ТЕЛЕМЕТРИИ */

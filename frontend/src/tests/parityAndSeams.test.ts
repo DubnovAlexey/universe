@@ -65,6 +65,10 @@ import { runGlyphFontBudgetChecks } from './glyphFontBudget.test';
 import { runExplanationDialogChecks } from './explanationDialog.test';
 import { runLocaleChecks } from './locale.test';
 import { getLocale, setLocale } from '../core/locale';
+import { runParticleGlowAtlasChecks } from './particleGlowAtlas.test';
+import { runQualityGovernorChecks } from './qualityGovernor.test';
+import { runSceneExplanationFocusChecks } from './sceneExplanationFocus.test';
+import { runLensDispersionChecks } from './lensDispersion.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -1009,6 +1013,10 @@ function runUniverseVerificationChecks(): VerificationSuiteResult {
     runOuroborosEpisodeChecks(check);
     runOuroborosFieldMorphChecks(check);
     runFrameDiagnosticsChecks(check);
+    runParticleGlowAtlasChecks(check);
+    runQualityGovernorChecks(check);
+    runSceneExplanationFocusChecks(check);
+    runLensDispersionChecks(check);
     runGlyphFontBudgetChecks(check);
     setLocale('ru');
     runExplanationDialogChecks(check);

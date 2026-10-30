@@ -41,7 +41,7 @@ function handleUniverseShortcut(event: KeyboardEvent): void {
     } else {
         const code = event.code || `Key${event.key.toUpperCase()}`;
         if (code === 'KeyP') universeStore.togglePause();
-        else if (code === 'KeyM') audioSync.toggleMute();
+        else if (code === 'KeyM') audioSync.toggleFromUserCommand();
         else if (code === 'KeyR' && event.shiftKey) universeStore.triggerUniverseRestart();
         else return;
     }

@@ -21,6 +21,10 @@ import { BackgroundFields } from './backgroundFields';
 import { OuroborosEffect } from './ouroboros/OuroborosEffect';
 import { getVisualSignals } from '../core/visualSignals';
 import { FrameDiagnostics, type FrameWorkBreakdown } from '../core/frameDiagnostics';
+import { sceneExplanationFocus } from '../core/sceneExplanationFocus';
+import { renderExplanationFocusPass } from './passes/explanationFocusPass';
+import { LensDispersionPass } from './passes/lensDispersionPass';
+import { prepareParticleGlowAtlas, disposeParticleGlowAtlas, getParticleGlowAtlasStats } from './rendering/particleGlowAtlas';
 import {
     renderBreathingLightEchoRings, renderSpiralDustAndCanyons,
     renderCurvedFieldSignals, renderCorticalHemispheresAndKeplerRings,
@@ -37,6 +41,8 @@ export class UniverseRenderer {
     private readonly simulation: VoidPhaseSimulation;
     private readonly ouroboros: OuroborosEffect;
     private readonly frameDiagnostics: FrameDiagnostics;
+    private readonly lensDispersion = new LensDispersionPass();
+    private lastGlowDiagnosticsMs = -Infinity;
 
     private width = 1920;
     private height = 1080;
@@ -53,7 +59,7 @@ export class UniverseRenderer {
     private consecutiveFrameErrors = 0;
 
     // --- НАЧАЛО ФУНКЦИИ constructor (UniverseRenderer) ---
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(private readonly canvas: HTMLCanvasElement) {
         this.pipeline = new RenderPipeline(canvas);
         const caps = this.pipeline.getCapabilities();
         this.width = caps.viewportWidth;
@@ -71,6 +77,13 @@ export class UniverseRenderer {
         this.initProceduralBackgroundFields(initialState.seed);
         this.ouroboros = new OuroborosEffect(canvas);
         this.frameDiagnostics = new FrameDiagnostics(canvas);
+        // Один bounded-атлас создаётся до первого RAF и переживает смену фаз/циклов.
+        const context = this.pipeline.getContext();
+        prepareParticleGlowAtlas(context);
+        resourceLedger.registerPageDisposable(() => {
+            disposeParticleGlowAtlas(context);
+            sceneExplanationFocus.reset();
+        });
     }
     // --- КОНЕЦ ФУНКЦИИ constructor (UniverseRenderer) ---
 
@@ -361,6 +374,7 @@ export class UniverseRenderer {
         }
 
         // 9. Отрисовка частиц, сом нейронов и боке переднего плана по эшелонам глубины Z0..Z3
+        this.lensDispersion.render(ctx, particles, simTimeSec, state);
         renderMultiEchelonParticles(
             ctx,
             particles,
@@ -369,6 +383,10 @@ export class UniverseRenderer {
             state.layers.layer5_truthXRayMode,
             audioSnap
         );
+
+        // Акцент использует только существующие координаты и не раскрывает скрытый граф.
+        renderExplanationFocusPass(ctx, particles, edges, getVisualSignals(), sceneExplanationFocus.getSnapshot(),
+            state.layers.layer3_topologyGraph || state.layers.layer5_truthXRayMode);
 
         ctx.restore();
 
@@ -538,6 +556,7 @@ export class UniverseRenderer {
             }
 
             const visualTimings = publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState(), !!profileWork);
+            sceneExplanationFocus.advance(getVisualSignals());
             if (profileWork) profileWork.visualSignals = visualTimings;
             if (profileWork) {
                 const endMs = performance.now();
@@ -566,6 +585,10 @@ export class UniverseRenderer {
             if (this.frameDiagnostics.enabled) {
                 this.frameDiagnostics.record(profileGapMs, performance.now() - profileStartMs,
                     universeStore.getState(), nowMs, profileWork);
+                if (nowMs - this.lastGlowDiagnosticsMs >= 500) {
+                    this.lastGlowDiagnosticsMs = nowMs;
+                    this.canvas.dataset.glowProfile = JSON.stringify(getParticleGlowAtlasStats(this.pipeline.getContext()));
+                }
             }
             if (this.isRunning) {
                 this.rafId = requestAnimationFrame(this.loop);
