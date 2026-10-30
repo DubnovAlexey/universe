@@ -16,6 +16,7 @@ import { calmGlyphHover } from '../core/glyphHover';
 import { setSolidButtonBackLabel, setSolidButtonLabel } from '../core/buttonSolid';
 import { getLocale, subscribeLocale, translateUi } from '../core/locale';
 import { resourceLedger } from '../core/resourceLedger';
+import { sceneExplanationFocus } from '../core/sceneExplanationFocus';
 import { getVisualSignals } from '../core/visualSignals';
 import { buildLivingBreachContourPath, waterfallAnimator } from './Layer2_Metrics';
 import { mountExplanationButtonMotion, type ExplanationButtonMotionBinding } from './explanationButtonMotion';
@@ -278,6 +279,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         syncLocaleLabels();
         const localizedTopics = new Map(getExplainerTopics().map((item) => [item.id, item]));
         currentTopicId = topic.id;
+        sceneExplanationFocus.selectTopic(topic.id);
         dialog.dataset.topic = topic.id;
         dialog.dataset.mode = mode;
         title.textContent = topic.title;
@@ -399,6 +401,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
 
     // --- НАЧАЛО ФУНКЦИИ restoreReadingState ---
     function restoreReadingState(): void {
+        sceneExplanationFocus.selectTopic(null);
         contourResizeObserver?.disconnect();
         contourResizeObserver = null;
         contourSize = '';

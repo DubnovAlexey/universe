@@ -3,13 +3,14 @@
 // ФАЙЛ: frontend/src/core/qualityGovernor.ts
 // НАЗНАЧЕНИЕ: Автоматический регулятор качества QualityGovernor с гистерезисом (MASTER 00)
 // ЗАДАЧИ ФАЙЛА:
-// 1. Измерять экспоненциальное скользящее среднее (EMA) времени кадра и перцентиль p95.
+// 1. Измерять ограниченное EMA для управления и фактический p95 последних 45 кадров.
 // 2. Плавно переключать профиль HIGH / MEDIUM / LOW с гистерезисом (без дребезга).
 // 3. Возвращать параметры масштабирования (число частиц, октавы FBM, DPR-кэп).
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. QualityGovernor: constructor, feedFrameTime, getProfile, getFrameP95Ms, setTierManual.
+//   2. QualityGovernor: constructor, feedFrameTime, recordFrameSample, getProfile,
+//      getFrameP95Ms, setTierManual.
 // ============================================================================
 
 
@@ -59,32 +60,34 @@ export class QualityGovernor {
     private currentTier: QualityTier = 'HIGH';
     private lockedByUser = false;
     private emaFrameMs = 16.0;
-    private frameWindow: number[] = [];
+    private readonly frameWindow = new Float64Array(45);
+    private readonly sortedFrameWindow = new Float64Array(45);
+    private frameWindowCount = 0;
+    private frameWindowCursor = 0;
+    private lastSampleTimestampMs = -Infinity;
     private lastSwitchTimestampMs = 0;
     private readonly cooldownMs = 3500; // Гистерезис 3.5 секунды между переключениями ступеней
 
     // --- НАЧАЛО ФУНКЦИИ constructor (QualityGovernor) ---
-    constructor() {
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            const q = params.get('quality')?.toUpperCase();
-            if (q === 'HIGH' || q === 'MEDIUM' || q === 'LOW') {
-                this.currentTier = q;
-                this.lockedByUser = true;
-            }
+    constructor(search = typeof window !== 'undefined' ? window.location?.search ?? '' : '') {
+        const params = new URLSearchParams(search);
+        const q = params.get('quality')?.toUpperCase();
+        if (q === 'HIGH' || q === 'MEDIUM' || q === 'LOW') {
+            this.currentTier = q;
+            this.lockedByUser = true;
         }
     }
     // --- КОНЕЦ ФУНКЦИИ constructor (QualityGovernor) ---
 
     // --- НАЧАЛО ФУНКЦИИ feedFrameTime (QualityGovernor) ---
     public feedFrameTime(frameTimeMs: number, nowMs: number): QualityTier {
+        // Ошибочный внешний образец не должен навсегда отравлять EMA или часы гистерезиса.
+        if (!Number.isFinite(frameTimeMs) || frameTimeMs < 0 || !Number.isFinite(nowMs) ||
+            nowMs < 0 || nowMs < this.lastSampleTimestampMs) return this.currentTier;
+        this.lastSampleTimestampMs = nowMs;
         const clamped = Math.max(1, Math.min(100, frameTimeMs));
         this.emaFrameMs = this.emaFrameMs * 0.92 + clamped * 0.08;
-
-        this.frameWindow.push(clamped);
-        if (this.frameWindow.length > 45) {
-            this.frameWindow.shift();
-        }
+        this.recordFrameSample(Math.max(1, frameTimeMs));
 
         if (this.lockedByUser || nowMs - this.lastSwitchTimestampMs < this.cooldownMs) {
             return this.currentTier;
@@ -101,7 +104,7 @@ export class QualityGovernor {
             }
         }
         // Повышение ступени с гистерезисом при стабильном запасе (< 14.2 мс)
-        else if (this.emaFrameMs < 14.2 && this.frameWindow.length >= 40) {
+        else if (this.emaFrameMs < 14.2 && this.frameWindowCount >= 40) {
             if (this.currentTier === 'LOW') {
                 this.currentTier = 'MEDIUM';
                 this.lastSwitchTimestampMs = nowMs;
@@ -115,6 +118,29 @@ export class QualityGovernor {
     }
     // --- КОНЕЦ ФУНКЦИИ feedFrameTime (QualityGovernor) ---
 
+    // --- НАЧАЛО ФУНКЦИИ recordFrameSample (QualityGovernor) ---
+    /** Точное скользящее окно: O(45) сдвиги без сортировки и выделения массива на каждом кадре. */
+    private recordFrameSample(frameTimeMs: number): void {
+        let count = this.frameWindowCount;
+        if (count === this.frameWindow.length) {
+            const expired = this.frameWindow[this.frameWindowCursor]!;
+            let index = 0;
+            while (index < count && this.sortedFrameWindow[index] !== expired) index++;
+            for (; index + 1 < count; index++) this.sortedFrameWindow[index] = this.sortedFrameWindow[index + 1]!;
+            count--;
+        }
+        let insert = count;
+        while (insert > 0 && this.sortedFrameWindow[insert - 1]! > frameTimeMs) {
+            this.sortedFrameWindow[insert] = this.sortedFrameWindow[insert - 1]!;
+            insert--;
+        }
+        this.sortedFrameWindow[insert] = frameTimeMs;
+        this.frameWindow[this.frameWindowCursor] = frameTimeMs;
+        this.frameWindowCursor = (this.frameWindowCursor + 1) % this.frameWindow.length;
+        this.frameWindowCount = count + 1;
+    }
+    // --- КОНЕЦ ФУНКЦИИ recordFrameSample (QualityGovernor) ---
+
     // --- НАЧАЛО ФУНКЦИИ getProfile (QualityGovernor) ---
     public getProfile(): Readonly<QualityProfileConfig> {
         return QUALITY_PROFILES[this.currentTier];
@@ -123,10 +149,10 @@ export class QualityGovernor {
 
     // --- НАЧАЛО ФУНКЦИИ getFrameP95Ms (QualityGovernor) ---
     public getFrameP95Ms(): number {
-        if (this.frameWindow.length === 0) return 16.7;
-        const sorted = [...this.frameWindow].sort((a, b) => a - b);
-        const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
-        return Number(sorted[idx].toFixed(1));
+        if (this.frameWindowCount === 0) return 16.7;
+        const index = Math.min(this.frameWindowCount - 1, Math.floor(this.frameWindowCount * 0.95));
+        // Статистика сохраняет настоящий длинный интервал; EMA выше ограничена только для управления.
+        return Math.round(this.sortedFrameWindow[index]! * 10) / 10;
     }
     // --- КОНЕЦ ФУНКЦИИ getFrameP95Ms (QualityGovernor) ---
 

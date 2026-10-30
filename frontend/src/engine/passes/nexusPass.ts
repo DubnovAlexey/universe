@@ -14,6 +14,7 @@ import { NexusGraphEngine } from '../../bridge/simulationWorker';
 import type { AudioModulationSnapshot } from '../../utils/audioSync';
 import { TAU, clamp } from '../math/noise2d';
 import { renderBorderlessNodeCallout } from './nodeCallout';
+import { drawParticleGlow } from '../rendering/particleGlowAtlas';
 
 // НАЧАЛО РАЗДЕЛА 1. КРИВЫЕ ГРАФА И КОМЕТЫ ИМПУЛЬСОВ
 // НАЧАЛО ФУНКЦИИ renderTopologyEdgesAndPulses
@@ -208,20 +209,16 @@ export function renderMultiEchelonParticles(
 
         if (p.depthTier === 'FOREGROUND') {
             const bokehR = radius * 3.4;
-            const bokehGrad = ctx.createRadialGradient(sx, sy, 0.5, sx, sy, bokehR);
-            bokehGrad.addColorStop(
-                0.0,
-                RenderPipeline.hexToRgba('#7dd3fc', alpha * 0.26)
-            );
-            bokehGrad.addColorStop(
-                0.6,
-                RenderPipeline.hexToRgba('#6366f1', alpha * 0.09)
-            );
-            bokehGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
-            ctx.fillStyle = bokehGrad;
-            ctx.beginPath();
-            ctx.arc(sx, sy, bokehR, 0, TAU);
-            ctx.fill();
+            if (!drawParticleGlow(ctx, 'bokeh', sx, sy, bokehR, alpha)) {
+                const bokehGrad = ctx.createRadialGradient(sx, sy, 0.5, sx, sy, bokehR);
+                bokehGrad.addColorStop(0.0, RenderPipeline.hexToRgba('#7dd3fc', alpha * 0.26));
+                bokehGrad.addColorStop(0.6, RenderPipeline.hexToRgba('#6366f1', alpha * 0.09));
+                bokehGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
+                ctx.fillStyle = bokehGrad;
+                ctx.beginPath();
+                ctx.arc(sx, sy, bokehR, 0, TAU);
+                ctx.fill();
+            }
             continue;
         }
 
@@ -238,19 +235,17 @@ export function renderMultiEchelonParticles(
                 : p.clusterId % 3 === 0
                     ? '#7dd3fc'
                     : '#6366f1';
-            const haloGrad = ctx.createRadialGradient(sx, sy, 0.4, sx, sy, haloR);
-            haloGrad.addColorStop(
-                0.0,
-                RenderPipeline.hexToRgba(
-                    haloColor,
-                    alpha * (isExcitedSoma ? 0.62 : 0.36)
-                )
-            );
-            haloGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
-            ctx.fillStyle = haloGrad;
-            ctx.beginPath();
-            ctx.arc(sx, sy, haloR, 0, TAU);
-            ctx.fill();
+            const glowKind = isExcitedSoma ? 'halo-ice' : p.clusterId % 3 === 0 ? 'halo-blue' : 'halo-indigo';
+            const glowAlpha = alpha * (isExcitedSoma ? 0.62 : 0.36);
+            if (!drawParticleGlow(ctx, glowKind, sx, sy, haloR, glowAlpha)) {
+                const haloGrad = ctx.createRadialGradient(sx, sy, 0.4, sx, sy, haloR);
+                haloGrad.addColorStop(0.0, RenderPipeline.hexToRgba(haloColor, glowAlpha));
+                haloGrad.addColorStop(1.0, 'rgba(2, 3, 8, 0.0)');
+                ctx.fillStyle = haloGrad;
+                ctx.beginPath();
+                ctx.arc(sx, sy, haloR, 0, TAU);
+                ctx.fill();
+            }
         }
 
         ctx.fillStyle = isExcitedSoma
