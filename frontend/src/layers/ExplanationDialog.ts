@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/layers/ExplanationDialog.ts
 // НАЗНАЧЕНИЕ: Общее доступное окно объяснений сцены и терминов финальной карточки.
 // РАЗДЕЛЫ: 1. Контракт и безопасные DOM-узлы; 2. Содержимое; 3. Жизненный цикл окна.
-// ФУНКЦИИ: element, setExplanationButtonText, setExplanationButtonBackText, createExplanationContour, appendMath, canRestoreFocus, mountExplanationDialog,
+// ФУНКЦИИ: element, renderSoundtrackCredit, setExplanationButtonText, setExplanationButtonBackText, createExplanationContour, appendMath, canRestoreFocus, mountExplanationDialog,
 // syncLocaleLabels, revealTopicInNavigation, renderTopic, revealIntroduction,
 // resizeExplanationContour, observeExplanationContour, restoreReadingState, close, open, handleClick, guardKeyboard,
 // outsidePanel, handlePointerDown, handlePointerUp, handlePointerCancel,
@@ -21,6 +21,7 @@ import { buildLivingBreachContourPath, waterfallAnimator } from './Layer2_Metric
 import { mountExplanationButtonMotion, type ExplanationButtonMotionBinding } from './explanationButtonMotion';
 import { startExplanationTextReveal } from './explanationTextReveal';
 import { EXPLANATION_ASSEMBLY_MS, playExplanationTrail } from './explanationTrail';
+import { SOUNDTRACK_CREDIT } from '../utils/audioSync';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И DOM-УЗЛЫ
 export interface ExplanationDialogBinding {
@@ -45,6 +46,27 @@ function element<K extends keyof HTMLElementTagNameMap>(
     return node;
 }
 // --- КОНЕЦ ФУНКЦИИ element ---
+
+// --- НАЧАЛО ФУНКЦИИ renderSoundtrackCredit ---
+/** Закрытая по умолчанию карточка сохраняет основной экран свободным. */
+function renderSoundtrackCredit(): HTMLDetailsElement {
+    const details = element('details', 'explanation-soundtrack');
+    details.append(element('summary', '', translateUi('О музыке')));
+    const list = element('dl', '');
+    const entries = [
+        ['Композиция', SOUNDTRACK_CREDIT.title],
+        ['Исполнитель', SOUNDTRACK_CREDIT.artist],
+        ['Альбом', SOUNDTRACK_CREDIT.album],
+    ] as const;
+    for (const [label, value] of entries) {
+        const field = element('dd', '', value);
+        field.dir = 'ltr';
+        list.append(element('dt', '', translateUi(label)), field);
+    }
+    details.append(list);
+    return details;
+}
+// --- КОНЕЦ ФУНКЦИИ renderSoundtrackCredit ---
 
 // --- НАЧАЛО ФУНКЦИИ setExplanationButtonText ---
 /** Перевод меняет подписи существующих граней, сохраняя кнопку, фокус и её объёмное тело. */
@@ -80,6 +102,29 @@ function createExplanationContour(): SVGSVGElement {
     return svg;
 }
 // --- КОНЕЦ ФУНКЦИИ createExplanationContour ---
+
+// --- НАЧАЛО ФУНКЦИИ createModeDivider ---
+/** Общий каскад двигает разделитель теми же часами, что и линии телеметрии. */
+function createModeDivider(): SVGSVGElement {
+    const namespace = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(namespace, 'svg');
+    svg.setAttribute('class', 'explanation-mode-divider');
+    svg.setAttribute('viewBox', '0 0 418 12');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(namespace, 'path');
+    path.setAttribute('data-breach-wave-line', 'true');
+    path.setAttribute('data-wave-y', '6');
+    path.setAttribute('data-wave-amp', '1.6');
+    path.setAttribute('d', 'M 12 6 L 406 6');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'rgba(125, 211, 252, 0.65)');
+    path.setAttribute('stroke-width', '1.1');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(path);
+    return svg;
+}
+// --- КОНЕЦ ФУНКЦИИ createModeDivider ---
 
 // --- НАЧАЛО ФУНКЦИИ appendMath ---
 /** Разбираются только константы каталога; текст формулы остаётся видимым и доступным. */
@@ -161,7 +206,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     navigation.setAttribute('aria-label', translateUi('Темы объяснения'));
     const content = element('div', 'explanation-content');
     const sceneNote = element('p', 'explanation-pause-note', translateUi('Наблюдайте за сценой и управляйте звуком, пока изучаете объяснения.'));
-    panel.append(header, summary, controls, navigation, content, sceneNote);
+    panel.append(header, summary, controls, createModeDivider(), navigation, content, sceneNote);
     dialog.append(symbolAnchor, panel);
     document.body.append(dialog);
 
@@ -265,6 +310,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         intuition.append(element('h3', '', translateUi('Простая идея')), intuitionParagraph);
         revealTargets = [summary, experienceParagraph, intuitionParagraph];
         const sections: HTMLElement[] = [experience, intuition];
+        if (topic.id === EXPLAINER_OVERVIEW_ID) sections.push(renderSoundtrackCredit());
 
         if (mode === 'expert') {
             const technical = element('section', 'explanation-section');

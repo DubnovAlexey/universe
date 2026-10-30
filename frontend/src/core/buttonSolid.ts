@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/core/buttonSolid.ts
 // НАЗНАЧЕНИЕ: CSS-кубоиды с двумя читаемыми гранями внутри семантических элементов HUD.
 // РАЗДЕЛЫ: 1. Контракты и исходный DOM; 2. Грани и размеры; 3. Пакетный жизненный цикл.
-// ФУНКЦИИ: cloneMeasuringNode, makeSpan, copySolidLabels, measureSolid, setSolidButtonLabel,
+// ФУНКЦИИ: cloneMeasuringNode, makeSpan, setSolidCaption, copySolidLabels, measureSolid, setSolidButtonLabel,
 //          setSolidButtonBackLabel;
 //          ButtonSolidManager: constructor, mount, dispose.
 // Размеры берутся из layout box; измеритель не зависит от вращения тела.
@@ -63,6 +63,27 @@ function makeSpan(host: HTMLElement, className: string): HTMLSpanElement {
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. ШЕСТЬ ГРАНЕЙ, ПОДПИСИ И LAYOUT-РАЗМЕРЫ
+// НАЧАЛО ФУНКЦИИ setSolidCaption
+/** Число и имя фазы сохраняют отдельные строки на обеих гранях после любого перевода. */
+function setSolidCaption(host: HTMLElement, target: HTMLElement, text: string): void {
+    const phase = host.matches('.phase-pill') ? /^(0[1-5]\.)(.+)$/u.exec(text) : null;
+    if (!phase) {
+        if (target.textContent !== text) target.textContent = text;
+        return;
+    }
+    const children = Array.from(target.childNodes);
+    let number = children.find((node) => node.nodeType === 1 && (node as HTMLElement).className === 'phase-number') as HTMLElement | undefined;
+    let name = children.find((node) => node.nodeType === 1 && (node as HTMLElement).className === 'phase-name') as HTMLElement | undefined;
+    if (!number || !name || children.length !== 2) {
+        number = makeSpan(host, 'phase-number');
+        name = makeSpan(host, 'phase-name');
+        target.replaceChildren(number, name);
+    }
+    if (number.textContent !== phase[1]) number.textContent = phase[1];
+    if (name.textContent !== phase[2]) name.textContent = phase[2];
+}
+// КОНЕЦ ФУНКЦИИ setSolidCaption
+
 // НАЧАЛО ФУНКЦИИ copySolidLabels
 /** Сохраняет отдельный перевод сзади; наложенные измерители резервируют большую из двух подписей. */
 function copySolidLabels(record: SolidRecord): void {
@@ -75,7 +96,7 @@ function copySolidLabels(record: SolidRecord): void {
         record.measurer.style.setProperty('display', 'inline-grid');
         record.measurer.style.setProperty('grid-template-columns', 'max-content');
     }
-    record.backLabel.textContent = record.configuredBackLabel;
+    setSolidCaption(record.host, record.backLabel, record.configuredBackLabel);
     const front = makeSpan(record.host, 'solid-button-measure-label');
     const back = makeSpan(record.host, 'solid-button-measure-label');
     front.dataset.solidMeasureFace = 'front';
@@ -114,7 +135,7 @@ export function setSolidButtonLabel(host: HTMLElement, text: string): boolean {
     } else if (host.getAttribute('aria-label') !== text) host.setAttribute('aria-label', text);
     if (record.text !== text) {
         record.text = text;
-        if (record.visual.textContent !== text) record.visual.textContent = text;
+        setSolidCaption(host, record.visual, text);
         copySolidLabels(record);
         record.measure();
     }
@@ -173,7 +194,9 @@ export class ButtonSolidManager {
             const configuredBackLabel = host.dataset.solidBackLabel;
             const body = makeSpan(host, 'solid-button-body');
             body.setAttribute('aria-hidden', 'true');
-            const restoredContainers = [originalVisual, originalCanonicalNode]
+            const phaseParts = host.matches('.phase-pill') ? originalChildren.filter((node): node is HTMLElement =>
+                node.nodeType === 1 && ['phase-number', 'phase-name'].includes((node as HTMLElement).className)) : [];
+            const restoredContainers = [originalVisual, originalCanonicalNode, ...phaseParts]
                 .filter((node): node is HTMLElement => node !== null)
                 .map((node) => ({ node, children: Array.from(node.childNodes) }));
             const record: SolidRecord = {
@@ -187,6 +210,7 @@ export class ButtonSolidManager {
                 text, dimensions: '', measure: () => measureSolid(record),
             };
             originalChildren.filter((node) => node !== originalCanonicalNode).forEach((node) => label.appendChild(node));
+            if (host.matches('.phase-pill')) setSolidCaption(host, record.visual, text);
             if (canonicalNode) {
                 canonicalNode.dataset.glyphCanonical = '1';
                 canonicalNode.textContent = text;

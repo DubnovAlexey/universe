@@ -248,12 +248,12 @@
 
     .inspection-islands-stack {
         position: fixed;
-        top: calc(3.8rem + env(safe-area-inset-top, 0px));
+        top: var(--hud-top-inset);
         left: 0.45rem;
         right: 0.45rem;
         bottom: auto;
         width: auto;
-        max-height: calc(100dvh - 11.2rem - env(safe-area-inset-bottom, 0px));
+        max-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
         z-index: 24;
         justify-content: flex-start;
         overflow-y: auto;
@@ -274,12 +274,16 @@
     .metrics-inspector-v2,
     .topology-inspector-v2,
     .terminal-inspector-v2 {
+        flex: 0 0 auto;
         height: auto;
         min-height: 175px;
-        max-height: calc(100dvh - 11.5rem);
+        max-height: none;
         /* Intrinsic middle track сохраняет все строки до прокрутки общего списка панелей. */
-        grid-template-rows: 0.058214fr minmax(min-content, 0.883572fr) 0.058214fr;
+        /* Факторы >1 заполняют всё свободное место после min-content строки. */
+        grid-template-rows: 5.8214fr minmax(min-content, 88.3572fr) 5.8214fr;
     }
+
+    .waterfall-panel-content { height: auto; }
 
     .hud-bottom-bar {
         flex-direction: column;
@@ -322,8 +326,18 @@
         display: block;
     }
 
-    .phase-pill .solid-button-label {
+    .phase-pill .solid-button-label,
+    .phase-pill .solid-button-measure-label {
+        display: flex;
         flex-direction: column;
+        align-items: center;
+    }
+
+    .phase-name {
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-wrap: balance;
     }
 
     .phase-number {
@@ -439,6 +453,11 @@
 
     .phase-number {
         font-size: 0.78rem;
+    }
+
+    /* Две строки имени сохраняют читаемый кегль и одинаковую высоту обеих граней. */
+    .phase-name {
+        min-height: 2.7em;
     }
 
     .controls-dock {

@@ -76,6 +76,7 @@ interface RevealParagraph {
     readonly originalMarker: string | undefined;
     readonly overlay: HTMLElement;
     readonly prefix: HTMLElement;
+    readonly tail: HTMLElement;
     readonly cells: readonly RevealCell[];
 }
 
@@ -104,6 +105,7 @@ function prepareParagraph(element: HTMLElement): RevealParagraph | null {
     prefix.style.setProperty('visibility', 'hidden');
     prefix.textContent = prefixText;
     const tail = span('explanation-text-tail');
+    tail.style.setProperty('visibility', 'hidden');
     tail.textContent = characters.slice(EXPLANATION_TEXT_REVEAL_LIMIT).join('');
     native.append(prefix, tail);
     const canonical = span('glyph-canonical-text');
@@ -162,23 +164,29 @@ function prepareParagraph(element: HTMLElement): RevealParagraph | null {
             rank: 0, prepared: false, state: 'waiting' };
     });
     ranks.forEach((index, rank) => { cells[index].rank = rank; });
-    return { element, originalChildren, originalPosition, originalPositionPriority, originalMarker, overlay, prefix, cells };
+    return { element, originalChildren, originalPosition, originalPositionPriority, originalMarker, overlay, prefix, tail, cells };
 }
 // КОНЕЦ ФУНКЦИИ prepareParagraph
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. ОДНА ОГРАНИЧЕННАЯ ПОДПИСКА ОБЩЕГО КАДРА
 // НАЧАЛО ФУНКЦИИ startExplanationTextReveal
-export function startExplanationTextReveal(elements: readonly HTMLElement[], reducedMotion: boolean, delayMs = 0): () => void {
+export function startExplanationTextReveal(
+    elements: readonly HTMLElement[], reducedMotion: boolean, delayMs = 0,
+    clock: () => number = () => performance.now(),
+): () => void {
     const noop = (): void => {};
     if (reducedMotion || getVisualSignals().isPaused || typeof document === 'undefined' || typeof window === 'undefined' || document.hidden ||
         typeof document.createRange !== 'function') return noop;
     const probe = document.createRange();
     if (typeof probe.setStart !== 'function' || typeof probe.setEnd !== 'function' || typeof probe.getBoundingClientRect !== 'function') return noop;
+    const startedAt = clock();
+    if (!Number.isFinite(startedAt)) return noop;
     const paragraphs = Array.from(new Set(elements)).map(prepareParagraph).filter((item): item is RevealParagraph => item !== null);
     if (!paragraphs.length) return noop;
     let disposed = false;
-    let elapsedMs = -Math.max(0, delayMs);
+    const initialDelay = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0;
+    let elapsedMs = -initialDelay;
     const fontEpoch = getGlyphFontEpoch();
     let unsubscribe = noop;
 
@@ -210,7 +218,11 @@ export function startExplanationTextReveal(elements: readonly HTMLElement[], red
         if (signals.reducedMotion || getGlyphFontEpoch() !== fontEpoch || paragraphs.some(({ element }) => !element.isConnected)) { cleanup(); return; }
         // Пауза сцены не оставляет читаемые абзацы скрытыми на середине набора.
         if (signals.isPaused) { cleanup(); return; }
-        elapsedMs += Math.max(0, signals.frameDtSec) * 1000;
+        // Декоративная сборка использует те же монотонные миллисекунды, что и пыль;
+        // ограниченный шаг физики не растягивает задержку текста при низком FPS.
+        const now = clock();
+        if (!Number.isFinite(now)) { cleanup(); return; }
+        elapsedMs = Math.max(elapsedMs, now - startedAt - initialDelay);
         if (elapsedMs < 0) return;
         if (elapsedMs >= EXPLANATION_TEXT_REVEAL_MS + EXPLANATION_TEXT_HANDOFF_MS) { cleanup(); return; }
         const progress = Math.min(1, elapsedMs / EXPLANATION_TEXT_REVEAL_MS);
@@ -222,6 +234,8 @@ export function startExplanationTextReveal(elements: readonly HTMLElement[], red
             if (elapsedMs >= EXPLANATION_TEXT_REVEAL_MS) writes.push(() => {
                 paragraph.prefix.style.setProperty('visibility', 'visible');
                 paragraph.prefix.style.setProperty('opacity', nativeOpacity.toFixed(5));
+                paragraph.tail.style.setProperty('visibility', 'visible');
+                paragraph.tail.style.setProperty('opacity', nativeOpacity.toFixed(5));
                 paragraph.overlay.style.setProperty('opacity', (1 - nativeOpacity).toFixed(5));
             });
             const count = paragraph.cells.length;

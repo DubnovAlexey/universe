@@ -21,6 +21,10 @@ function add(source: string, ru: string, en: string, he: string, es: string): vo
 const ui: readonly (readonly [string, ...Words])[] = [
     ['HOW IT WORKS','КАК ЭТО УСТРОЕНО','HOW IT WORKS','איך זה עובד','CÓMO FUNCIONA'],
     ['LANGUAGE','ЯЗЫК','LANGUAGE','שפה','IDIOMA'],
+    ['О музыке','О музыке','About the music','על המוזיקה','Sobre la música'],
+    ['Композиция','Композиция','Track','קטע','Tema'],
+    ['Исполнитель','Исполнитель','Artist','אמן','Artista'],
+    ['Альбом','Альбом','Album','אלבום','Álbum'],
     ['UNIVERSE / ПУТЕВОДИТЕЛЬ','UNIVERSE / ПУТЕВОДИТЕЛЬ','UNIVERSE / FIELD GUIDE','UNIVERSE / מדריך','UNIVERSE / GUÍA'],
     ['Закрыть ×','Закрыть ×','Close ×','סגירה ×','Cerrar ×'],
     ['Глубина объяснения','Глубина объяснения','Explanation depth','רמת ההסבר','Nivel de explicación'],

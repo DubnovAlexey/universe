@@ -142,6 +142,7 @@
 .explanation-kicker { grid-column: 1; grid-row: 1; min-width: 0; color: #7dd3fc; font: 0.68rem var(--font-mono), monospace; line-height: 1.5; letter-spacing: 0.12em; margin: 0; overflow-wrap: anywhere; }
 .explanation-title { grid-column: 1 / -1; grid-row: 2; min-width: 0; font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.25; margin: 0; font-weight: 650; overflow-wrap: anywhere; }
 .explanation-title:focus { outline: none; }
+.explanation-title { text-align: center; padding-inline: 0.5rem; }
 .explanation-close {
     --solid-pad-x: 0.9rem;
     --solid-pad-y: 0.55rem;
@@ -296,12 +297,19 @@
 .explanation-content { line-height: 1.7; font-size: 1.03rem; padding-top: 0.6rem; }
 .explanation-section { margin: 0.9rem 0 1.2rem; max-width: 76ch; }
 .explanation-section h3 { margin: 0 0 0.4rem; font-size: 1rem; color: #a9d9ed; }
+.explanation-section h3 { text-align: center; padding-inline: 0.4rem; }
+.explanation-mode-divider { display: block; width: 66.666%; height: 12px; margin: 0.55rem auto 0.7rem; overflow: visible; pointer-events: none; }
 .explanation-section p { margin: 0.45rem 0; }
 .explanation-technical { padding-inline-start: 1.15rem; padding-inline-end: 0; }
 .explanation-technical li { margin-block: 0.65rem; }
 .explanation-sources { display: flex; flex-wrap: wrap; gap: 0.65rem 1.2rem; margin-top: 0.7rem; }
 .explanation-sources a { color: #8ed1f3; text-underline-offset: 0.22em; overflow-wrap: anywhere; }
 .explanation-pause-note { color: #94abc0; font-size: 0.76rem; margin: 1.25rem 0 0; border-top: 1px solid #263b52; padding-top: 0.75rem; }
+.explanation-soundtrack { margin-block: 1rem; border-block: 1px solid #263b52; }
+.explanation-soundtrack summary { min-height: 44px; padding-block: 0.5rem; cursor: pointer; color: #a9d9ed; }
+.explanation-soundtrack dl { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 0.45rem 0.75rem; font-size: 0.85rem; }
+.explanation-soundtrack dt { color: #94abc0; }
+.explanation-soundtrack dd { margin: 0; overflow-wrap: anywhere; }
 .explanation-dialog :is(button, a):focus-visible { outline: 2px solid #a3dfff; outline-offset: 3px; }
 .explanation-dialog button:hover { border-color: #8fc6df; }
 /* КОНЕЦ РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
@@ -344,17 +352,29 @@
     .explanation-dialog { width: min(390px, calc(22vw - 0.4rem)); }
 }
 @media (max-width: 920px) {
+    /* Немодальная панель оставляет паспорт и пульт доступными для касания. */
+    .explanation-dialog {
+        inset: var(--hud-top-inset) 0.45rem var(--hud-bottom-inset);
+        margin: 0 auto;
+        width: min(820px, calc(100vw - 0.9rem));
+        --explanation-field-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
+        max-height: var(--explanation-field-height);
+    }
     .explanation-dock { padding: 0.35rem 0.9rem; }
     .explanation-dock .btn-cyber { min-height: 60px; font-size: 0.9rem; }
     .finale-term { padding-block: 0.3em; }
 }
 @media (max-width: 600px) {
-    .explanation-dialog { width: calc(100vw - 0.75rem); max-height: calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); border-radius: 14px; }
-    .explanation-dialog { --explanation-field-height: calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+    .explanation-dialog { border-radius: 14px; }
     .explanation-title { font-size: 1.4rem; }
     .explanation-topic { font-size: 0.76rem; min-height: 40px; }
     .explanation-mode-button { min-height: 44px; }
     .explanation-formula { padding: 0.75rem; }
+}
+@media (max-width: 920px) and (max-height: 520px) {
+    /* В низком landscape заголовок прокручивается вместе с текстом. */
+    .explanation-header { position: relative; }
+    .explanation-title { font-size: 1.05rem; }
 }
 @media (prefers-reduced-motion: reduce) {
     .explanation-dialog[open][data-entry-animation="true"] { transform: none; opacity: 1; }

@@ -294,6 +294,15 @@
     justify-content: flex-start;
 }
 
+/* Высота статуса учитывает перенос длинной подписи на любой из двух граней. */
+.brand-card [data-button-solid="1"] .solid-button-measurer {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr) !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 .brand-card [data-button-solid="1"]:last-child {
     margin-bottom: 0;
 }

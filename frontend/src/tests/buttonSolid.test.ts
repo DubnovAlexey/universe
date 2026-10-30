@@ -5,6 +5,7 @@
 // ФУНКЦИИ: descendants, makeHarness, runButtonSolidChecks; методы SolidNode.
 // ============================================================================
 import { ButtonSolidManager, setSolidButtonLabel, setSolidButtonBackLabel } from '../core/buttonSolid';
+import { LOCALES, translateUi } from '../core/locale';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM И НАБЛЮДАТЕЛЬ LAYOUT
 class SolidNode {
@@ -61,7 +62,12 @@ class SolidNode {
     public getBoundingClientRect(): never { throw new Error('Solid geometry must not read a transformed rectangle'); }
     // КОНЕЦ ФУНКЦИИ getBoundingClientRect
     // НАЧАЛО ФУНКЦИИ matches
-    public matches(selector: string): boolean { return selector.split(',').some((tag) => tag.trim().toUpperCase() === this.tagName); }
+    public matches(selector: string): boolean {
+        return selector.split(',').some((part) => {
+            const key = part.trim();
+            return key.startsWith('.') ? this.className.split(/\s+/u).includes(key.slice(1)) : key.toUpperCase() === this.tagName;
+        });
+    }
     // КОНЕЦ ФУНКЦИИ matches
     // НАЧАЛО ФУНКЦИИ closest
     public closest(selector: string): SolidNode | null { return selector === '.brand-card' && this.inBrand ? this : null; }
@@ -163,6 +169,7 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
     genericVisual.textContent = 'НАЧАЛЬНАЯ ФАЗА';
     generic.append(canonical, genericVisual);
     const phase = new SolidNode('button');
+    phase.className = 'phase-pill';
     phase.setAttribute('aria-label', '01.VOID');
     const number = new SolidNode('span'); number.className = 'phase-number'; number.textContent = '01.';
     const name = new SolidNode('span'); name.className = 'phase-name'; name.textContent = 'VOID';
@@ -335,6 +342,61 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
         bilingual.values.get('--solid-width') === '99px' && bilingual.priorities.get('--solid-width') === 'important' &&
         bilingualHarness.observer.disconnects === 1,
         'Disposing a localized solid restores its original front nodes, accessible state, CSS and caller-provided translation attribute');
+
+    const phaseHarness = makeHarness();
+    const phaseNames = ['VOID', 'GENESIS', 'EVOLUTION', 'COLLAPSE', 'SINGULARITY'];
+    let phaseCaptionsPreserved = true;
+    let phaseNodesStable = true;
+    let phaseRestorationExact = true;
+    for (const [index, phaseName] of phaseNames.entries()) {
+        const pill = new SolidNode('button');
+        pill.className = 'phase-pill';
+        const code = `0${index + 1}.`;
+        const source = code + phaseName;
+        pill.dataset.localeSource = source;
+        pill.setAttribute('aria-label', source);
+        const originalNumber = new SolidNode('span'); originalNumber.className = 'phase-number'; originalNumber.textContent = code;
+        const originalName = new SolidNode('span'); originalName.className = 'phase-name'; originalName.textContent = phaseName;
+        const originalNumberText = originalNumber.childNodes[0], originalNameText = originalName.childNodes[0];
+        pill.append(originalNumber, originalName);
+        const mounted = phaseHarness.manager.mount([pill] as unknown as HTMLElement[]);
+        const solid = pill.childNodes.find(node => node.className === 'solid-button-body')!;
+        const originalFaces = solid.childNodes.slice();
+        const front = originalFaces.find(node => node.dataset.solidFace === 'front')!.childNodes[0];
+        const back = originalFaces.find(node => node.dataset.solidFace === 'back')!.childNodes[0];
+        const measure = pill.childNodes.find(node => node.className === 'solid-button-measurer')!;
+        pill.values.set('--button-spin-angle', '-137deg');
+        pill.values.set('--button-axis-y', '0.7');
+        const structured = (caption: SolidNode, text: string): boolean => caption.childNodes.length === 2 &&
+            caption.childNodes[0].className === 'phase-number' && caption.childNodes[0].textContent === code &&
+            caption.childNodes[1].className === 'phase-name' && caption.childNodes[1].textContent === text.slice(code.length);
+        for (const locale of LOCALES) {
+            const translated = translateUi(source, locale);
+            setSolidButtonBackLabel(pill as unknown as HTMLElement, source);
+            setSolidButtonLabel(pill as unknown as HTMLElement, translated);
+            phaseCaptionsPreserved &&= structured(front, translated) && structured(back, source) &&
+                measure.childNodes.length === 2 && structured(measure.childNodes[0], translated) && structured(measure.childNodes[1], source) &&
+                pill.dataset.canonicalText === translated && pill.getAttribute('aria-label') === translated &&
+                pill.dataset.localeSource === source && pill.dataset.solidBackLabel === source && back.hasAttribute('inert');
+            phaseNodesStable &&= front.childNodes[0] === originalNumber && front.childNodes[1] === originalName &&
+                solid.childNodes.every((face, faceIndex) => face === originalFaces[faceIndex]) &&
+                pill.values.get('--button-spin-angle') === '-137deg' && pill.values.get('--button-axis-y') === '0.7';
+        }
+        const stableMeasure = measure.childNodes.slice();
+        const replacements = front.replacements + back.replacements + measure.replacements;
+        setSolidButtonBackLabel(pill as unknown as HTMLElement, source);
+        setSolidButtonLabel(pill as unknown as HTMLElement, translateUi(source, 'es'));
+        phaseNodesStable &&= replacements === front.replacements + back.replacements + measure.replacements &&
+            measure.childNodes.every((node, measureIndex) => node === stableMeasure[measureIndex]);
+        mounted.dispose();
+        phaseRestorationExact &&= pill.childNodes[0] === originalNumber && pill.childNodes[1] === originalName &&
+            originalNumber.childNodes[0] === originalNumberText && originalName.childNodes[0] === originalNameText &&
+            pill.textContent === source && pill.getAttribute('aria-label') === source && pill.dataset.localeSource === source;
+    }
+    check(phaseCaptionsPreserved,
+        'All five phases retain separate number/name captions on front, English back and both measurement faces through RU, EN, HE and ES changes so compact wrapping applies to every face');
+    check(phaseNodesStable && phaseRestorationExact,
+        'Phase locale updates preserve original number/name elements, six faces, signed spin and source keys; repeated labels remain stable and disposal restores exact original text nodes');
 }
 // КОНЕЦ ФУНКЦИИ runButtonSolidChecks
 // КОНЕЦ РАЗДЕЛА 2

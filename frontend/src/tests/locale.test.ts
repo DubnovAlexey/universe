@@ -59,7 +59,7 @@ export function runLocaleChecks(check: (passed: boolean, description: string) =>
         // КОНЕЦ РАЗДЕЛА 1
 
         // НАЧАЛО РАЗДЕЛА 2. UI И ДИНАМИЧЕСКИЕ СООБЩЕНИЯ
-        const requiredUi = ['HOW IT WORKS', 'LANGUAGE', 'Закрыть ×', 'Просто', 'Технически', 'Темы объяснения',
+        const requiredUi = ['HOW IT WORKS', 'LANGUAGE', 'О музыке', 'Композиция', 'Исполнитель', 'Альбом', 'Закрыть ×', 'Просто', 'Технически', 'Темы объяснения',
             '⏸ PAUSE', '▶ RESUME', '🔊 AUDIO: ON', '🔇 AUDIO: MUTED', '📊 METRICS', '🕸 TOPOLOGY', '⌨ TERMINAL',
             'Что видно в сцене', 'Формулы и обозначения', 'Посмотреть исходный код'];
         check(requiredUi.every(source => hasUiTranslation(source) && LOCALES.every(locale => {

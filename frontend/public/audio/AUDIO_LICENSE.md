@@ -1,5 +1,10 @@
 # 🎵 Audio Track & Licensing Documentation (`cosmic_ambient.mp3`)
 
+* **Track:** Photosynthesis
+* **Artist:** Carbon Based Lifeforms
+* **Album:** World of Sleepers
+* **In-scene credit:** HOW IT WORKS → About the music (collapsed by default; labels follow RU/EN/HE/ES).
+
 * **File Path:** `frontend/public/audio/cosmic_ambient.mp3` (`~16.46 MB`, start offset `2.6s`)
 * **Runtime Loader:** `frontend/src/utils/audioSync.ts` (`${import.meta.env.BASE_URL}audio/cosmic_ambient.mp3`)
 * **Usage in Project:** Continuous ambient soundtrack for the non-commercial portfolio installation **UNIVERSE** by **Alexey Dubnov** (`https://dubnovalexey.github.io/universe/`). On desktop, an available `Web Audio API` graph uses `AnalyserNode` to drive breathing, synaptic modulation and the card heartbeat. Mobile playback uses the media element directly with a synchronized procedural LFO envelope; this envelope is not a spectral measurement of the track. A procedural fallback also keeps the scene moving when analysis or playback is unavailable.

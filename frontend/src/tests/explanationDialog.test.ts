@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/explanationDialog.test.ts
 // НАЗНАЧЕНИЕ: Проверить каталог, связи терминов и настоящий жизненный цикл окна.
 // РАЗДЕЛЫ: 1. Минимальное дерево DOM; 2. Каталог; 3. Живая сцена, ввод и освобождение;
-//          4. Читаемый текст на паузе; 5. Геометрия и временные ресурсы звёздного следа.
+//          4. Читаемый текст на паузе и часы появления; 5. Геометрия и временные ресурсы звёздного следа.
 // ФУНКЦИИ: descendants, dispatch, runExplanationDialogChecks, runExplanationTextRevealPauseChecks, runExplanationTrailChecks;
 //          методы DialogNode.
 // ============================================================================
@@ -19,7 +19,7 @@ import {
 import { universeStore } from '../store/universeState';
 import { bindUniverseKeyboardShortcuts } from '../engine/hud/keyboardShortcuts';
 import { getVisualSignals, publishVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
-import { startExplanationTextReveal } from '../layers/explanationTextReveal';
+import { startExplanationTextReveal, EXPLANATION_TEXT_REVEAL_LIMIT } from '../layers/explanationTextReveal';
 import { stressStore } from '../store/stressState';
 import { audioSync } from '../utils/audioSync';
 
@@ -345,7 +345,7 @@ export function runExplanationDialogChecks(check: (passed: boolean, description:
 }
 // КОНЕЦ ФУНКЦИИ runExplanationDialogChecks
 
-// НАЧАЛО РАЗДЕЛА 4. ЧИТАЕМЫЙ ТЕКСТ НА ПАУЗЕ
+// НАЧАЛО РАЗДЕЛА 4. ЧИТАЕМЫЙ ТЕКСТ НА ПАУЗЕ И ЧАСЫ ПОЯВЛЕНИЯ
 function runExplanationTextRevealPauseChecks(check: (passed: boolean, description: string) => void): void {
     const names = ['window', 'document'] as const;
     const savedGlobals = names.map(name => ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
@@ -401,6 +401,34 @@ function runExplanationTextRevealPauseChecks(check: (passed: boolean, descriptio
             resourceLedger.getCounters().listeners === baseline.listeners &&
             resourceLedger.getCounters().underflowCount === baseline.underflowCount,
         'Pausing a prepared explanation reveal immediately restores the original native text and releases its subscription and listeners exactly once');
+
+        const longCopy = 'The complete explanation must wait for the assembled window before it becomes visible. '.repeat(8);
+        const longText = document.createTextNode(longCopy);
+        paragraph.replaceChildren(longText);
+        publishFrame({ isPaused: false, reducedMotion: false, frameDtSec: 0.05 });
+        let nowMs = 1000;
+        disposeReveal = startExplanationTextReveal([paragraph as unknown as HTMLElement], false, 4000, () => nowMs);
+        const prefix = paragraph.querySelector('.explanation-text-prefix');
+        const tail = paragraph.querySelector('.explanation-text-tail');
+        const maskedAtStart = prefix?.style.getPropertyValue('visibility') === 'hidden' && tail?.style.getPropertyValue('visibility') === 'hidden';
+        nowMs = 4999;
+        publishFrame({ isPaused: false, reducedMotion: false, frameDtSec: 0.05 });
+        check(longCopy.length > EXPLANATION_TEXT_REVEAL_LIMIT && maskedAtStart &&
+            prefix?.textContent === longCopy.slice(0, EXPLANATION_TEXT_REVEAL_LIMIT) &&
+            tail?.textContent === longCopy.slice(EXPLANATION_TEXT_REVEAL_LIMIT) &&
+            prefix?.style.getPropertyValue('visibility') === 'hidden' && tail?.style.getPropertyValue('visibility') === 'hidden' &&
+            paragraph.dataset.explanationRevealing === 'true' && resourceLedger.getCounters().listeners === baseline.listeners + 3,
+        'Long explanations hide both the animated prefix and the remaining native tail throughout the four-second window assembly wait');
+
+        nowMs = 6200;
+        publishFrame({ isPaused: false, reducedMotion: false, frameDtSec: 0.05 });
+        const completedOnClock = paragraph.children.length === 1 && paragraph.children[0] === longText &&
+            paragraph.textContent === longCopy && paragraph.dataset.explanationRevealing === undefined &&
+            paragraph.style.getPropertyValue('position') === '' && document.listenerCount === 0 && window.listenerCount === 0 &&
+            resourceLedger.getCounters().listeners === baseline.listeners;
+        disposeReveal(); disposeReveal();
+        check(completedOnClock && resourceLedger.getCounters().underflowCount === baseline.underflowCount,
+        'A 5200ms clock advance completes the wait, reveal and native handoff after only two 50ms visual frames, restoring text and releasing all temporary listeners');
     } finally {
         disposeReveal?.();
         for (const { name, descriptor } of savedGlobals) {

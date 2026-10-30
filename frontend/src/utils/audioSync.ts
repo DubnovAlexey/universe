@@ -22,6 +22,13 @@ import {
     universeStore,
 } from '../store/universeState';
 
+/** Справочные данные фонограммы; отображаются только в раскрываемой справке. */
+export const SOUNDTRACK_CREDIT = Object.freeze({
+    title: 'Photosynthesis',
+    artist: 'Carbon Based Lifeforms',
+    album: 'World of Sleepers',
+});
+
 export interface AudioModulationSnapshot {
     rmsDb: number;
     rmsLinear: number;
