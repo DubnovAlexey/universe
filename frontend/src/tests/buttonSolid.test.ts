@@ -4,7 +4,7 @@
 // РАЗДЕЛЫ: 1. Минимальный layout/DOM/RO; 2. Геометрия и подписи; 3. Освобождение.
 // ФУНКЦИИ: descendants, makeHarness, runButtonSolidChecks; методы SolidNode.
 // ============================================================================
-import { ButtonSolidManager, setSolidButtonLabel } from '../core/buttonSolid';
+import { ButtonSolidManager, setSolidButtonLabel, setSolidButtonBackLabel } from '../core/buttonSolid';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM И НАБЛЮДАТЕЛЬ LAYOUT
 class SolidNode {
@@ -227,10 +227,19 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
         generic.values.get('--solid-depth') === '6px',
         'Resizing clamps real cuboid depth to the available control dimensions');
 
+    button.layoutWidth = 208;
+    check(setSolidButtonBackLabel(button as unknown as HTMLElement, 'הצליל מושתק') &&
+        backLabel.textContent === 'הצליל מושתק' && visual.textContent === 'AUDIO: MUTED 𓂀' &&
+        button.getAttribute('aria-label') === 'AUDIO: MUTED 𓂀' && button.dataset.solidBackLabel === 'הצליל מושתק' &&
+        measurer.values.get('display') === 'inline-grid' && measurer.childNodes.length === 2 &&
+        button.values.get('--solid-width') === '208px' && body.childNodes.every((face, index) => face === sameFaces[index]),
+        'An event can add a localized back to an existing solid and remeasure its wider face without changing its front, accessible name or six faces');
+
     binding.dispose();
     const restored = button.childNodes.length === 1 && button.childNodes[0] === visual && visual.childNodes[0] === originalText &&
         visual.textContent === 'AUDIO: ON' && button.getAttribute('aria-label') === 'ORIGINAL ACCESSIBLE NAME' &&
         button.dataset.canonicalText === 'AUDIO: ON' && button.dataset.buttonSolid === 'previous-marker' &&
+        button.dataset.solidBackLabel === undefined &&
         button.dataset.buttonSolidKind === undefined && button.values.get('--solid-depth') === '7px' &&
         button.priorities.get('--solid-depth') === 'important' && !button.values.has('--solid-width') &&
         generic.childNodes[0] === canonical && generic.childNodes[1] === genericVisual && canonical.textContent === 'НАЧАЛЬНАЯ ФАЗА' &&
@@ -239,7 +248,8 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
     observer.callbacks[0]();
     binding.dispose();
     check(restored && observer.disconnects === 1 && button.writes === writesAfterDispose &&
-        !setSolidButtonLabel(button as unknown as HTMLElement, 'MUST NOT APPLY'),
+        !setSolidButtonLabel(button as unknown as HTMLElement, 'MUST NOT APPLY') &&
+        !setSolidButtonBackLabel(button as unknown as HTMLElement, 'MUST NOT APPLY'),
         'Disposal disconnects layout observation and restores original nodes, text, ARIA, dataset and inline CSS priorities exactly once');
 
     const current = manager.mount([button] as unknown as HTMLElement[]);
@@ -292,13 +302,39 @@ export function runButtonSolidChecks(check: (passed: boolean, description: strin
         bilingualMeasurer.childNodes.every((node, index) => node === bilingualMeasureNodes[index]),
         'Unchanged bilingual text and layout retain their measuring nodes without CSS writes or resize feedback');
 
+    bilingual.setAttribute('dir', 'rtl');
+    bilingual.values.set('--button-spin-angle', '-37deg');
+    bilingual.values.set('--button-axis-y', '0.7');
+    bilingual.layoutWidth = 340;
+    check(setSolidButtonBackLabel(bilingual as unknown as HTMLElement, 'איך היקום הזה פועל') &&
+        bilingualFront.textContent === 'HOW THIS UNIVERSE WORKS' && bilingualBack.textContent === 'איך היקום הזה פועל' &&
+        bilingual.getAttribute('aria-label') === 'HOW THIS UNIVERSE WORKS' &&
+        measuredCaptions().join('|') === 'HOW THIS UNIVERSE WORKS|איך היקום הזה פועל' &&
+        bilingual.dataset.solidBackLabel === 'איך היקום הזה פועל' && bilingual.values.get('--solid-width') === '340px' &&
+        bilingualBody.childNodes.every((face, index) => face === bilingualFaces[index]) &&
+        bilingual.values.get('--button-spin-angle') === '-37deg' && bilingual.values.get('--button-axis-y') === '0.7' &&
+        bilingual.getAttribute('dir') === 'rtl',
+        'Switching the back to Hebrew updates its caption and width while preserving front semantics, face identity and signed rotation');
+    setSolidButtonLabel(bilingual as unknown as HTMLElement, 'THE UNIVERSE EXPLAINED');
+    check(bilingualFront.textContent === 'THE UNIVERSE EXPLAINED' && bilingualBack.textContent === 'איך היקום הזה פועל' &&
+        bilingual.getAttribute('aria-label') === 'THE UNIVERSE EXPLAINED' &&
+        measuredCaptions().join('|') === 'THE UNIVERSE EXPLAINED|איך היקום הזה פועל',
+        'Later front updates retain the latest localized back and refresh both measurement captions');
+    const localizedMeasureNodes = bilingualMeasurer.childNodes.slice();
+    const localizedWrites = bilingual.writes;
+    setSolidButtonBackLabel(bilingual as unknown as HTMLElement, 'איך היקום הזה פועל');
+    bilingualHarness.observer.callbacks[0]();
+    check(bilingual.writes === localizedWrites &&
+        bilingualMeasurer.childNodes.every((node, index) => node === localizedMeasureNodes[index]),
+        'Repeating the current localized back retains measuring nodes and produces no layout feedback or CSS writes');
+
     bilingualBinding.dispose();
     check(bilingual.childNodes.length === 1 && bilingual.childNodes[0] === bilingualOriginal &&
         bilingual.textContent === 'HOW IT WORKS' && bilingual.getAttribute('aria-label') === null &&
         bilingual.dataset.solidBackLabel === 'КАК ЭТО УСТРОЕНО' && bilingual.dataset.canonicalText === undefined &&
         bilingual.values.get('--solid-width') === '99px' && bilingual.priorities.get('--solid-width') === 'important' &&
         bilingualHarness.observer.disconnects === 1,
-        'Disposing a bilingual solid restores its original front nodes, accessible state and CSS while leaving the caller-provided translation attribute intact');
+        'Disposing a localized solid restores its original front nodes, accessible state, CSS and caller-provided translation attribute');
 }
 // КОНЕЦ ФУНКЦИИ runButtonSolidChecks
 // КОНЕЦ РАЗДЕЛА 2

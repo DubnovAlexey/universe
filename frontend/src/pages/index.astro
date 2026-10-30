@@ -69,7 +69,6 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 				<span class="phase-codename" id="ui-phase-codename">{initialPhase.codeName}</span>
 				<h1 class="phase-title" id="ui-phase-title">{initialPhase.titleRu}</h1>
 				<p class="phase-subtitle" id="ui-phase-subtitle">{initialPhase.subtitleRu}</p>
-				<p class="phase-philosophy" id="ui-phase-philosophy">{initialPhase.philosophyRu}</p>
 			</section>
 
 			<div class="inspection-islands-stack" aria-label="Каскад телеметрии Цифрового Водопада">
@@ -111,6 +110,9 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 					data-explain-topic="overview" aria-haspopup="dialog" aria-controls="explanation-dialog"
 					title="Открыть простые объяснения, формулы и устройство проекта">
 					HOW IT WORKS
+				</button>
+				<button type="button" class="btn-cyber" id="btn-language" title="LANGUAGE: RU / EN / HE / ES">
+					LANGUAGE: RU
 				</button>
 			</section>
 

@@ -19,6 +19,7 @@ import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
 import { mountExplanationDialog } from '../layers/ExplanationDialog';
 import { bindHudDockLayout, syncHudDomWithState } from './hud/hudDomOrchestrator';
 import { bindUniverseKeyboardShortcuts } from './hud/keyboardShortcuts';
+import { mountLocaleControls } from './hud/localeController';
 
 // НАЧАЛО РАЗДЕЛА 1. АКТИВНЫЙ ЭКЗЕМПЛЯР
 export let activeRenderer: UniverseRenderer | null = null;
@@ -96,12 +97,13 @@ export function bootstrapUniverseV2(): void {
 
     // 3. Закрытые шестигранные тела вращаются внутри неподвижных областей нажатия.
     const cornerControls = Array.from(document.querySelectorAll<HTMLElement>(
-        '.brand-card .phase-codename, .brand-card .phase-title, .brand-card .phase-subtitle, .brand-card .phase-philosophy, ' +
+        '.brand-card .phase-codename, .brand-card .phase-title, .brand-card .phase-subtitle, ' +
         '#ui-phase-buttons button.phase-pill, .controls-dock button.btn-cyber, .controls-dock a.btn-cyber, ' +
         '.explanation-dock button.btn-cyber'
     ));
     const buttonSolids = buttonSolidManager.mount(cornerControls);
     const buttonMotion = buttonMotionController.mount(cornerControls);
+    resourceLedger.registerPageDisposable(mountLocaleControls());
     resourceLedger.trackPageLifetimeAllocation('listeners', buttonMotion.listenerCount);
     resourceLedger.registerPageDisposable(() => {
         buttonMotion.dispose();

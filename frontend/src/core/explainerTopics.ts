@@ -4,6 +4,9 @@
 // РАЗДЕЛЫ: 1. Контракт темы; 2. Содержание; 3. Публикация и поиск.
 // ============================================================================
 
+import { getLocale, type Locale } from './locale';
+import { EXPLAINER_TRANSLATIONS } from './explainerTranslations';
+
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ ТЕМЫ
 export interface ExplainerFormula {
     readonly label: string;
@@ -80,7 +83,7 @@ const topics: readonly ExplainerTopic[] = [
         experience: 'Заголовок, кнопки, два холста и места для панелей существуют в каркасе страницы ещё до первого кадра анимации.',
         intuition: 'Это строитель сцены: он ставит площадку, световые экраны и пульт. Дальше представление ведёт отдельная программа.',
         technical: [
-            'Главная страница index.astro импортирует стили, задаёт русскую разметку и загружает клиентский модуль renderer.ts. Конфигурация задаёт путь публикации статического сайта.',
+            'Главная страница index.astro импортирует стили, задаёт разметку страницы и загружает клиентский модуль renderer.ts. Конфигурация задаёт путь публикации статического сайта.',
             'Astro не пересчитывает движение каждой частицы. После загрузки кадрами, состоянием и событиями браузера управляет TypeScript-код проекта.',
             'Такой каркас позволяет публиковать результат как набор статических файлов, включая JavaScript, шрифты, звук и WebAssembly.',
         ],
@@ -335,21 +338,46 @@ const topics: readonly ExplainerTopic[] = [
 // НАЧАЛО РАЗДЕЛА 3. ПУБЛИКАЦИЯ И ПОИСК
 // НАЧАЛО ФУНКЦИИ freezeTopic
 function freezeTopic(topic: ExplainerTopic): ExplainerTopic {
+    const names = (text: string): string => text
+        .replace(/Курамото/g, 'Kuramoto').replace(/Пламмера|Пламмер/g, 'Plummer').replace(/Верле/g, 'Verlet')
+        .replace(/Габриэля/g, 'Gabriel').replace(/Мюррея/g, 'Murray')
+        .replace(/Уроборосом|Уробороса|Уроборосу|Уроборос/g, 'Ouroboros');
     return Object.freeze({
         ...topic,
-        technical: Object.freeze([...topic.technical]),
-        formulas: Object.freeze(topic.formulas.map((formula) => Object.freeze({ ...formula }))),
-        sources: Object.freeze(topic.sources.map((source) => Object.freeze({ ...source }))),
+        label: names(topic.label), title: names(topic.title), summary: names(topic.summary),
+        experience: names(topic.experience), intuition: names(topic.intuition),
+        technical: Object.freeze(topic.technical.map(names)),
+        formulas: Object.freeze(topic.formulas.map((formula) => Object.freeze({ ...formula, label: names(formula.label) }))),
+        sources: Object.freeze(topic.sources.map((source) => Object.freeze({ ...source, label: names(source.label) }))),
     });
 }
 // КОНЕЦ ФУНКЦИИ freezeTopic
 
 export const EXPLAINER_TOPICS: readonly ExplainerTopic[] = Object.freeze(topics.map(freezeTopic));
 const topicsById: ReadonlyMap<string, ExplainerTopic> = new Map(EXPLAINER_TOPICS.map((topic) => [topic.id, topic]));
+const localizedTopics = new Map<Locale, readonly ExplainerTopic[]>();
+
+// НАЧАЛО ФУНКЦИИ getExplainerTopics
+/** Переводы сохраняют идентификаторы, исходники и математическую разметку общего каталога. */
+export function getExplainerTopics(locale: Locale = getLocale()): readonly ExplainerTopic[] {
+    if (locale === 'ru') return EXPLAINER_TOPICS;
+    const cached = localizedTopics.get(locale);
+    if (cached) return cached;
+    const result = Object.freeze(EXPLAINER_TOPICS.map((topic) => {
+        const translation = EXPLAINER_TRANSLATIONS[locale][topic.id];
+        return freezeTopic({ ...topic, ...translation,
+            formulas: topic.formulas.map((formula, index) => ({ ...formula, ...translation.formulas?.[index] })),
+            sources: topic.sources.map((source, index) => ({ ...source, label: translation.sources?.[index]?.label ?? source.label })),
+        });
+    }));
+    localizedTopics.set(locale, result);
+    return result;
+}
+// КОНЕЦ ФУНКЦИИ getExplainerTopics
 
 // НАЧАЛО ФУНКЦИИ getExplainerTopic
-export function getExplainerTopic(id: string): ExplainerTopic | undefined {
-    return topicsById.get(id);
+export function getExplainerTopic(id: string, locale: Locale = getLocale()): ExplainerTopic | undefined {
+    return locale === 'ru' ? topicsById.get(id) : getExplainerTopics(locale).find((topic) => topic.id === id);
 }
 // КОНЕЦ ФУНКЦИИ getExplainerTopic
 // КОНЕЦ РАЗДЕЛА 3

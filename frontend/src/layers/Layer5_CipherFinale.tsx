@@ -27,7 +27,8 @@
 // ============================================================================
 
 import { React } from './Layer2_Metrics';
-import { CANONICAL_FINALE_LINES, formatFinaleStaticLine } from '../bridge/cipherOdometerEngine';
+import { getLocale, subscribeLocale, translateUi } from '../core/locale';
+import { getFinaleLines, formatFinaleStaticLine } from '../bridge/cipherOdometerEngine';
 import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES,
     smootherstep, universeStore, type UniverseState,
@@ -51,7 +52,7 @@ export const FINALE_TOPIC_TERMS: readonly { lineIndex: number; label: string; to
 // НАЧАЛО ФУНКЦИИ renderFinaleTermParts
 /** Стабильные кнопки содержат собственный перебор; разделители сохраняют общие позиции строки. */
 function renderFinaleTermParts(lineIndex: number, interactive: boolean): Element[] {
-    const canonical = CANONICAL_FINALE_LINES[lineIndex];
+    const canonical = getFinaleLines()[lineIndex];
     const parts: Element[] = [];
     let offset = 0;
     const append = (text: string, start: number, topicId?: string): void => {
@@ -62,8 +63,8 @@ function renderFinaleTermParts(lineIndex: number, interactive: boolean): Element
         };
         if (topicId) {
             parts.push(<button {...props} type="button" className="finale-term" data-explain-topic={topicId}
-                aria-haspopup="dialog" aria-controls="explanation-dialog" aria-label={`Пояснение: ${text}`}
-                title={`Что означает ${text}?`} tabIndex={interactive ? 0 : -1} disabled={!interactive}
+                aria-haspopup="dialog" aria-controls="explanation-dialog" aria-label={`${translateUi('Пояснение:')} ${text}`}
+                title={`${translateUi('Пояснение:')} ${text}`} tabIndex={interactive ? 0 : -1} disabled={!interactive}
                 onPointerEnter={(event: PointerEvent): void => {
                     triggerLineOrButtonScramble(event.currentTarget as HTMLElement, text);
                 }} onFocus={(event: FocusEvent): void => {
@@ -99,7 +100,7 @@ interface FinaleQuantumCell {
 
 // --- НАЧАЛО ФУНКЦИИ bindFinaleQuantumCells ---
 /** Создаёт по одной постоянной ячейке на знак; размеры строк задаёт CSS Grid. */
-export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = CANONICAL_FINALE_LINES[2]): readonly FinaleQuantumCell[] {
+export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = getFinaleLines()[2]): readonly FinaleQuantumCell[] {
     if (!line) return [];
     const cells: FinaleQuantumCell[] = [];
     Array.from(canonical).forEach((character, sourceIndex) => {
@@ -220,10 +221,10 @@ class FinaleCardDomAnimator {
                 this.topicParts.set(el, parts.map((node) => ({ node,
                     start: Number(node.dataset.termStart), length: Number(node.dataset.termLength) })));
                 parts.forEach((node) => calmGlyphHover.setCanonical(node, node.dataset.canonicalText ?? ''));
-            } else calmGlyphHover.setCanonical(el, CANONICAL_FINALE_LINES[index]);
+            } else calmGlyphHover.setCanonical(el, getFinaleLines()[index]);
             // Холодные ячейки создаются при скрытом монтировании, а не в кадре выхода из Точки Нуля.
             if (!universeStore.getState().finaleReachedOnce) {
-                this.setLineVisualText(el, GLYPH_WAITING_SPACE.repeat(splitGlyphText(CANONICAL_FINALE_LINES[index]).length));
+                this.setLineVisualText(el, GLYPH_WAITING_SPACE.repeat(splitGlyphText(getFinaleLines()[index]).length));
             }
         });
         root.querySelectorAll<HTMLElement>('.btn-cipher-action').forEach((el) => {
@@ -398,7 +399,7 @@ class FinaleCardDomAnimator {
             if (p < 0.76 && !state.reducedMotion) {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
                     this.setLineVisualText(this.line0El, this.formatOdometerLineForProgress(
-                        CANONICAL_FINALE_LINES[0],
+                        getFinaleLines()[0],
                         0,
                         p,
                         assemblyStep,
@@ -407,7 +408,7 @@ class FinaleCardDomAnimator {
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
                     this.setLineVisualText(this.line1El, this.formatOdometerLineForProgress(
-                        CANONICAL_FINALE_LINES[1],
+                        getFinaleLines()[1],
                         1,
                         p,
                         assemblyStep,
@@ -416,7 +417,7 @@ class FinaleCardDomAnimator {
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
                     this.setLineVisualText(this.line3El, this.formatOdometerLineForProgress(
-                        CANONICAL_FINALE_LINES[3],
+                        getFinaleLines()[3],
                         3,
                         p,
                         assemblyStep,
@@ -425,7 +426,7 @@ class FinaleCardDomAnimator {
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
                     this.setLineVisualText(this.line4El, this.formatOdometerLineForProgress(
-                        CANONICAL_FINALE_LINES[4],
+                        getFinaleLines()[4],
                         4,
                         p,
                         assemblyStep,
@@ -434,16 +435,16 @@ class FinaleCardDomAnimator {
                 }
             } else {
                 if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    this.setLineVisualText(this.line0El, CANONICAL_FINALE_LINES[0], glyphWrites);
+                    this.setLineVisualText(this.line0El, getFinaleLines()[0], glyphWrites);
                 }
                 if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    this.setLineVisualText(this.line1El, CANONICAL_FINALE_LINES[1], glyphWrites);
+                    this.setLineVisualText(this.line1El, getFinaleLines()[1], glyphWrites);
                 }
                 if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    this.setLineVisualText(this.line3El, CANONICAL_FINALE_LINES[3], glyphWrites);
+                    this.setLineVisualText(this.line3El, getFinaleLines()[3], glyphWrites);
                 }
                 if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    this.setLineVisualText(this.line4El, CANONICAL_FINALE_LINES[4], glyphWrites);
+                    this.setLineVisualText(this.line4El, getFinaleLines()[4], glyphWrites);
                 }
             }
 
@@ -499,16 +500,16 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
     const ambientLoopClass = isPersistentAmbient ? ' ambient-loop' : '';
     const actionsVisibleClass = isInteractive ? ' visible' : '';
 
-    const profileLabel = '[ ↗ GITHUB PROFILE : DUBNOV ALEXEY ]';
-    const repoLabel = '[ ↗ PROJECT REPOSITORY ]';
-    const restartLabel = '[ ↻ RESTART UNIVERSE CYCLE ]';
+    const profileLabel = translateUi('[ ↗ GITHUB PROFILE : DUBNOV ALEXEY ]');
+    const repoLabel = translateUi('[ ↗ PROJECT REPOSITORY ]');
+    const restartLabel = translateUi('[ ↻ RESTART UNIVERSE CYCLE ]');
 
     return (
         <section
             className={`finale-stage-container${stageVisibleClass}`}
             data-github-card="true"
             role="region"
-            aria-label="Финальная визитка автора — Dubnov Alexey"
+            aria-label={translateUi('Финальная визитка автора — Dubnov Alexey')}
             aria-hidden={isCardVisible ? 'false' : 'true'}
         >
             <div
@@ -517,7 +518,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                 aria-live="polite"
                 aria-atomic="true"
             >
-                {isInteractive ? CANONICAL_FINALE_LINES.join(' — ') : ''}
+                {isInteractive ? getFinaleLines().join(' — ') : ''}
             </div>
 
             <article
@@ -537,22 +538,23 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                         if (e.currentTarget instanceof HTMLElement) {
                             triggerLineOrButtonScramble(
                                 e.currentTarget,
-                                CANONICAL_FINALE_LINES[0]
+                                getFinaleLines()[0]
                             );
                         }
                     }}
                 >
-                    {CANONICAL_FINALE_LINES[0]}
+                    {getFinaleLines()[0]}
                 </h1>
 
                 <p
                     className="finale-line-subtitle"
+                    dir={getLocale() === 'he' ? 'rtl' : 'ltr'}
                     data-bind="l5-line-1"
                     onPointerEnter={(event: PointerEvent): void => {
-                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, CANONICAL_FINALE_LINES[1]);
+                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, getFinaleLines()[1]);
                     }}
                 >
-                    {CANONICAL_FINALE_LINES[1]}
+                    {getFinaleLines()[1]}
                 </p>
 
                 <div
@@ -560,7 +562,7 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                     data-bind="l5-line-2"
                     aria-hidden="true"
                 >
-                    {CANONICAL_FINALE_LINES[2]}
+                    {getFinaleLines()[2]}
                 </div>
 
                 <p
@@ -574,10 +576,10 @@ export function renderLayer5CipherFinaleView(state: Readonly<UniverseState>): El
                     className="finale-line-stack"
                     data-bind="l5-line-4"
                     onPointerEnter={(event: PointerEvent): void => {
-                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, CANONICAL_FINALE_LINES[4]);
+                        triggerLineOrButtonScramble(event.currentTarget as HTMLElement, getFinaleLines()[4]);
                     }}
                 >
-                    {CANONICAL_FINALE_LINES[4]}
+                    {getFinaleLines()[4]}
                 </p>
 
                 <div
@@ -714,7 +716,7 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
 
         if (manifestoEl) {
             manifestoEl.textContent = showActions
-                ? CANONICAL_FINALE_LINES.join(' — ')
+                ? getFinaleLines().join(' — ')
                 : '';
         }
         if (profileLinkEl) {
@@ -735,11 +737,19 @@ export function mountLayer5CipherFinale(container: HTMLElement | null): () => vo
     // --- КОНЕЦ ФУНКЦИИ update (mountLayer5CipherFinale) ---
 
     const unsubscribe = universeStore.subscribe(update);
+    const unsubscribeLocale = subscribeLocale(() => {
+        finaleCardAnimator.stop();
+        rootEl?.querySelectorAll<HTMLElement>('[data-bind^="l5-line-"], [data-finale-term-part], .btn-cipher-action')
+            .forEach((element) => calmGlyphHover.stop(element));
+        rootEl = null;
+        update(universeStore.getState());
+    });
     return () => {
         finaleCardAnimator.stop();
         rootEl?.querySelectorAll<HTMLElement>('[data-bind^="l5-line-"], [data-finale-term-part], .btn-cipher-action')
             .forEach((el) => calmGlyphHover.stop(el));
         unsubscribe();
+        unsubscribeLocale();
     };
 }
 // --- КОНЕЦ ФУНКЦИИ mountLayer5CipherFinale ---

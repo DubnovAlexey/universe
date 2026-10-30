@@ -9,7 +9,7 @@
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
 //   2. Функции модуля: assertCondition, runPipelineQualityChecks, runFinaleStoreChecks,
-//      runStressInputChecks, runUniverseVerificationSuite.
+//      runStressInputChecks, runUniverseVerificationSuite, runUniverseVerificationChecks.
 //      runPipelineQualityChecks: getProfile, setTransform, set, getContext.
 //      runFinaleStoreChecks: advanceTo.
 //      runStressInputChecks: addEventListener, dispatchKeyboard, closest.
@@ -63,6 +63,8 @@ import { runOuroborosFieldMorphChecks } from './ouroborosFieldMorph.test';
 import { runFrameDiagnosticsChecks } from './frameDiagnostics.test';
 import { runGlyphFontBudgetChecks } from './glyphFontBudget.test';
 import { runExplanationDialogChecks } from './explanationDialog.test';
+import { runLocaleChecks } from './locale.test';
+import { getLocale, setLocale } from '../core/locale';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -353,6 +355,19 @@ function runStressInputChecks(check: (passed: boolean, description: string) => v
 
 // --- НАЧАЛО ФУНКЦИИ runUniverseVerificationSuite ---
 export function runUniverseVerificationSuite(): VerificationSuiteResult {
+    const originalLocale = getLocale();
+    try {
+        // Численные проверки одометра сравнивают общий английский канон, а не выбранный UI-язык.
+        setLocale('en');
+        return runUniverseVerificationChecks();
+    } finally {
+        setLocale(originalLocale);
+    }
+}
+// --- КОНЕЦ ФУНКЦИИ runUniverseVerificationSuite ---
+
+// --- НАЧАЛО ФУНКЦИИ runUniverseVerificationChecks ---
+function runUniverseVerificationChecks(): VerificationSuiteResult {
     const details: string[] = [];
     let totalChecks = 0;
     let passedChecks = 0;
@@ -384,7 +399,7 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     check(
         terminalLogs.length === 25 &&
         terminalLogs.every((line, index) =>
-            /^\[\d{2}:\d{2}:\d{2}\] \[QA:TERMINAL\] Terminal regression \d+$/.test(line) &&
+            /^\[\d{2}:\d{2}:\d{2}] \[QA:TERMINAL] Terminal regression \d+$/.test(line) &&
             line.endsWith(`Terminal regression ${29 - index}`)
         ),
         'Terminal log retains the latest 25 events in reverse order with timestamps and uppercase source tags'
@@ -995,7 +1010,9 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
     runOuroborosFieldMorphChecks(check);
     runFrameDiagnosticsChecks(check);
     runGlyphFontBudgetChecks(check);
+    setLocale('ru');
     runExplanationDialogChecks(check);
+    runLocaleChecks(check);
 
     return {
         passed: passedChecks === totalChecks,
@@ -1004,4 +1021,4 @@ export function runUniverseVerificationSuite(): VerificationSuiteResult {
         details,
     };
 }
-// --- КОНЕЦ ФУНКЦИИ runUniverseVerificationSuite ---
+// --- КОНЕЦ ФУНКЦИИ runUniverseVerificationChecks ---

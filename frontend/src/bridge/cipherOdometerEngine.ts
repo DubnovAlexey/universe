@@ -11,6 +11,7 @@
 
 
 import { DeterministicPRNG } from '../core/prng';
+import { getLocale, translateUi, type Locale } from '../core/locale';
 import { smootherstep, universeStore } from '../store/universeState';
 import { getVisualSignals } from '../core/visualSignals';
 import { GLYPH_WAITING_SPACE, formatOrderedGlyphText, getOrderedGlyphState, getRenderableGlyphPool, isMutableGlyph, splitGlyphText } from '../core/glyphGrammar';
@@ -22,6 +23,21 @@ export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, s
     'SCRAMBLER · KURAMOTO · fBm · VERLET · PLUMMER',
     'ASTRO · TYPESCRIPT/JAVASCRIPT · RUST/WASM · PYTHON · CUSTOM JSX/DOM · CANVAS2D · WEBGPU/WGSL · WEB AUDIO · HTML/CSS',
 ];
+
+const localizedFinaleLines = new Map<Locale, typeof CANONICAL_FINALE_LINES>();
+// НАЧАЛО ФУНКЦИИ getFinaleLines
+/** Имена, формулы и международные технологии стабильны; сопровождающая строка переводится. */
+export function getFinaleLines(locale: Locale = getLocale()): typeof CANONICAL_FINALE_LINES {
+    const cached = localizedFinaleLines.get(locale);
+    if (cached) return cached;
+    const lines: typeof CANONICAL_FINALE_LINES = Object.freeze([
+        CANONICAL_FINALE_LINES[0], translateUi(CANONICAL_FINALE_LINES[1], locale),
+        CANONICAL_FINALE_LINES[2], CANONICAL_FINALE_LINES[3], CANONICAL_FINALE_LINES[4],
+    ]);
+    localizedFinaleLines.set(locale, lines);
+    return lines;
+}
+// КОНЕЦ ФУНКЦИИ getFinaleLines
 
 const ENDLESS_SPIN_LINE_INDEX = 2;
 
@@ -301,7 +317,7 @@ export class CipherOdometerEngine {
         let globalIdx = 0;
 
         for (let lineIdx = 0; lineIdx < CANONICAL_FINALE_LINES.length; lineIdx++) {
-            const lineStr = CANONICAL_FINALE_LINES[lineIdx];
+            const lineStr = getFinaleLines()[lineIdx];
             const lineCharacters = splitGlyphText(lineStr);
             const len = lineCharacters.length;
             const typo = this.getLineTypography(lineIdx, len, viewportWidth);

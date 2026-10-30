@@ -52,6 +52,9 @@
 
 /* НАЧАЛО РАЗДЕЛА 2. НИЖНИЙ ОБЪЁМНЫЙ ДОК */
 .explanation-dock {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
     zoom: var(--hud-compact-scale);
     margin-inline: auto;
     padding: 0.75rem 1.1rem;
@@ -67,94 +70,240 @@
 
 /* НАЧАЛО РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
 .explanation-dialog {
+    --explanation-flight-x: 0px;
+    --explanation-flight-y: 0px;
+    --explanation-flight-turn: 0deg;
+    --explanation-flight-yaw: 0deg;
+    --explanation-flight-scale: 1;
+    --explanation-flight-opacity: 1;
+    --explanation-mode-ink: #ffe6a6;
+    --explanation-field-height: min(82dvh, 900px, calc(100dvh - 2rem));
     position: fixed;
     inset: 0;
     z-index: 81;
     color-scheme: dark;
     width: min(920px, calc(100vw - 2rem));
+    height: var(--explanation-field-height, min(82dvh, 900px));
     max-width: none;
     max-height: calc(100dvh - 2rem);
     margin: auto;
     padding: 0;
-    border: 1px solid rgba(125, 211, 252, 0.45);
-    border-radius: 20px;
+    border: none;
+    border-radius: 0;
     color: #e2ecf6;
-    background: radial-gradient(ellipse at 0 0, #12243b 0, #080f1e 55%, #050b16 100%);
-    box-shadow: 0 28px 110px #000, 0 0 36px rgba(70, 144, 196, 0.17);
+    background: transparent;
+    box-shadow: none;
     font-family: system-ui, sans-serif;
-    overflow: auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
     scrollbar-color: #385c7c #0b1423;
 }
-.explanation-dialog[open][data-entry-animation="true"] { animation: explanationReveal 1s cubic-bezier(0.22, 1, 0.36, 1); transform-origin: center; }
-.explanation-panel { position: relative; z-index: 1; padding: clamp(1rem, 3vw, 2rem); }
+.explanation-dialog[open][data-entry-animation="true"] {
+    transform-origin: center;
+    transform: perspective(1000px) rotateY(var(--explanation-flight-yaw, 0deg))
+        scale(var(--explanation-flight-scale, 1));
+    opacity: var(--explanation-flight-opacity, 1);
+}
+.explanation-dialog[open][data-entry-stage="gathering"] { pointer-events: none; }
+/* Одна область чтения остаётся внутри волн при любом положении прокрутки. */
+.explanation-panel {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    height: calc(var(--explanation-field-height, min(82dvh, 900px)) - 56px);
+    margin: 28px 30px;
+    padding: 0 4px 4px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
 .explanation-symbol-anchor { position: sticky; top: 0; height: 0; pointer-events: none; z-index: 0; }
+.explanation-symbol-anchor > .waterfall-contour-svg { height: var(--explanation-field-height, min(82dvh, 900px)); }
 .explanation-symbol-field {
     position: absolute;
     inset: 0 0 auto;
-    height: min(82dvh, 900px);
+    height: var(--explanation-field-height, min(82dvh, 900px));
     z-index: 0;
-    opacity: 0.62;
+    opacity: 1;
     pointer-events: none;
 }
 .explanation-header {
     position: sticky;
     top: 0;
     z-index: 1;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.7rem 0.65rem;
     padding-block: 0.5rem;
     background: #0b1728;
 }
-.explanation-kicker { color: #7dd3fc; font: 0.68rem var(--font-mono), monospace; letter-spacing: 0.12em; margin: 0 0 0.65rem; }
-.explanation-title { font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.2; margin: 0; font-weight: 650; }
+.explanation-heading { display: contents; min-width: 0; overflow-wrap: anywhere; }
+.explanation-kicker { grid-column: 1; grid-row: 1; min-width: 0; color: #7dd3fc; font: 0.68rem var(--font-mono), monospace; line-height: 1.5; letter-spacing: 0.12em; margin: 0; overflow-wrap: anywhere; }
+.explanation-title { grid-column: 1 / -1; grid-row: 2; min-width: 0; font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.25; margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.explanation-title:focus { outline: none; }
 .explanation-close {
+    --solid-pad-x: 0.9rem;
+    --solid-pad-y: 0.55rem;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
     flex: 0 0 auto;
     min-height: 44px;
     border: 1px solid #47627e;
     border-radius: 12px;
     background: #111e32;
     color: #e1f4ff;
-    padding-inline: 0.75rem;
+    padding: var(--solid-pad-y) var(--solid-pad-x);
     font: 0.85rem system-ui, sans-serif;
     cursor: pointer;
 }
 .explanation-summary { max-width: 72ch; margin: 1rem 0; line-height: 1.65; color: #d4e5f3; }
-.explanation-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0; }
-.explanation-mode { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.explanation-controls { width: 100%; min-width: 0; margin: 1rem 0; }
+.explanation-mode {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    min-width: 0;
+    gap: 0.65rem;
+    align-items: stretch;
+}
 .explanation-mode-button,
 .explanation-topic {
+    --solid-pad-x: 0.9rem;
+    --solid-pad-y: 0.65rem;
     font: inherit;
     font-size: 0.83rem;
     color: #bed4e7;
-    padding: 0.55rem 0.75rem;
+    padding: var(--solid-pad-y) var(--solid-pad-x);
     border: 1px solid #2c435d;
     background: #0c1728;
     border-radius: 8px;
+    box-shadow: 0 3px 8px rgba(0, 2, 10, 0.6), inset 0 1px rgba(171, 221, 245, 0.1);
     cursor: pointer;
     min-height: 38px;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
+.explanation-mode-button { width: 100%; }
 .explanation-mode-button[aria-pressed="true"],
 .explanation-topic[aria-current="page"] { color: #e9f9ff; border-color: #75b5d5; background: #18324b; }
-.explanation-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 8.8rem; overflow: auto; padding: 0.15rem 0.15rem 0.6rem; border-bottom: 1px solid #263b52; }
-.explanation-content { line-height: 1.75; font-size: 1rem; padding-top: 0.6rem; }
+.explanation-nav { display: flex; flex-wrap: wrap; gap: 0.65rem; overflow: visible; padding: 0.25rem 0.15rem 0.7rem; border-bottom: 1px solid #263b52; }
+
+/* Общие шесть граней; ограниченное покачивание и цвет публикует общий кадр окна. */
+:root .explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"] {
+    --solid-read-scale: 1;
+    --solid-live-scale: 1;
+    --solid-shift-x: 0px;
+    --solid-shift-y: 0px;
+    --solid-shadow-lift: 0px;
+    --solid-shadow-fade: 1;
+    --button-axis-x: 1;
+    --button-axis-y: 0;
+    --button-axis-z: 0;
+    --button-spin-angle: 0deg;
+    --button-back-label-turn: 0deg;
+    --button-shadow-x: 1px;
+    --button-shadow-y: 4px;
+    --button-shadow-blur: 4px;
+    --button-shadow-opacity: 0.42;
+    --button-shadow-scale-x: 1;
+    --button-shadow-scale-y: 0.9;
+    --explanation-facet-x: 50%;
+    --explanation-facet-y: 50%;
+    --explanation-facet-angle: 120deg;
+    --explanation-facet-opacity: 0.07;
+    position: relative;
+    z-index: 0;
+    perspective: 760px;
+    perspective-origin: center;
+    transform: none;
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    border-radius: 2px;
+    box-shadow: none;
+}
+:root .explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"]::before {
+    background: radial-gradient(ellipse, rgba(0, 1, 6, 0.92) 25%, rgba(41, 77, 113, 0.62) 65%, transparent 87%);
+    box-shadow: 0 4px 9px rgba(0, 0, 0, 0.9), 0 0 12px rgba(73, 124, 181, 0.36);
+}
+.explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"] .solid-button-body {
+    --solid-depth: clamp(12px, calc(var(--solid-height) * 0.58), 26px);
+    transform-style: preserve-3d;
+    scale: 1;
+    translate: 0 0;
+}
+/* Блик рисуется внутри каждой грани, а общий кадр меняет лишь четыре локальные переменные. */
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    background:
+        radial-gradient(ellipse at var(--explanation-facet-x) var(--explanation-facet-y), rgba(213, 239, 255, 0.92), transparent 67%),
+        linear-gradient(calc(var(--explanation-facet-angle) + var(--explanation-face-turn, 0deg)),
+            transparent 16%, rgba(255, 237, 205, 0.7) 43%, rgba(161, 211, 255, 0.43) 57%, transparent 84%);
+    opacity: calc(var(--explanation-facet-opacity) * var(--explanation-face-light, 1));
+    pointer-events: none;
+}
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--front { --explanation-face-light: 0.7; }
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--back { --explanation-face-turn: 35deg; --explanation-face-light: 0.65; }
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--top { --explanation-face-turn: 80deg; --explanation-face-light: 1.15; }
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--bottom { --explanation-face-turn: -70deg; --explanation-face-light: 0.8; }
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--left { --explanation-face-turn: 50deg; --explanation-face-light: 0.9; }
+.explanation-dialog [data-explanation-button-motion="1"] .solid-button-face--right { --explanation-face-turn: -35deg; --explanation-face-light: 1.25; }
+.explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"] .solid-button-measurer {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr) !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"] .solid-button-label {
+    position: relative;
+    z-index: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    /* offsetWidth округляет ширину тела: запас не даёт последней букве уйти на строку. */
+    padding-inline: max(0px, calc(var(--solid-pad-x) - 2px));
+}
+.explanation-dialog :is(.solid-button-label--back, [data-solid-measure-face="back"]) {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+.explanation-dialog .explanation-mode-button,
+.explanation-dialog .explanation-mode-button[aria-pressed="true"] {
+    color: var(--explanation-mode-ink, #ffe6a6);
+    text-shadow: 0 1px 3px rgba(24, 4, 13, 0.92), 0 0 7px rgba(189, 80, 101, 0.32);
+}
+.explanation-dialog :is(.explanation-mode-button[aria-pressed="true"], .explanation-topic[aria-current="page"])[data-button-solid="1"] .solid-button-face {
+    border-color: #9ad8f2;
+}
+.explanation-dialog :is(.explanation-mode-button[aria-pressed="true"], .explanation-topic[aria-current="page"])[data-button-solid="1"] .solid-button-face--front {
+    background-image: linear-gradient(165deg, #294b67, #12283e 72%);
+    box-shadow: inset 0 1px rgba(227, 248, 255, 0.65), inset 0 -3px rgba(125, 211, 252, 0.6), 0 0 9px rgba(84, 171, 212, 0.15);
+}
+:root .explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"]:is(:hover, :focus-visible) {
+    --solid-live-scale: 1;
+    --solid-shadow-lift: 1px;
+    --solid-shadow-fade: 0.9;
+    z-index: 2;
+}
+.explanation-content { line-height: 1.7; font-size: 1.03rem; padding-top: 0.6rem; }
 .explanation-section { margin: 0.9rem 0 1.2rem; max-width: 76ch; }
 .explanation-section h3 { margin: 0 0 0.4rem; font-size: 1rem; color: #a9d9ed; }
 .explanation-section p { margin: 0.45rem 0; }
-.explanation-technical { padding-left: 1.15rem; }
+.explanation-technical { padding-inline-start: 1.15rem; padding-inline-end: 0; }
 .explanation-technical li { margin-block: 0.65rem; }
 .explanation-sources { display: flex; flex-wrap: wrap; gap: 0.65rem 1.2rem; margin-top: 0.7rem; }
 .explanation-sources a { color: #8ed1f3; text-underline-offset: 0.22em; overflow-wrap: anywhere; }
 .explanation-pause-note { color: #94abc0; font-size: 0.76rem; margin: 1.25rem 0 0; border-top: 1px solid #263b52; padding-top: 0.75rem; }
 .explanation-dialog :is(button, a):focus-visible { outline: 2px solid #a3dfff; outline-offset: 3px; }
 .explanation-dialog button:hover { border-color: #8fc6df; }
-@keyframes explanationReveal {
-    0%, 30% { opacity: 0; transform: scale(0.008); }
-    35% { opacity: 0.8; transform: scale(0.018); }
-    100% { opacity: 1; transform: none; }
-}
 /* КОНЕЦ РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
 
 /* НАЧАЛО РАЗДЕЛА 4. НАТИВНЫЕ МАТЕМАТИЧЕСКИЕ ФОРМУЛЫ */
@@ -172,24 +321,27 @@
     .explanation-dialog {
         inset: var(--hud-top-inset) auto var(--hud-bottom-inset) 1.25rem;
         margin: 0;
-        width: min(422px, 22vw);
+        width: clamp(300px, calc(50vw - 452px), 720px);
+        height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
         max-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
-        border-radius: 18px 26px 20px 24px;
+        --explanation-field-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
     }
-    .explanation-panel { padding: 1rem; }
-    .explanation-title { font-size: 1.2rem; }
-    .explanation-close { padding-inline: 0.45rem; font-size: 0.75rem; }
+    .explanation-title { font-size: 1.3rem; }
+    .explanation-close { --solid-pad-x: 0.75rem; font-size: 0.75rem; }
     .explanation-header { gap: 0.6rem; }
-    .explanation-nav { max-height: 7rem; }
-    .explanation-topic { padding: 0.4rem 0.5rem; font-size: 0.74rem; }
-    .explanation-content { font-size: 0.9rem; }
-    .explanation-summary { font-size: 0.9rem; }
+    .explanation-topic { --solid-pad-x: 0.8rem; --solid-pad-y: 0.55rem; font-size: 0.83rem; }
+    .explanation-content { font-size: 1.03rem; }
+    .explanation-summary { font-size: 1.03rem; }
 }
-@media (min-width: 921px) and (max-width: 1649px) {
+@media (min-width: 921px) and (max-width: 1839px) {
     /* На среднем экране отдельное место над доками сохраняет прежние размеры кнопок. */
     .hud-bottom-bar { padding-top: 58px; }
     .explanation-dock { top: 0; bottom: auto; }
-    .explanation-dialog { width: min(390px, 32vw); }
+    .explanation-dialog { width: min(390px, 31vw); }
+}
+@media (min-width: 921px) and (max-width: 1730px) {
+    /* Визитка занимает 56vw: левый коридор сохраняет зазор до её края. */
+    .explanation-dialog { width: min(390px, calc(22vw - 0.4rem)); }
 }
 @media (max-width: 920px) {
     .explanation-dock { padding: 0.35rem 0.9rem; }
@@ -198,15 +350,20 @@
 }
 @media (max-width: 600px) {
     .explanation-dialog { width: calc(100vw - 0.75rem); max-height: calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); border-radius: 14px; }
-    .explanation-panel { padding: 1rem; }
-    .explanation-nav { max-height: 7rem; }
+    .explanation-dialog { --explanation-field-height: calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
     .explanation-title { font-size: 1.4rem; }
     .explanation-topic { font-size: 0.76rem; min-height: 40px; }
     .explanation-mode-button { min-height: 44px; }
     .explanation-formula { padding: 0.75rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .explanation-dialog[open][data-entry-animation="true"] { animation: none; }
+    .explanation-dialog[open][data-entry-animation="true"] { transform: none; opacity: 1; }
     .finale-term { transition: none; }
 }
+
+/* Геометрия сцены сохраняет стороны; направление письма задаётся текстовым элементам. */
+.hud-overlay, .finale-stage-container { direction: ltr; }
+.finale-line-author, .finale-line-math, .finale-line-stack, .finale-line-quantum-stream { direction: ltr; unicode-bidi: isolate; }
+.explanation-math, .explanation-formula-text { direction: ltr; unicode-bidi: isolate; }
+.explanation-text-overlay { position: absolute; inset: 0; pointer-events: none; }
 /* КОНЕЦ РАЗДЕЛА 5. ТЕЛЕФОН И УМЕНЬШЕННОЕ ДВИЖЕНИЕ */

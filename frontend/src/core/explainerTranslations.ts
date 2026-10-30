@@ -1,0 +1,651 @@
+// ============================================================================
+// FILE: frontend/src/core/explainerTranslations.ts
+// PURPOSE: Immutable translations of the educational topic catalog.
+// SECTIONS: 1. Types; 2. English; 3. Hebrew; 4. Spanish; 5. Publication.
+// ============================================================================
+
+export type ExplainerLocale = 'ru' | 'en' | 'he' | 'es';
+export interface ExplainerTranslation {
+    readonly label: string;
+    readonly title: string;
+    readonly summary: string;
+    readonly experience: string;
+    readonly intuition: string;
+    readonly technical: readonly string[];
+    readonly formulas?: readonly { readonly label: string; readonly text?: string }[];
+    readonly sources?: readonly { readonly label: string }[];
+}
+
+type TranslatedLocale = Exclude<ExplainerLocale, 'ru'>;
+const translations: Record<TranslatedLocale, Record<string, ExplainerTranslation>> = {
+    en: {
+        overview: {
+            label: 'How it works',
+            title: 'One scene, several languages of science',
+            summary: 'In 108 seconds, points travel from a light echo to a neural network and a new beginning. Mathematics connects these images through continuous movement.',
+            experience: 'Notice how the galaxy and brain emerge from the same particle field. The lens reveals connections, and part of the field gathers into an Ouroboros in the finale.',
+            intuition: 'Imagine an orchestra: the script changes the movements, oscillators keep an internal rhythm, a graph lays out connections, and graphics turn numbers into light.',
+            technical: [
+                'Astro builds the static page. TypeScript manages state, time and Canvas 2D; a local JSX factory builds the DOM/SVG interface. Rust/WASM supplies computations with a TypeScript fallback.',
+                'HTML provides interface semantics; CSS provides layout and appearance. The audio module handles playback and musical envelopes, using the Web Audio API where signal analysis is available.',
+                'Kuramoto phases affect breathing and part of the geometry. REF64 energy describes 64 separate reference orbits. The main visible scene follows artistic targets with smooth blending.',
+                'WebGPU runs a separate Ouroboros pass, with Canvas available when it cannot run. Python provides independent verification references. Cosmic and neural forms are an artistic analogy.',
+            ],
+            sources: [{ label: 'Scene architecture' }, { label: 'Mathematical models' }, { label: 'Audio and musical envelopes' }],
+        },
+        polyglot: {
+            label: 'Polyglot',
+            title: 'Polyglot: languages working together',
+            summary: 'A polyglot program uses several languages for different parts of one task. Here they exchange data through explicit contracts.',
+            experience: 'Light, numerical readings and the connection graph form one scene, even though different modules produce them.',
+            intuition: 'Think of a workshop sharing one set of drawings: one person calculates a shape, another builds a mechanism, and a third checks dimensions. An agreed data format connects their work.',
+            technical: [
+                'Astro produces HTML at build time. TypeScript runs the interactive scene, graph and Canvas. Rust compiles to WebAssembly and returns phases, reference orbits and Ouroboros geometry. WGSL describes its GPU rendering.',
+                'Python independently reproduces selected algorithms and test data. Viewing the ordinary static site does not require a Python server.',
+                'Contracts specify formats, rounding and time. Tests compare integer PRNG vectors, graph fixtures and Rust/TypeScript numerical results within stated bounds.',
+            ],
+            sources: [{ label: 'Language and boundary decision' }, { label: 'Data contracts' }],
+        },
+        astro: {
+            label: 'Astro',
+            title: 'Astro: giving the scene a shell',
+            summary: 'Astro builds a page from source files. It prepares HTML, styles, assets and mounting points for the interactive scene.',
+            experience: 'The heading, buttons, two canvases and panel containers exist in the page structure before the first animated frame.',
+            intuition: 'It is the stage builder: it installs the platform, screens and control desk. A separate program then runs the performance.',
+            technical: [
+                'The main index.astro page imports styles, defines the page markup and loads the client module renderer.ts. Configuration specifies the static publication path.',
+                'Astro does not recalculate each particle movement. After loading, the project’s TypeScript code controls frames, state and browser events.',
+                'This structure allows publication as static files, including JavaScript, fonts, audio and WebAssembly.',
+            ],
+            sources: [{ label: 'Page structure' }, { label: 'Build configuration' }],
+        },
+        typescript: {
+            label: 'TypeScript',
+            title: 'TypeScript: agreements before execution',
+            summary: 'TypeScript adds data types to JavaScript. It helps detect when a module receives an unsuitable value or expects a missing field.',
+            experience: 'Pause, phase transitions, pointer responses, panels and image updates are coordinated through shared state and a frame loop.',
+            intuition: 'Types resemble labels on connectors: they help fit compatible parts together during assembly. JavaScript then performs the movement in the browser.',
+            technical: [
+                'UniverseState and contract types describe phases, time and particle data. The compiler checks how they are used; these type descriptions are removed during the build.',
+                'Browser execution still needs input validation: a type alone does not validate WebAssembly memory or external transport data.',
+                'The shared frame connects simulation, visual signals, interface and renderer, helping them read consistent state rather than use independent clocks.',
+            ],
+            sources: [{ label: 'Scene state' }, { label: 'Shared frame loop' }],
+        },
+        'jsx-dom': {
+            label: 'JSX/DOM',
+            title: 'JSX and DOM: an interface made of elements',
+            summary: 'JSX is a convenient way to write an interface tree. The DOM contains the actual browser elements: buttons, captions, links and panels.',
+            experience: 'You can read and select the card’s text and activate its buttons with a keyboard because they are real page elements.',
+            intuition: 'JSX resembles a compact assembly plan; the DOM is the assembled structure. A small local factory translates that plan directly into browser nodes.',
+            technical: [
+                'The React.createElement factory in Layer2_Metrics.tsx creates HTML with document.createElement and SVG with createElementNS, then adds attributes, handlers and children. React here is a local object’s name.',
+                'This factory does not use the React package or its tree reconciliation. Views mount into containers, and controllers update the required nodes.',
+                'The DOM preserves element semantics and accessibility features. Particles are drawn on a canvas rather than creating thousands of separate HTML nodes.',
+            ],
+            sources: [{ label: 'Local DOM/SVG factory' }, { label: 'Final card view' }],
+        },
+        'canvas-wgsl': {
+            label: 'Canvas/WGSL',
+            title: 'Canvas and WGSL: numbers become light',
+            summary: 'Canvas 2D draws the main image using browser commands. WGSL is a language for small GPU programs that light the three-dimensional Ouroboros in a separate pass.',
+            experience: 'The main canvas draws the five phases, dust and connections. In the finale, depth and overlapping luminous points make the Ouroboros ring appear spatial.',
+            intuition: 'Canvas resembles a painter applying strokes in sequence. A GPU processes many similar graphics tasks in parallel.',
+            technical: [
+                'The active WebGPU renderer loads ouroboros.wgsl and uses point positions, normals, sizes and materials, together with depth testing and lighting. Its transparent canvas overlays the main scene.',
+                'When WebGPU is unavailable, the same decorative geometry is rendered through Canvas with simpler lighting.',
+                'The repository’s illusion.wgsl, truth.wgsl and breach.wgsl files are separate specifications. The current five main phases run in Canvas 2D.',
+            ],
+            sources: [{ label: 'Main Canvas pipeline' }, { label: 'Active Ouroboros shader' }, { label: 'Ouroboros Canvas implementation' }],
+        },
+        'rust-wasm': {
+            label: 'Rust/WASM',
+            title: 'Rust and WebAssembly: computation in the browser',
+            summary: 'Rust implements the computational module. WebAssembly, or WASM, is the compact format into which that module is compiled to run in a browser.',
+            experience: 'Particle breathing and the final ring geometry continue working when the computational implementation changes.',
+            intuition: 'The module resembles a calculator with labelled inputs and outputs. The browser sends numbers and receives results in an agreed format.',
+            technical: [
+                'The bridge checks the ABI: an agreement about exported functions and memory. Rust calculates Kuramoto phases, 64 reference orbits and Ouroboros geometry through a separate optional ABI.',
+                'When WASM loads late, it adopts the current TypeScript state. After successful steps, the bridge maintains a TS mirror so execution can continue if the module fails.',
+                'WASM does not replace the renderer: other parts create light and interface elements. This boundary provides an explicit numerical contract and two implementations that can be compared.',
+            ],
+            sources: [{ label: 'Bridge and fallback implementation' }, { label: 'Rust exports' }],
+        },
+        python: {
+            label: 'Python',
+            title: 'Python: an independent check',
+            summary: 'Python checks selected mathematical algorithms using another implementation. A beautiful image alone cannot establish that a calculation is correct.',
+            experience: 'Checks confirm repeatable input numbers, topology and data formats; visitors receive a completed static site.',
+            intuition: 'Like solving a problem in two ways: matching intermediate values and results makes accidental mistakes easier to find.',
+            technical: [
+                'Modules in backend/core provide references for the PRNG, graph topology, optics and discrete symbol selection. Tests compare agreed inputs, rounding, edges and metrics.',
+                'Matching fixtures confirm the tested scenarios. They do not prove equality of arbitrary floating-point computations or every possible large graph.',
+                'The repository includes transport code, but the ordinary static demonstration needs no permanent connection to a Python server.',
+            ],
+            sources: [{ label: 'Graph reference' }, { label: 'Parity checks' }],
+        },
+        symplectic: {
+            label: 'Symplectic integrator',
+            title: 'Velocity Verlet: an orbit in small steps',
+            summary: 'An integrator calculates how acceleration changes position and velocity. Velocity Verlet treats acceleration symmetrically at the beginning and end of a step.',
+            experience: 'The telemetry value ΔE/E₀ measures energy deviation in the separate REF64 reference ensemble.',
+            intuition: 'Following a curve takes more than stepping along its tangent: you must account for the turn. Small, coordinated steps follow the orbit more closely.',
+            technical: [
+                'For a conservative system with a fixed step and ideal arithmetic, Velocity Verlet is second order, time-reversible and symplectic. This does not promise exact energy conservation at any step size.',
+                'Here it integrates 64 independent reference orbits. An admitted positive interval is capped at 0.05 s and divided into ceil(dt/0.004) equal substeps; excess time is not replayed later.',
+                'Orbit arrays use f32 storage while step arithmetic uses f64. Visible particles follow artistic choreography, so REF64 energy does not assess their movement.',
+            ],
+            formulas: [{ label: 'Position at the next substep' }, { label: 'Symmetric velocity update' }, { label: 'Relative REF64 energy drift' }],
+            sources: [{ label: 'Rust substeps and integration' }, { label: 'TypeScript orbits and energy' }],
+        },
+        kuramoto: {
+            label: 'Kuramoto',
+            title: 'Kuramoto: how a shared rhythm emerges',
+            summary: 'An oscillator has a repeating rhythm. Coupled oscillators can adjust their phases so separate flashes become more coordinated.',
+            experience: 'Phases affect particle breathing and late-GENESIS geometry. The value r describes agreement between their internal clocks.',
+            intuition: 'Imagine fireflies: each keeps its own pace, but their shared glow shifts the timing of the next flash slightly.',
+            technical: [
+                'First, average sin(θ) and cos(θ) determine the direction ψ. Each phase advances at its natural frequency ω with the correction K sin(ψ−θ). This implementation does not multiply coupling by r; it is a Kuramoto-inspired mean-angle variant.',
+                'The order parameter r is the length of the average unit phase vector. A value near 1 indicates close phases; a small value indicates weak overall agreement, including cancellation between groups.',
+                'The value r is measured separately and does not switch the five scene phases. Their order follows the 108-second script.',
+            ],
+            formulas: [{ label: 'Equation used in the project' }, { label: 'Order parameter' }],
+            sources: [{ label: 'Rust phase evolution' }, { label: 'Phase influence on the galaxy' }],
+        },
+        nexus: {
+            label: 'NEXUS',
+            title: 'NEXUS: points become a network',
+            summary: 'A graph consists of nodes and connections. NEXUS joins particles into trunks, bridges and fine branches carrying light pulses.',
+            experience: 'In the neural phase, thick trunks establish the structure while short branches add local connections.',
+            intuition: 'Think of a road map: first establish main routes, then crossings between districts and smaller branches.',
+            technical: [
+                'Trunks grow using Prim’s principle on at most the first 36 active nodes. A length cutoff can stop growth before a full spanning tree, so connectivity is not guaranteed.',
+                'Bridges use a local Gabriel-inspired heuristic: an index window of ±10 and a threshold of 0.85 times the squared diametral-circle radius. Short connections can admit additional branches.',
+                'Dendrite thickness decreases as k⁻¹ᐟ³, inspired by Murray’s law. Pulses follow Bézier curves using an approximate length table. With more than 260 input nodes, the graph samples every second node.',
+            ],
+            formulas: [{ label: 'Dendrite branch radius in the code' }],
+            sources: [{ label: 'Graph construction' }, { label: 'Curves and pulses' }],
+        },
+        prng: {
+            label: 'Deterministic PRNG',
+            title: 'Randomness you can repeat',
+            summary: 'A pseudorandom generator produces numbers that look random using an exact rule. The same seed and call order produce the same sequence.',
+            experience: 'Particle positions and properties look varied, yet the original numbers can be reproduced for checking.',
+            intuition: 'A seed resembles a score number: the music is complex, but the same number retrieves the same notes.',
+            technical: [
+                'The Mulberry32 stream stores a 32-bit state. The project’s public initial seed is 104729. Unsigned shifts and multiplication modulo 2³² are aligned across TypeScript, Rust and Python.',
+                'For indexed particle access, hashU32(seed,index) combines seed and index, then applies the MurmurHash3 fmix32 finalizer. It consumes no stream state and is a separate indexed hash, not Stafford Mix13.',
+                'Reproducibility supports tests and stable shapes when quality changes. It implies neither cryptographic unpredictability nor unique displayed properties without repetition.',
+            ],
+            formulas: [{ label: 'Mulberry32 state update' }, { label: 'Mapping an integer output to a fraction' }],
+            sources: [{ label: 'TypeScript Mulberry32 and indexed hash' }, { label: 'Independent Python reference' }, { label: 'Matching Rust integer scheme' }],
+        },
+        fbm: {
+            label: 'Fractal noise fBm',
+            title: 'fBm: broad waves and fine ripples',
+            summary: 'Adding smooth noise layers at different scales creates complex organic irregularity. This graphics technique is commonly called fBm.',
+            experience: 'Light echoes, dust clouds and the lens rim gain irregular shapes that feel alive.',
+            intuition: 'Draw broad cloud folds first, then smaller folds and light ripples. Each layer is weaker but more detailed.',
+            technical: [
+                'The base valueNoise2D reads values at lattice points and smoothly interpolates them with the cubic function u²(3−2u). It is interpolated value noise.',
+                'fbm2D starts at amplitude 0.52 and frequency 1. Each layer multiplies frequency by 2.03 and amplitude by 0.51. The active echo, dust and lens passes request three octaves.',
+                'Noise output can shift the coordinates or angle of a later sample: domain warping. Here fBm means a finite graphics sum of noise layers, not an exact fractional Brownian stochastic process.',
+            ],
+            formulas: [{ label: 'Three-octave sum in the active renderer' }],
+            sources: [{ label: 'Value noise and octave sum' }, { label: 'Noise in clouds and echoes' }],
+        },
+        plummer: {
+            label: 'Plummer potential',
+            title: 'Plummer: a softened center of attraction',
+            summary: 'For a point source, force grows without bound near the center. The Plummer potential replaces that sharp center with a smooth distribution.',
+            experience: 'It supplies the field for REF64 reference orbits used to measure numerical energy error.',
+            intuition: 'Imagine a deep bowl: an ideal point has an infinitely deep bottom, while the softened model rounds it off.',
+            technical: [
+                'The denominator replaces distance r with √(r²+ε²). Here GM=4900 and ε²=64, so the softening length is ε=8 in the reference model’s coordinate units.',
+                'Each of the 64 test particles moves in one static central field. The mutual attraction of all visible particles is not calculated.',
+                'Acceleration is minus the potential gradient and remains finite. Softening removes the central singularity; trajectory accuracy still depends on the integration step and arithmetic.',
+            ],
+            formulas: [{ label: 'Potential per unit mass' }, { label: 'Reference-particle acceleration' }],
+            sources: [{ label: 'Potential, acceleration and energy' }, { label: 'Reference orbit initialization' }],
+        },
+        ouroboros: {
+            label: 'Ouroboros',
+            title: 'Ouroboros: the field closes into a ring',
+            summary: 'The Ouroboros is a serpent closing around its own tail. Here it connects the final card with the return to the cycle’s beginning.',
+            experience: 'After assembly, the card rises and part of the surrounding field gathers into a three-dimensional body. The form then disperses into dust again.',
+            intuition: 'The same points receive a second score: they blend from cloud to form, turn together and return to the field.',
+            technical: [
+                'Rust and TypeScript generate up to 3072 decorative points. Each stores three coordinates, three normal components, size and material: eight f32 values.',
+                'The transition blends the original field position with the form position through quintic smootherstep. Its first and second derivatives are zero at the endpoints, helping movement begin and end smoothly.',
+                'A shared timer coordinates card rise, gathering, rotation and dispersal. Manual pause preserves it; reduced motion limits movement. This decorative geometry changes neither physical orbits nor NEXUS topology.',
+            ],
+            formulas: [{ label: 'Smooth transition fraction, 0 ≤ u ≤ 1' }, { label: 'Blending two positions', text: 'p = (1 − q)p_field + qp_form' }],
+            sources: [{ label: 'Three-dimensional geometry' }, { label: 'Field-to-form transition' }, { label: 'Episode timer' }],
+        },
+    },
+    he: {
+        overview: {
+            label: 'איך זה עובד',
+            title: 'סצנה אחת, כמה שפות של מדע',
+            summary: 'במשך 108 שניות הנקודות עוברות מהד של אור לרשת עצבית ולהתחלה חדשה. המתמטיקה מחברת בין הדימויים בתנועה רציפה.',
+            experience: 'שימו לב: הגלקסיה והמוח נוצרים מאותו שדה חלקיקים. העדשה חושפת קשרים, ובסיום חלק מהשדה מתאסף ל־Ouroboros.',
+            intuition: 'דמיינו תזמורת: התסריט מחליף פרקים, המתנדים שומרים על קצב פנימי, הגרף יוצר קשרים והגרפיקה הופכת מספרים לאור.',
+            technical: [
+                'Astro בונה את הדף הסטטי. TypeScript מנהל את המצב, הזמן ו־Canvas 2D; מפעל JSX מקומי בונה את ממשק DOM/SVG. Rust/WASM מספק חישובים עם מימוש חלופי ב־TypeScript.',
+                'HTML מגדיר את משמעות רכיבי הממשק, ו־CSS את הפריסה והמראה. מודול השמע מנהל השמעה ומעטפות מוזיקליות, בעזרת Web Audio API כאשר ניתוח האות זמין.',
+                'פאזות Kuramoto משפיעות על הנשימה ועל חלק מהגאומטריה. אנרגיית REF64 מתייחסת ל־64 מסלולי ביקורת נפרדים. הסצנה הנראית הראשית עוקבת אחר מטרות אמנותיות במיזוג חלק.',
+                'WebGPU מפעיל מעבר נפרד ל־Ouroboros; כשאינו זמין, Canvas מציג אותו. Python מספק מימושי ייחוס עצמאיים לבדיקות. הדמיון בין צורות קוסמיות ועצביות הוא הקבלה אמנותית.',
+            ],
+            sources: [{ label: 'ארכיטקטורת הסצנה' }, { label: 'מודלים מתמטיים' }, { label: 'שמע ומעטפות מוזיקליות' }],
+        },
+        polyglot: {
+            label: 'ריבוי שפות',
+            title: 'ריבוי שפות: עבודה משותפת',
+            summary: 'תוכנית מרובת שפות משתמשת בכמה שפות לפתרון חלקים שונים של אותה משימה. כאן הן מחליפות נתונים לפי חוזים מפורשים.',
+            experience: 'האור, המדדים המספריים וגרף הקשרים נראים כסצנה אחת, אף שמודולים שונים יוצרים אותם.',
+            intuition: 'כמו סדנה עם שרטוטים משותפים: אחד מחשב צורה, אחר בונה מנגנון ושלישי בודק מידות. פורמט נתונים מוסכם מחבר ביניהם.',
+            technical: [
+                'Astro יוצר HTML בזמן הבנייה; TypeScript מפעיל את הסצנה האינטראקטיבית, הגרף ו־Canvas. Rust מקומפל ל־WebAssembly ומחזיר פאזות, מסלולי ביקורת וגאומטריית Ouroboros. WGSL מתאר את הצגתו ב־GPU.',
+                'Python משחזר באופן עצמאי אלגוריתמים ונתוני בדיקה נבחרים. צפייה רגילה באתר הסטטי אינה דורשת שרת Python.',
+                'החוזים קובעים פורמט, עיגול וזמן. הבדיקות משוות וקטורי PRNG שלמים, מקרי בדיקה קבועים לגרף ותוצאות מספריות של Rust ו־TypeScript בגבולות שהוגדרו.',
+            ],
+            sources: [{ label: 'החלטה על שפות וגבולות' }, { label: 'חוזי נתונים' }],
+        },
+        astro: {
+            label: 'Astro',
+            title: 'Astro: מעטפת לסצנה',
+            summary: 'Astro בונה דף מקובצי המקור. הוא מכין HTML, סגנונות, משאבים ונקודות חיבור לסצנה האינטראקטיבית.',
+            experience: 'הכותרת, הכפתורים, שני משטחי הציור ומקומות הלוחות קיימים בשלד הדף עוד לפני פריים ההנפשה הראשון.',
+            intuition: 'זהו בונה הבמה: הוא מתקין משטח, מסכים ועמדת שליטה. לאחר מכן תוכנית נפרדת מפעילה את המופע.',
+            technical: [
+                'הדף הראשי index.astro מייבא סגנונות, מגדיר את מבנה הדף וטוען את מודול הלקוח renderer.ts. התצורה קובעת את נתיב הפרסום של האתר הסטטי.',
+                'Astro אינו מחשב מחדש כל תנועת חלקיק. לאחר הטעינה קוד TypeScript של הפרויקט מנהל פריימים, מצב ואירועי דפדפן.',
+                'המבנה מאפשר לפרסם את התוצאה כקבצים סטטיים, ובהם JavaScript, גופנים, שמע ו־WebAssembly.',
+            ],
+            sources: [{ label: 'שלד הדף' }, { label: 'תצורת הבנייה' }],
+        },
+        typescript: {
+            label: 'TypeScript',
+            title: 'TypeScript: הסכמות לפני ההפעלה',
+            summary: 'TypeScript מוסיף ל־JavaScript תיאורי טיפוסים. הוא עוזר לזהות מראש ערך שאינו מתאים למודול או שדה חסר שהמודול מצפה לקבל.',
+            experience: 'השהיה, מעברי שלבים, תגובת המצביע, הלוחות ועדכון התמונה מתואמים באמצעות מצב משותף ולולאת פריימים.',
+            intuition: 'טיפוסים הם כמו תוויות על מחברים: הם עוזרים לחבר חלקים מתאימים כבר בזמן הבנייה. לאחריה JavaScript מבצע את התנועה בדפדפן.',
+            technical: [
+                'UniverseState וטיפוסי החוזים מתארים את השלב, הזמן ונתוני החלקיקים. המהדר בודק את השימוש בהם; תיאורי הטיפוסים מוסרים בזמן הבנייה.',
+                'ההרצה בדפדפן עדיין זקוקה לבדיקת קלט: טיפוס לבדו אינו מאמת זיכרון WebAssembly או נתונים מתעבורה חיצונית.',
+                'הפריים המשותף מחבר סימולציה, אותות חזותיים, ממשק ומנוע ציור, כדי שיוכלו לקרוא מצב עקבי במקום להשתמש בשעונים עצמאיים.',
+            ],
+            sources: [{ label: 'מצב הסצנה' }, { label: 'לולאת הפריימים המשותפת' }],
+        },
+        'jsx-dom': {
+            label: 'JSX/DOM',
+            title: 'JSX ו־DOM: ממשק מרכיבים',
+            summary: 'JSX הוא תחביר נוח לכתיבת עץ ממשק. DOM הוא אוסף רכיבי הדף האמיתיים שהדפדפן מפעיל: כפתורים, תוויות, קישורים ולוחות.',
+            experience: 'אפשר לקרוא ולסמן את טקסט הכרטיס ולהפעיל כפתורים במקלדת, כי אלה רכיבי דף אמיתיים.',
+            intuition: 'JSX דומה לתוכנית הרכבה קומפקטית; DOM הוא המבנה המורכב. מפעל מקומי קטן מתרגם את התוכנית ישירות לצומתי דפדפן.',
+            technical: [
+                'המפעל React.createElement בקובץ Layer2_Metrics.tsx יוצר HTML באמצעות document.createElement ו־SVG באמצעות createElementNS, ואז מוסיף מאפיינים, מטפלי אירועים וילדים. React הוא כאן שמו של אובייקט מקומי.',
+                'המפעל אינו משתמש בחבילת React או במנגנון התאמת העץ שלה. התצוגות מורכבות בתוך מכולות, והבקרים מעדכנים את הצמתים הדרושים.',
+                'DOM שומר על המשמעות הסמנטית של הרכיבים ועל יכולות הנגישות. החלקיקים מצוירים על משטח ציור במקום ליצור אלפי צומתי HTML נפרדים.',
+            ],
+            sources: [{ label: 'מפעל DOM/SVG מקומי' }, { label: 'תצוגת כרטיס הסיום' }],
+        },
+        'canvas-wgsl': {
+            label: 'Canvas/WGSL',
+            title: 'Canvas ו־WGSL: מספרים הופכים לאור',
+            summary: 'Canvas 2D מצייר את התמונה הראשית בפקודות דפדפן. WGSL היא שפה לתוכניות GPU קטנות שמאירות את ה־Ouroboros התלת־ממדי במעבר נפרד.',
+            experience: 'המשטח הראשי מצייר את חמשת השלבים, האבק והקשרים. בסיום העומק והחפיפה בין נקודות זוהרות מעניקים לטבעת ה־Ouroboros תחושת מרחב.',
+            intuition: 'Canvas דומה לצייר המניח משיכות מכחול בזו אחר זו. GPU מעבד משימות גרפיות דומות רבות במקביל.',
+            technical: [
+                'מנוע WebGPU הפעיל טוען את ouroboros.wgsl ומשתמש במיקום, נורמל, גודל וחומר של הנקודות, לצד בדיקת עומק ותאורה. המשטח השקוף שלו מונח מעל הסצנה הראשית.',
+                'כאשר WebGPU אינו זמין, אותה גאומטריה דקורטיבית מוצגת באמצעות Canvas עם תאורה פשוטה יותר.',
+                'הקבצים illusion.wgsl, truth.wgsl ו־breach.wgsl במאגר הם מפרטים נפרדים. חמשת השלבים הראשיים הנוכחיים מוצגים ב־Canvas 2D.',
+            ],
+            sources: [{ label: 'צינור הציור הראשי של Canvas' }, { label: 'המצליל הפעיל של ה־Ouroboros' }, { label: 'מימוש ה־Ouroboros ב־Canvas' }],
+        },
+        'rust-wasm': {
+            label: 'Rust/WASM',
+            title: 'Rust ו־WebAssembly: חישוב בדפדפן',
+            summary: 'Rust היא שפת המימוש של המודול החישובי. WebAssembly, או WASM, הוא פורמט קומפקטי שאליו המודול מקומפל כדי לרוץ בדפדפן.',
+            experience: 'נשימת החלקיקים וגאומטריית טבעת הסיום ממשיכות לפעול גם כאשר המימוש החישובי מתחלף.',
+            intuition: 'המודול דומה למכשיר חישוב עם כניסות ויציאות מסומנות. הדפדפן שולח מספרים ומקבל תוצאות בפורמט מוסכם.',
+            technical: [
+                'הגשר בודק ABI: הסכמה על פונקציות מיוצאות וזיכרון. Rust מחשב פאזות Kuramoto, מסלולי ביקורת של 64 חלקיקים, ובאמצעות ABI אופציונלי נפרד גם גאומטריית Ouroboros.',
+                'בטעינה מאוחרת WASM מאמץ את מצב TypeScript העדכני. אחרי צעדים מוצלחים הגשר מחזיק עותק מראה ב־TS, כדי להמשיך במקרה שהמודול נכשל.',
+                'WASM אינו מחליף את מנוע הציור: חלקים אחרים יוצרים אור וממשק. הגבול מספק חוזה מספרי מפורש ושני מימושים שאפשר להשוות.',
+            ],
+            sources: [{ label: 'הגשר והמימוש החלופי' }, { label: 'פונקציות Rust המיוצאות' }],
+        },
+        python: {
+            label: 'Python',
+            title: 'Python: בדיקה עצמאית של התוצאה',
+            summary: 'Python עוזר לבדוק אלגוריתמים מתמטיים נבחרים באמצעות מימוש נוסף. תמונה יפה לבדה אינה מוכיחה שהחישוב נכון.',
+            experience: 'הבדיקות מאשרות שחזור של המספרים ההתחלתיים, הטופולוגיה ופורמטי הנתונים; הצופה מקבל אתר סטטי מוכן.',
+            intuition: 'כמו פתרון בעיה בשתי דרכים: התאמה בין ערכי הביניים והתוצאה מקלה על גילוי טעות מקרית באחד הפתרונות.',
+            technical: [
+                'המודולים ב־backend/core מכילים מימושי ייחוס ל־PRNG, טופולוגיית הגרף, אופטיקה ובחירת סמלים בדידה. הבדיקות משוות קלט מוסכם, עיגול, קשתות ומדדים.',
+                'התאמה במקרי בדיקה קבועים מאשרת את התרחישים שנבדקו. היא אינה מוכיחה שוויון של חישובי נקודה צפה שרירותיים או של כל גרף גדול אפשרי.',
+                'במאגר יש קוד תעבורה, אך ההדגמה הסטטית הרגילה אינה דורשת חיבור קבוע לשרת Python.',
+            ],
+            sources: [{ label: 'מימוש הייחוס של הגרף' }, { label: 'בדיקות התאמה' }],
+        },
+        symplectic: {
+            label: 'אינטגרטור סימפלקטי',
+            title: 'Velocity Verlet: מסלול בצעדים קטנים',
+            summary: 'אינטגרטור מחשב כיצד תאוצה משנה מיקום ומהירות. Velocity Verlet מתייחס לתאוצה באופן סימטרי בתחילת הצעד ובסופו.',
+            experience: 'המדד ΔE/E₀ בטלמטריה מודד סטיית אנרגיה באנסמבל הביקורת הנפרד REF64.',
+            intuition: 'כדי להתקדם לאורך קשת, לא די לצעוד בכיוון המשיק: צריך להביא בחשבון גם את הפנייה. צעדים קטנים ומתואמים עוקבים טוב יותר אחר המסלול.',
+            technical: [
+                'במערכת משמרת, עם צעד קבוע וחשבון אידיאלי, ל־Velocity Verlet דיוק מסדר שני, הפיכות בזמן ותכונה סימפלקטית. אין בכך הבטחה לשימור אנרגיה מדויק בכל גודל צעד.',
+                'כאן משולבים 64 מסלולי ביקורת עצמאיים. מרווח הזמן החיובי המתקבל מוגבל ל־0.05 שניות ומחולק ל־ceil(dt/0.004) תת־צעדים שווים; הזמן שמעבר לתקרה אינו מושלם בהמשך.',
+                'מערכי המסלולים מאוחסנים כ־f32, בעוד חשבון הצעד משתמש ב־f64. החלקיקים הנראים עוקבים אחר כוריאוגרפיה אמנותית, ולכן אנרגיית REF64 אינה מעריכה את תנועתם.',
+            ],
+            formulas: [{ label: 'המיקום בתת־הצעד הבא' }, { label: 'עדכון מהירות סימטרי' }, { label: 'סטיית האנרגיה היחסית של REF64' }],
+            sources: [{ label: 'תת־צעדים ואינטגרציה ב־Rust' }, { label: 'מסלולים ואנרגיה ב־TypeScript' }],
+        },
+        kuramoto: {
+            label: 'Kuramoto',
+            title: 'Kuramoto: איך נוצר קצב משותף',
+            summary: 'מתנד הוא מערכת בעלת קצב מחזורי. מתנדים מצומדים יכולים להתאים את הפאזות שלהם כך שהבזקים נפרדים נעשים מתואמים יותר.',
+            experience: 'הפאזות משפיעות על נשימת החלקיקים ועל הגאומטריה בסוף GENESIS. הערך r מתאר את התיאום בין השעונים הפנימיים שלהם.',
+            intuition: 'דמיינו גחליליות: לכל אחת קצב משלה, אבל האור המשותף מזיז מעט את מועד ההבזק הבא.',
+            technical: [
+                'תחילה ממוצעי sin(θ) ו־cos(θ) קובעים את הכיוון ψ. כל פאזה מתקדמת בתדירות הטבעית ω עם התיקון K sin(ψ−θ). במימוש הזה הצימוד אינו מוכפל ב־r; זהו וריאנט לפי זווית ממוצעת בהשראת Kuramoto.',
+                'פרמטר הסדר r הוא אורך הממוצע של וקטורי היחידה של הפאזות. ערך קרוב ל־1 מציין פאזות קרובות; ערך קטן מציין תיאום כולל חלש, לרבות ביטול הדדי בין קבוצות.',
+                'הערך r נמדד בנפרד ואינו מחליף את חמשת שלבי הסצנה. סדרם נקבע בתסריט בן 108 השניות.',
+            ],
+            formulas: [{ label: 'המשוואה שבה משתמש הפרויקט' }, { label: 'פרמטר הסדר' }],
+            sources: [{ label: 'התפתחות הפאזות ב־Rust' }, { label: 'השפעת הפאזות על הגלקסיה' }],
+        },
+        nexus: {
+            label: 'NEXUS',
+            title: 'NEXUS: נקודות הופכות לרשת',
+            summary: 'גרף מורכב מצמתים וקשרים. NEXUS מחבר חלקיקים לשלד, גשרים וענפים דקים שנושאים פעימות אור.',
+            experience: 'בשלב העצבי ענפים ראשיים עבים מגדירים את המבנה, וענפים קצרים מוסיפים קשרים מקומיים.',
+            intuition: 'זו מפת כבישים: תחילה דרושים מסלולים ראשיים, אחר כך מעברים בין אזורים והסתעפויות קטנות.',
+            technical: [
+                'הענפים הראשיים גדלים לפי העיקרון של Prim על לכל היותר 36 הצמתים הפעילים הראשונים. מגבלת אורך יכולה לעצור את הגדילה לפני יצירת עץ פורש מלא, ולכן הקישוריות אינה מובטחת.',
+                'הגשרים משתמשים בהיוריסטיקה מקומית בהשראת גרף Gabriel: נבדקים חלון אינדקסים של ±10 וסף של 0.85 כפול ריבוע רדיוס המעגל שקוטרו הוא הקשת. קשרים קצרים יכולים לאפשר ענפים נוספים.',
+                'עובי הדנדריטים פוחת לפי k⁻¹ᐟ³ בהשראת חוק Murray. הפעימות נעות לאורך עקומות Bézier באמצעות טבלת אורך מקורבת. כשיש יותר מ־260 צומתי קלט, הגרף דוגם כל צומת שני.',
+            ],
+            formulas: [{ label: 'רדיוס ענף דנדריטי בקוד' }],
+            sources: [{ label: 'בניית הגרף' }, { label: 'עקומות ופעימות' }],
+        },
+        prng: {
+            label: 'PRNG דטרמיניסטי',
+            title: 'אקראיות שאפשר לשחזר',
+            summary: 'מחולל פסאודו־אקראי יוצר מספרים שנראים אקראיים לפי כלל מדויק. אותו ערך התחלתי ואותו סדר קריאות מפיקים אותה סדרה.',
+            experience: 'מיקומי החלקיקים ותכונותיהם נראים מגוונים, אך אפשר לשחזר את המספרים המקוריים לצורך בדיקה.',
+            intuition: 'הערך ההתחלתי דומה למספר של פרטיטורה: המוזיקה מורכבת, אבל אותו מספר מאפשר לשחזר את אותם תווים.',
+            technical: [
+                'זרם Mulberry32 שומר מצב של 32 סיביות. הערך ההתחלתי הציבורי של הפרויקט הוא 104729. הזזות ללא סימן וכפל מודולו 2³² תואמים ב־TypeScript, ב־Rust וב־Python.',
+                'לגישה לפי מספר חלקיק, hashU32(seed,index) משלב את seed עם index ומפעיל את מסיים הערבול fmix32 של MurmurHash3. הוא אינו צורך מצב מהזרם: זו פונקציית גיבוב נפרדת לפי אינדקס, ולא Stafford Mix13.',
+                'יכולת השחזור תומכת בבדיקות ובצורה יציבה בזמן שינוי איכות. היא אינה מבטיחה אי־צפיות קריפטוגרפית או היעדר חזרות בתכונות המוצגות.',
+            ],
+            formulas: [{ label: 'עדכון מצב Mulberry32' }, { label: 'המרת פלט שלם לשבר' }],
+            sources: [{ label: 'Mulberry32 וגיבוב לפי אינדקס ב־TypeScript' }, { label: 'מימוש ייחוס עצמאי ב־Python' }, { label: 'אותה סכמת מספרים שלמים ב־Rust' }],
+        },
+        fbm: {
+            label: 'רעש פרקטלי fBm',
+            title: 'fBm: גלים רחבים ואדוות קטנות',
+            summary: 'חיבור שכבות של רעש חלק בקני מידה שונים יוצר אי־סדירות אורגנית מורכבת. לטכניקה הגרפית הזאת נהוג לקרוא fBm.',
+            experience: 'הד האור, ענני האבק ושפת העדשה מקבלים צורות לא מושלמות שנראות חיות.',
+            intuition: 'ציירו תחילה קפלים גדולים בענן, ואז הוסיפו קפלים קטנים ואדוות עדינות. כל שכבה חלשה יותר אך מפורטת יותר.',
+            technical: [
+                'הפונקציה הבסיסית valueNoise2D מקבלת ערכים בנקודות סריג ומבצעת אינטרפולציה חלקה בעזרת הפונקציה ממעלה שלישית u²(3−2u). זהו רעש ערכים מאונטרפל.',
+                'fbm2D מתחיל במשרעת 0.52 ובתדירות 1. כל שכבה מכפילה את התדירות ב־2.03 ואת המשרעת ב־0.51. מעברי ההד, האבק והעדשה הפעילים מבקשים שלוש אוקטבות.',
+                'פלט הרעש יכול להזיז קואורדינטות או זווית של דגימה מאוחרת יותר: עיוות תחום. כאן fBm הוא סכום גרפי סופי של שכבות רעש, ולא תהליך סטוכסטי מדויק של תנועה בראונית שברית.',
+            ],
+            formulas: [{ label: 'סכום שלוש אוקטבות במנוע הפעיל' }],
+            sources: [{ label: 'רעש ערכים וסכום אוקטבות' }, { label: 'רעש בעננים ובהדי אור' }],
+        },
+        plummer: {
+            label: 'פוטנציאל Plummer',
+            title: 'Plummer: מרכז משיכה מרוכך',
+            summary: 'במקור נקודתי הכוח גדל ללא גבול ליד המרכז. פוטנציאל Plummer מחליף את המרכז החד בהתפלגות חלקה.',
+            experience: 'הוא מגדיר את השדה של מסלולי הביקורת REF64, שבעזרתם נמדדת השגיאה המספרית באנרגיה.',
+            intuition: 'דמיינו קערה עמוקה: בנקודה אידיאלית התחתית עמוקה לאין סוף, ואילו המודל המרוכך מעגל אותה.',
+            technical: [
+                'במכנה המרחק r מוחלף ב־√(r²+ε²). בפרויקט GM=4900 ו־ε²=64, ולכן אורך הריכוך הוא ε=8 ביחידות הקואורדינטות של מודל הביקורת.',
+                'כל אחד מ־64 חלקיקי הבדיקה נע באותו שדה מרכזי סטטי. המשיכה ההדדית בין כל החלקיקים הנראים אינה מחושבת כאן.',
+                'התאוצה היא מינוס גרדיאנט הפוטנציאל ונשארת סופית. הריכוך מסיר את הסינגולריות המרכזית; דיוק המסלול עדיין תלוי בצעד האינטגרציה ובחשבון המספרי.',
+            ],
+            formulas: [{ label: 'פוטנציאל ליחידת מסה' }, { label: 'תאוצת חלקיק הביקורת' }],
+            sources: [{ label: 'פוטנציאל, תאוצה ואנרגיה' }, { label: 'אתחול מסלולי הביקורת' }],
+        },
+        ouroboros: {
+            label: 'Ouroboros',
+            title: 'Ouroboros: השדה נסגר לטבעת',
+            summary: 'Ouroboros הוא דימוי של נחש הסוגר מעגל סביב זנבו. בסצנה הוא מחבר את כרטיס הסיום לחזרה אל תחילת המחזור.',
+            experience: 'לאחר ההרכבה הכרטיס עולה, וחלק מהשדה שמסביב מתאסף לגוף תלת־ממדי. אחר כך הצורה מתפזרת שוב לאבק.',
+            intuition: 'אותן נקודות מקבלות פרטיטורה שנייה: הן עוברות בהדרגה מענן לצורה, מסתובבות יחד וחוזרות לשדה.',
+            technical: [
+                'Rust ו־TypeScript יוצרים עד 3072 נקודות דקורטיביות. כל נקודה שומרת שלוש קואורדינטות, שלושה רכיבי נורמל, גודל וחומר: שמונה ערכי f32.',
+                'המעבר ממזג את מיקום השדה המקורי עם מיקום הצורה באמצעות smootherstep ממעלה חמישית. הנגזרות הראשונה והשנייה שלו מתאפסות בקצוות וכך מסייעות להתחיל ולסיים תנועה בחלקות.',
+                'שעון משותף מתאם את עליית הכרטיס, ההתאספות, הסיבוב והפיזור. השהיה ידנית שומרת אותו; העדפת תנועה מופחתת מצמצמת תנועה. הגאומטריה הדקורטיבית אינה משנה מסלולים פיזיקליים או את טופולוגיית NEXUS.',
+            ],
+            formulas: [{ label: 'שיעור מעבר חלק, 0 ≤ u ≤ 1' }, { label: 'מיזוג שני מיקומים', text: 'p = (1 − q)p_field + qp_form' }],
+            sources: [{ label: 'גאומטריה תלת־ממדית' }, { label: 'מעבר מהשדה לצורה' }, { label: 'שעון הקטע' }],
+        },
+    },
+    es: {
+        overview: {
+            label: 'Cómo funciona',
+            title: 'Una escena, varios lenguajes de la ciencia',
+            summary: 'En 108 segundos, los puntos pasan de un eco de luz a una red neuronal y un nuevo comienzo. Las matemáticas conectan estas imágenes mediante un movimiento continuo.',
+            experience: 'Observa cómo la galaxia y el cerebro surgen del mismo campo de partículas. La lente revela conexiones y, al final, parte del campo se reúne en un Ouroboros.',
+            intuition: 'Imagina una orquesta: el guion cambia las partes, los osciladores mantienen un ritmo interno, el grafo traza conexiones y los gráficos convierten números en luz.',
+            technical: [
+                'Astro genera la página estática. TypeScript gestiona el estado, el tiempo y Canvas 2D; una fábrica JSX local construye la interfaz DOM/SVG. Rust/WASM aporta cálculos con una implementación alternativa en TypeScript.',
+                'HTML define la semántica de la interfaz; CSS, su distribución y aspecto. El módulo de audio gestiona la reproducción y las envolventes musicales, mediante Web Audio API cuando está disponible el análisis de la señal.',
+                'Las fases de Kuramoto afectan a la respiración y a parte de la geometría. La energía REF64 describe 64 órbitas de referencia separadas. La escena visible principal sigue objetivos artísticos con transiciones suaves.',
+                'WebGPU ejecuta una pasada independiente del Ouroboros; Canvas la sustituye cuando no está disponible. Python aporta referencias independientes para las pruebas. Las formas cósmicas y neuronales son una analogía artística.',
+            ],
+            sources: [{ label: 'Arquitectura de la escena' }, { label: 'Modelos matemáticos' }, { label: 'Audio y envolventes musicales' }],
+        },
+        polyglot: {
+            label: 'Políglota',
+            title: 'Políglota: lenguajes que trabajan juntos',
+            summary: 'Un programa políglota utiliza varios lenguajes para resolver distintas partes de una misma tarea. Aquí intercambian datos mediante contratos explícitos.',
+            experience: 'La luz, las lecturas numéricas y el grafo de conexiones forman una sola escena, aunque los producen módulos distintos.',
+            intuition: 'Como un taller con planos comunes: una persona calcula una forma, otra construye un mecanismo y una tercera comprueba las medidas. Un formato de datos acordado conecta su trabajo.',
+            technical: [
+                'Astro produce HTML durante la compilación; TypeScript ejecuta la escena interactiva, el grafo y Canvas. Rust se compila a WebAssembly y devuelve fases, órbitas de referencia y geometría del Ouroboros. WGSL describe su representación en la GPU.',
+                'Python reproduce de forma independiente algunos algoritmos y datos de prueba. Visitar el sitio estático habitual no requiere un servidor Python.',
+                'Los contratos fijan el formato, el redondeo y el tiempo. Las pruebas comparan vectores enteros del PRNG, casos fijos del grafo y resultados numéricos de Rust y TypeScript dentro de límites definidos.',
+            ],
+            sources: [{ label: 'Decisión sobre lenguajes y límites' }, { label: 'Contratos de datos' }],
+        },
+        astro: {
+            label: 'Astro',
+            title: 'Astro: una estructura para la escena',
+            summary: 'Astro construye una página a partir de los archivos fuente. Prepara HTML, estilos, recursos y puntos de montaje para la escena interactiva.',
+            experience: 'El encabezado, los botones, los dos lienzos y los contenedores de paneles existen en la estructura de la página antes del primer fotograma animado.',
+            intuition: 'Es quien construye el escenario: coloca la plataforma, las pantallas y la mesa de control. Después, otro programa dirige la representación.',
+            technical: [
+                'La página principal index.astro importa los estilos, define el marcado y carga el módulo cliente renderer.ts. La configuración establece la ruta de publicación estática.',
+                'Astro no recalcula cada movimiento de las partículas. Tras la carga, el código TypeScript del proyecto controla los fotogramas, el estado y los eventos del navegador.',
+                'Esta estructura permite publicar el resultado como archivos estáticos, incluidos JavaScript, fuentes, audio y WebAssembly.',
+            ],
+            sources: [{ label: 'Estructura de la página' }, { label: 'Configuración de compilación' }],
+        },
+        typescript: {
+            label: 'TypeScript',
+            title: 'TypeScript: acuerdos antes de ejecutar',
+            summary: 'TypeScript añade tipos de datos a JavaScript. Ayuda a detectar de antemano que un módulo recibe un valor inadecuado o espera un campo ausente.',
+            experience: 'La pausa, los cambios de fase, la respuesta al puntero, los paneles y las actualizaciones de imagen se coordinan mediante un estado y un ciclo de fotogramas compartidos.',
+            intuition: 'Los tipos son como etiquetas en los conectores: ayudan a unir piezas compatibles durante el montaje. Después, JavaScript ejecuta el movimiento en el navegador.',
+            technical: [
+                'UniverseState y los tipos de los contratos describen la fase, el tiempo y los datos de las partículas. El compilador comprueba su uso; estas descripciones de tipos se eliminan durante la compilación.',
+                'La ejecución en el navegador sigue necesitando validar las entradas: un tipo por sí solo no comprueba la memoria de WebAssembly ni los datos de un transporte externo.',
+                'El fotograma compartido conecta la simulación, las señales visuales, la interfaz y el renderizador para que lean un estado coherente en lugar de usar relojes independientes.',
+            ],
+            sources: [{ label: 'Estado de la escena' }, { label: 'Ciclo de fotogramas compartido' }],
+        },
+        'jsx-dom': {
+            label: 'JSX/DOM',
+            title: 'JSX y DOM: una interfaz de elementos',
+            summary: 'JSX permite escribir cómodamente el árbol de una interfaz. El DOM contiene los elementos reales que utiliza el navegador: botones, etiquetas, enlaces y paneles.',
+            experience: 'Puedes leer y seleccionar el texto de la tarjeta y activar sus botones con el teclado porque son elementos reales de la página.',
+            intuition: 'JSX se parece a un plano de montaje compacto; el DOM es la estructura montada. Una pequeña fábrica local convierte el plano directamente en nodos del navegador.',
+            technical: [
+                'La fábrica React.createElement de Layer2_Metrics.tsx crea HTML mediante document.createElement y SVG mediante createElementNS, y añade atributos, controladores de eventos e hijos. Aquí React es el nombre de un objeto local.',
+                'Esta fábrica no utiliza el paquete React ni su mecanismo de reconciliación del árbol. Las vistas se montan en contenedores y los controladores actualizan los nodos necesarios.',
+                'El DOM conserva la semántica de los elementos y sus funciones de accesibilidad. Las partículas se dibujan en un lienzo, en lugar de crear miles de nodos HTML separados.',
+            ],
+            sources: [{ label: 'Fábrica DOM/SVG local' }, { label: 'Vista de la tarjeta final' }],
+        },
+        'canvas-wgsl': {
+            label: 'Canvas/WGSL',
+            title: 'Canvas y WGSL: los números se vuelven luz',
+            summary: 'Canvas 2D dibuja la imagen principal mediante órdenes del navegador. WGSL es un lenguaje de pequeños programas para GPU que iluminan el Ouroboros tridimensional en una pasada independiente.',
+            experience: 'El lienzo principal dibuja las cinco fases, el polvo y las conexiones. En el final, la profundidad y la superposición de puntos luminosos dan volumen al anillo del Ouroboros.',
+            intuition: 'Canvas recuerda a un pintor que aplica trazos en secuencia. La GPU procesa muchas tareas gráficas parecidas en paralelo.',
+            technical: [
+                'El renderizador WebGPU activo carga ouroboros.wgsl y utiliza la posición, la normal, el tamaño y el material de cada punto, junto con pruebas de profundidad e iluminación. Su lienzo transparente se superpone a la escena principal.',
+                'Cuando WebGPU no está disponible, la misma geometría decorativa se representa mediante Canvas con una iluminación más sencilla.',
+                'Los archivos illusion.wgsl, truth.wgsl y breach.wgsl del repositorio son especificaciones separadas. Las cinco fases principales actuales se ejecutan en Canvas 2D.',
+            ],
+            sources: [{ label: 'Canal de dibujo principal de Canvas' }, { label: 'Sombreador activo del Ouroboros' }, { label: 'Implementación del Ouroboros en Canvas' }],
+        },
+        'rust-wasm': {
+            label: 'Rust/WASM',
+            title: 'Rust y WebAssembly: cálculos en el navegador',
+            summary: 'Rust implementa el módulo de cálculo. WebAssembly, o WASM, es el formato compacto al que se compila ese módulo para ejecutarlo en el navegador.',
+            experience: 'La respiración de las partículas y la geometría del anillo final siguen funcionando al cambiar la implementación de cálculo.',
+            intuition: 'El módulo se parece a una calculadora con entradas y salidas etiquetadas. El navegador envía números y recibe resultados en un formato acordado.',
+            technical: [
+                'El puente comprueba la ABI: un acuerdo sobre las funciones exportadas y la memoria. Rust calcula las fases de Kuramoto, 64 órbitas de referencia y, mediante otra ABI opcional, la geometría del Ouroboros.',
+                'Si WASM se carga tarde, adopta el estado actual de TypeScript. Tras pasos correctos, el puente mantiene una copia en TS para continuar si el módulo falla.',
+                'WASM no sustituye al renderizador: otras partes crean la luz y la interfaz. Este límite aporta un contrato numérico explícito y dos implementaciones que pueden compararse.',
+            ],
+            sources: [{ label: 'Puente e implementación alternativa' }, { label: 'Funciones exportadas de Rust' }],
+        },
+        python: {
+            label: 'Python',
+            title: 'Python: una comprobación independiente',
+            summary: 'Python ayuda a comprobar ciertos algoritmos matemáticos mediante otra implementación. Una imagen bonita no demuestra por sí sola que un cálculo sea correcto.',
+            experience: 'Las pruebas confirman la reproducibilidad de los números iniciales, la topología y los formatos de datos; el visitante recibe un sitio estático terminado.',
+            intuition: 'Como resolver un problema de dos maneras: si coinciden los valores intermedios y el resultado, es más fácil encontrar un error accidental.',
+            technical: [
+                'Los módulos de backend/core contienen referencias del PRNG, la topología del grafo, la óptica y la selección discreta de símbolos. Las pruebas comparan entradas acordadas, redondeo, aristas y métricas.',
+                'La coincidencia de los casos fijos confirma los escenarios comprobados. No demuestra la igualdad de cálculos arbitrarios en coma flotante ni de todos los grafos grandes posibles.',
+                'El repositorio incluye código de transporte, pero la demostración estática habitual no requiere una conexión permanente con un servidor Python.',
+            ],
+            sources: [{ label: 'Referencia del grafo' }, { label: 'Pruebas de paridad' }],
+        },
+        symplectic: {
+            label: 'Integrador simpléctico',
+            title: 'Velocity Verlet: una órbita en pasos pequeños',
+            summary: 'Un integrador calcula cómo cambia la posición y la velocidad bajo una aceleración. Velocity Verlet considera simétricamente la aceleración al principio y al final del paso.',
+            experience: 'El valor ΔE/E₀ de la telemetría mide la desviación de energía del conjunto de referencia independiente REF64.',
+            intuition: 'Para seguir una curva no basta con avanzar por su tangente: hay que tener en cuenta el giro. Los pasos pequeños y coordinados siguen mejor la órbita.',
+            technical: [
+                'En un sistema conservativo, con paso fijo y aritmética ideal, Velocity Verlet tiene precisión de segundo orden, reversibilidad temporal y propiedades simplécticas. Esto no garantiza conservar exactamente la energía con cualquier paso.',
+                'Aquí se integran 64 órbitas de referencia independientes. El intervalo positivo admitido se limita a 0.05 s y se divide en ceil(dt/0.004) subpasos iguales; el tiempo que supera el límite no se recupera después.',
+                'Los arrays orbitales se almacenan en f32, mientras que la aritmética del paso utiliza f64. Las partículas visibles siguen una coreografía artística, por lo que la energía REF64 no evalúa su movimiento.',
+            ],
+            formulas: [{ label: 'Posición en el siguiente subpaso' }, { label: 'Actualización simétrica de la velocidad' }, { label: 'Deriva relativa de energía de REF64' }],
+            sources: [{ label: 'Subpasos e integración en Rust' }, { label: 'Órbitas y energía en TypeScript' }],
+        },
+        kuramoto: {
+            label: 'Kuramoto',
+            title: 'Kuramoto: cómo surge un ritmo compartido',
+            summary: 'Un oscilador es un sistema con un ritmo repetitivo. Los osciladores acoplados pueden ajustar sus fases y hacer más coordinados los destellos individuales.',
+            experience: 'Las fases afectan a la respiración de las partículas y a la geometría del final de GENESIS. El valor r indica la coordinación de sus relojes internos.',
+            intuition: 'Imagina luciérnagas: cada una lleva su ritmo, pero el brillo conjunto desplaza ligeramente el momento del siguiente destello.',
+            technical: [
+                'Primero, los promedios de sin(θ) y cos(θ) determinan la dirección ψ. Cada fase avanza con su frecuencia natural ω y la corrección K sin(ψ−θ). Esta implementación no multiplica el acoplamiento por r: es una variante de ángulo medio inspirada en Kuramoto.',
+                'El parámetro de orden r es la longitud del vector unitario medio de las fases. Un valor cercano a 1 indica fases próximas; un valor pequeño indica poca coordinación global, incluida la cancelación entre grupos.',
+                'El valor r se mide por separado y no cambia las cinco fases de la escena. Su orden sigue el guion de 108 segundos.',
+            ],
+            formulas: [{ label: 'Ecuación utilizada en el proyecto' }, { label: 'Parámetro de orden' }],
+            sources: [{ label: 'Evolución de fases en Rust' }, { label: 'Influencia de las fases en la galaxia' }],
+        },
+        nexus: {
+            label: 'NEXUS',
+            title: 'NEXUS: los puntos forman una red',
+            summary: 'Un grafo está formado por nodos y conexiones. NEXUS une las partículas mediante troncos, puentes y ramas finas que transportan pulsos luminosos.',
+            experience: 'En la fase neuronal, los troncos gruesos definen la estructura y las ramas cortas añaden conexiones locales.',
+            intuition: 'Es un mapa de carreteras: primero hacen falta rutas principales, después pasos entre distritos y ramificaciones pequeñas.',
+            technical: [
+                'Los troncos crecen según el principio de Prim sobre los primeros 36 nodos activos como máximo. Un límite de longitud puede detener el crecimiento antes de completar el árbol de expansión; la conectividad no está garantizada.',
+                'Los puentes utilizan una heurística local inspirada en el grafo de Gabriel: se comprueba una ventana de índices de ±10 y un umbral de 0.85 veces el radio al cuadrado del círculo diametral. Las conexiones cortas pueden admitir ramas adicionales.',
+                'El grosor de las dendritas disminuye como k⁻¹ᐟ³, inspirado en la ley de Murray. Los pulsos siguen curvas de Bézier con una tabla de longitud aproximada. Con más de 260 nodos de entrada, el grafo toma uno de cada dos nodos.',
+            ],
+            formulas: [{ label: 'Radio de una rama dendrítica en el código' }],
+            sources: [{ label: 'Construcción del grafo' }, { label: 'Curvas y pulsos' }],
+        },
+        prng: {
+            label: 'PRNG determinista',
+            title: 'Aleatoriedad que puedes repetir',
+            summary: 'Un generador seudoaleatorio produce números que parecen aleatorios siguiendo una regla exacta. La misma semilla y el mismo orden de llamadas dan la misma secuencia.',
+            experience: 'Las posiciones y propiedades de las partículas parecen variadas, pero los números originales pueden reproducirse para comprobarlos.',
+            intuition: 'La semilla es como el número de una partitura: la música es compleja, pero el mismo número permite recuperar las mismas notas.',
+            technical: [
+                'El flujo Mulberry32 guarda un estado de 32 bits. La semilla inicial pública del proyecto es 104729. Los desplazamientos sin signo y la multiplicación módulo 2³² están coordinados en TypeScript, Rust y Python.',
+                'Para acceder por número de partícula, hashU32(seed,index) combina seed con index y aplica el finalizador fmix32 de MurmurHash3. No consume el estado del flujo: es una función hash indexada independiente, no Stafford Mix13.',
+                'La reproducibilidad ayuda a las pruebas y mantiene formas estables al cambiar la calidad. No implica imprevisibilidad criptográfica ni ausencia de repeticiones en las propiedades mostradas.',
+            ],
+            formulas: [{ label: 'Actualización del estado Mulberry32' }, { label: 'Conversión de una salida entera en fracción' }],
+            sources: [{ label: 'Mulberry32 y hash indexado de TypeScript' }, { label: 'Referencia independiente en Python' }, { label: 'El mismo esquema entero en Rust' }],
+        },
+        fbm: {
+            label: 'Ruido fractal fBm',
+            title: 'fBm: ondas amplias y ondulaciones pequeñas',
+            summary: 'Sumar capas de ruido suave a distintas escalas crea una irregularidad orgánica compleja. Esta técnica gráfica suele llamarse fBm.',
+            experience: 'Los ecos de luz, las nubes de polvo y el borde de la lente adquieren formas irregulares que parecen vivas.',
+            intuition: 'Dibuja primero los grandes pliegues de una nube, luego añade otros menores y ondulaciones ligeras. Cada capa es más débil, pero más detallada.',
+            technical: [
+                'La función base valueNoise2D obtiene valores en los puntos de una retícula y los interpola suavemente con la función cúbica u²(3−2u). Es ruido de valores interpolado.',
+                'fbm2D empieza con amplitud 0.52 y frecuencia 1. Cada capa multiplica la frecuencia por 2.03 y la amplitud por 0.51. Las pasadas activas de eco, polvo y lente solicitan tres octavas.',
+                'La salida del ruido puede desplazar las coordenadas o el ángulo de una muestra posterior: deformación del dominio. Aquí fBm designa una suma gráfica finita de capas de ruido, no un proceso estocástico exacto de movimiento browniano fraccionario.',
+            ],
+            formulas: [{ label: 'Suma de tres octavas del renderizador activo' }],
+            sources: [{ label: 'Ruido de valores y suma de octavas' }, { label: 'Ruido en nubes y ecos' }],
+        },
+        plummer: {
+            label: 'Potencial de Plummer',
+            title: 'Plummer: un centro de atracción suavizado',
+            summary: 'En una fuente puntual, la fuerza crece sin límite cerca del centro. El potencial de Plummer sustituye ese centro abrupto por una distribución suave.',
+            experience: 'Proporciona el campo de las órbitas de referencia REF64, utilizadas para medir el error numérico de energía.',
+            intuition: 'Imagina un cuenco profundo: en un punto ideal el fondo cae infinitamente, mientras que el modelo suavizado lo redondea.',
+            technical: [
+                'En el denominador, la distancia r se sustituye por √(r²+ε²). Aquí GM=4900 y ε²=64, de modo que la longitud de suavizado es ε=8 en las unidades de coordenadas del modelo de referencia.',
+                'Cada una de las 64 partículas de prueba se mueve en un mismo campo central estático. No se calcula la atracción mutua de todas las partículas visibles.',
+                'La aceleración es el gradiente negativo del potencial y permanece finita. El suavizado elimina la singularidad central; la precisión de la trayectoria sigue dependiendo del paso de integración y de la aritmética.',
+            ],
+            formulas: [{ label: 'Potencial por unidad de masa' }, { label: 'Aceleración de la partícula de referencia' }],
+            sources: [{ label: 'Potencial, aceleración y energía' }, { label: 'Inicialización de las órbitas de referencia' }],
+        },
+        ouroboros: {
+            label: 'Ouroboros',
+            title: 'Ouroboros: el campo se cierra en un anillo',
+            summary: 'El Ouroboros representa una serpiente que cierra un círculo sobre su propia cola. Aquí conecta la tarjeta final con el regreso al principio del ciclo.',
+            experience: 'Tras ensamblarse, la tarjeta asciende y parte del campo circundante se reúne en un cuerpo tridimensional. Después, la forma vuelve a dispersarse en polvo.',
+            intuition: 'Los mismos puntos reciben una segunda partitura: pasan suavemente de nube a forma, giran juntos y regresan al campo.',
+            technical: [
+                'Rust y TypeScript generan hasta 3072 puntos decorativos. Cada uno almacena tres coordenadas, tres componentes de la normal, tamaño y material: ocho valores f32.',
+                'La transición mezcla la posición original del campo con la de la forma mediante smootherstep de quinto grado. Sus derivadas primera y segunda se anulan en los extremos y ayudan a iniciar y terminar el movimiento suavemente.',
+                'Un reloj compartido coordina la subida de la tarjeta, la reunión, el giro y la dispersión. La pausa manual lo conserva; el movimiento reducido limita la animación. Esta geometría decorativa no cambia las órbitas físicas ni la topología NEXUS.',
+            ],
+            formulas: [{ label: 'Fracción suave de transición, 0 ≤ u ≤ 1' }, { label: 'Mezcla de dos posiciones', text: 'p = (1 − q)p_field + qp_form' }],
+            sources: [{ label: 'Geometría tridimensional' }, { label: 'Transición del campo a la forma' }, { label: 'Reloj del episodio' }],
+        },
+    },
+};
+
+// Freeze all exported levels, including ordered formula and source captions.
+for (const locale of Object.values(translations)) {
+    for (const topic of Object.values(locale)) {
+        Object.freeze(topic.technical);
+        for (const formula of topic.formulas ?? []) Object.freeze(formula);
+        for (const source of topic.sources ?? []) Object.freeze(source);
+        if (topic.formulas) Object.freeze(topic.formulas);
+        if (topic.sources) Object.freeze(topic.sources);
+        Object.freeze(topic);
+    }
+    Object.freeze(locale);
+}
+export const EXPLAINER_TRANSLATIONS: Readonly<Record<TranslatedLocale, Readonly<Record<string, ExplainerTranslation>>>> =
+    Object.freeze(translations);

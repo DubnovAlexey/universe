@@ -416,21 +416,6 @@
     transition: color 0.28s ease, text-shadow 0.28s ease;
 }
 
-.phase-philosophy {
-    display: none;
-    margin-top: 0.38rem;
-    padding-top: 0.38rem;
-    border-top: 1px solid rgba(125, 211, 252, 0.14);
-    font-size: 0.78rem;
-    line-height: 1.42;
-    color: var(--text-primary);
-    transition: color 0.28s ease, text-shadow 0.28s ease;
-}
-
-.brand-card:hover .phase-philosophy,
-.brand-card:focus-within .phase-philosophy {
-    display: block;
-}
 /* КОНЕЦ РАЗДЕЛА 4. ВЕРХНЯЯ ПАНЕЛЬ И КАРТОЧКА ТЕКУЩЕЙ ФАЗЫ */
 
 /* НАЧАЛО РАЗДЕЛА 5. ШКАЛА ФАЗ И НИЖНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ */

@@ -2,8 +2,8 @@
 // ФАЙЛ: frontend/src/tests/explanationDialog.test.ts
 // НАЗНАЧЕНИЕ: Проверить каталог, связи терминов и настоящий жизненный цикл окна.
 // РАЗДЕЛЫ: 1. Минимальное дерево DOM; 2. Каталог; 3. Живая сцена, ввод и освобождение;
-//          4. Геометрия и временные ресурсы звёздного следа.
-// ФУНКЦИИ: descendants, dispatch, runExplanationDialogChecks, runExplanationTrailChecks;
+//          4. Читаемый текст на паузе; 5. Геометрия и временные ресурсы звёздного следа.
+// ФУНКЦИИ: descendants, dispatch, runExplanationDialogChecks, runExplanationTextRevealPauseChecks, runExplanationTrailChecks;
 //          методы DialogNode.
 // ============================================================================
 import { EXPLAINER_OVERVIEW_ID, EXPLAINER_TOPICS, getExplainerTopic } from '../core/explainerTopics';
@@ -13,9 +13,15 @@ import { FINALE_TOPIC_TERMS, renderLayer5CipherFinaleView } from '../layers/Laye
 import { mountExplanationDialog, type ExplanationDialogBinding } from '../layers/ExplanationDialog';
 import {
     buildExplanationTrailPath, sampleExplanationTrailPath, playExplanationTrail, EXPLANATION_TRAIL_DURATION_MS,
+    getExplanationAssemblyFrame, buildExplanationDustParticles, sampleExplanationDustParticle, projectExplanationWindowPoint,
+    EXPLANATION_ASSEMBLY_MS, EXPLANATION_DUST_COUNT,
 } from '../layers/explanationTrail';
 import { universeStore } from '../store/universeState';
 import { bindUniverseKeyboardShortcuts } from '../engine/hud/keyboardShortcuts';
+import { getVisualSignals, publishVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
+import { startExplanationTextReveal } from '../layers/explanationTextReveal';
+import { stressStore } from '../store/stressState';
+import { audioSync } from '../utils/audioSync';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНОЕ ДЕРЕВО DOM
 // EventTarget сохраняет настоящую семантику preventDefault/stopImmediatePropagation.
@@ -57,6 +63,7 @@ class DialogNode extends ListenerTarget {
     };
 
     public constructor(public readonly tagName: string, public readonly ownerDocument: DialogDocument) { super(); }
+    public get childNodes(): DialogNode[] { return this.children; }
     public get textContent(): string { return this.text + this.children.map(child => child.textContent).join(''); }
     public set textContent(value: string) { this.replaceChildren(); this.text = value; }
     public get isConnected(): boolean { return this === this.ownerDocument.body || Boolean(this.parentElement?.isConnected); }
@@ -111,6 +118,7 @@ class DialogDocument extends ListenerTarget {
     public hidden = false;
     public activeElement: DialogNode | null = null;
     public createElement(tag: string): DialogNode { return new DialogNode(tag.toUpperCase(), this); }
+    public createElementNS(_namespace: string, tag: string): DialogNode { return this.createElement(tag); }
     public createTextNode(text: string): DialogNode { const node = this.createElement('#text'); node.textContent = text; return node; }
     public getElementById(id: string): DialogNode | null { return this.body.querySelector(`#${id}`); }
 }
@@ -332,11 +340,79 @@ export function runExplanationDialogChecks(check: (passed: boolean, description:
         }
     }
     // КОНЕЦ РАЗДЕЛА 3
+    runExplanationTextRevealPauseChecks(check);
     runExplanationTrailChecks(check);
 }
 // КОНЕЦ ФУНКЦИИ runExplanationDialogChecks
 
-// НАЧАЛО РАЗДЕЛА 4. ГЕОМЕТРИЯ И РЕСУРСЫ ЗВЁЗДНОГО СЛЕДА
+// НАЧАЛО РАЗДЕЛА 4. ЧИТАЕМЫЙ ТЕКСТ НА ПАУЗЕ
+function runExplanationTextRevealPauseChecks(check: (passed: boolean, description: string) => void): void {
+    const names = ['window', 'document'] as const;
+    const savedGlobals = names.map(name => ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
+    const savedSignals = getVisualSignals();
+    const state = universeStore.getState(), audio = audioSync.getSnapshot(0), stress = stressStore.getState();
+    const document = new DialogDocument();
+    const window = Object.assign(new ListenerTarget(), { getComputedStyle: () =>
+        ({ position: 'static', width: '600px', height: '500px' }) });
+    const paragraph = document.createElement('p');
+    const originalText = document.createTextNode('The explanation remains readable while the scene is paused.');
+    paragraph.append(originalText); document.body.append(paragraph);
+    const baseline = { ...resourceLedger.getCounters() };
+    let rangeReads = 0;
+    Object.defineProperty(document, 'createRange', { value: () => {
+        rangeReads++;
+        return { setStart: (): void => {}, setEnd: (): void => {},
+            getBoundingClientRect: () => ({ left: 100, top: 100, width: 8, height: 12 }) };
+    } });
+    const publishFrame = (changes: Partial<VisualSignalSnapshot> = {}): void => {
+        const frame = { ...savedSignals, ...changes };
+        publishVisualSignals({ ...state, currentPhase: frame.phase, isPaused: frame.isPaused, isTabHidden: false,
+            reducedMotion: frame.reducedMotion, seed: frame.seed, telemetry: { ...state.telemetry, tick: frame.tick,
+                simulationTimeSec: frame.simTimeSec, frameTimeMs: frame.frameDtSec * 1000,
+                phaseProgress: frame.phaseProgress, kuramotoOrderR: frame.kuramotoR } },
+        { ...audio, isPlaying: true, low: frame.low, mid: frame.mid, high: frame.high,
+            pulse: frame.pulse, heartbeat: frame.heartbeat }, { ...stress, globalStress: frame.globalStress });
+    };
+    let disposeReveal: (() => void) | undefined;
+    try {
+        Object.defineProperties(globalThis, {
+            document: { configurable: true, value: document }, window: { configurable: true, value: window },
+        });
+        publishFrame({ isPaused: true, reducedMotion: false });
+        disposeReveal = startExplanationTextReveal([paragraph as unknown as HTMLElement], false);
+        disposeReveal();
+        check(rangeReads === 0 && paragraph.children.length === 1 && paragraph.children[0] === originalText &&
+            paragraph.dataset.explanationRevealing === undefined && document.listenerCount === 0 && window.listenerCount === 0 &&
+            resourceLedger.getCounters().listeners === baseline.listeners,
+        'Starting an explanation reveal while paused skips available Range measurement and preserves the complete native text without masking or listeners');
+
+        publishFrame({ isPaused: false, reducedMotion: false });
+        disposeReveal = startExplanationTextReveal([paragraph as unknown as HTMLElement], false, 1300);
+        const prepared = rangeReads > 0 && paragraph.querySelector('.explanation-text-prefix')?.style.getPropertyValue('visibility') === 'hidden' &&
+            resourceLedger.getCounters().listeners === baseline.listeners + 3;
+        publishFrame({ isPaused: true, reducedMotion: false });
+        const restoredOnPause = paragraph.children.length === 1 && paragraph.children[0] === originalText &&
+            paragraph.dataset.explanationRevealing === undefined && document.listenerCount === 0 && window.listenerCount === 0 &&
+            resourceLedger.getCounters().listeners === baseline.listeners;
+        disposeReveal(); disposeReveal();
+        check(prepared && restoredOnPause && paragraph.children.length === 1 && paragraph.children[0] === originalText &&
+            paragraph.textContent === originalText.textContent && paragraph.dataset.explanationRevealing === undefined &&
+            paragraph.style.getPropertyValue('position') === '' && document.listenerCount === 0 && window.listenerCount === 0 &&
+            resourceLedger.getCounters().listeners === baseline.listeners &&
+            resourceLedger.getCounters().underflowCount === baseline.underflowCount,
+        'Pausing a prepared explanation reveal immediately restores the original native text and releases its subscription and listeners exactly once');
+    } finally {
+        disposeReveal?.();
+        for (const { name, descriptor } of savedGlobals) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else Reflect.deleteProperty(globalThis, name);
+        }
+        publishFrame();
+    }
+}
+// КОНЕЦ РАЗДЕЛА 4
+
+// НАЧАЛО РАЗДЕЛА 5. ГЕОМЕТРИЯ И РЕСУРСЫ ЗВЁЗДНОГО СЛЕДА
 function runExplanationTrailChecks(check: (passed: boolean, description: string) => void): void {
     const from = { left: 820, top: 24, width: 120, height: 36 };
     const to = { left: 16, top: 122, width: 360, height: 460 };
@@ -353,6 +429,65 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
             sampleExplanationTrailPath(curve, index / 20)).every(point => Number.isFinite(point.x) && Number.isFinite(point.y))) &&
         sampleExplanationTrailPath(stationaryPath, 0.5).x === path.start.x,
     'Off-center phone buttons and coincident centers produce finite continuous trail positions without depending on viewport symmetry');
+
+    const assembly = Array.from({ length: 211 }, (_, index) => getExplanationAssemblyFrame(index * 20));
+    const initial = assembly[0], complete = assembly[assembly.length - 1];
+    check(EXPLANATION_ASSEMBLY_MS === 3000 && EXPLANATION_TRAIL_DURATION_MS === 4200 &&
+        initial.gather === 0 && initial.nativeOpacity === 0 && complete.gather === 1 && complete.nativeOpacity === 1 &&
+        complete.dustOpacity === 0 && complete.yaw === 0 && complete.scale === 1 &&
+        assembly.every((frame, index) => Object.values(frame).every(Number.isFinite) &&
+            frame.gather >= 0 && frame.gather <= 1 && frame.nativeOpacity >= 0 && frame.nativeOpacity <= 1 &&
+            frame.dustOpacity >= 0 && frame.dustOpacity <= 1 && frame.scale >= 0.985 && frame.scale <= 1 &&
+            (index * 20 > 3000 || frame.nativeOpacity === 0) && (index * 20 < 4000 || frame.nativeOpacity === 1) &&
+            (!index || (frame.gather >= assembly[index - 1].gather && frame.nativeOpacity >= assembly[index - 1].nativeOpacity &&
+                frame.dustOpacity <= assembly[index - 1].dustOpacity))) &&
+        JSON.stringify(getExplanationAssemblyFrame(Number.NaN)) === JSON.stringify(initial),
+    'Dust gathers for three seconds before native text appears, then completes the reveal and settles at an opaque unit-scale zero-yaw pose before cleanup');
+
+    const scenarios = [
+        { from: { left: 1750, top: 24, width: 140, height: 36 },
+            to: { left: 16, top: 122, width: 422, height: 800 }, viewport: { width: 1920, height: 1080 } },
+        { from: { left: 340, top: 18, width: 36, height: 28 },
+            to: { left: 12, top: 58, width: 366, height: 680 }, viewport: { width: 390, height: 844 } },
+        { from: { left: 270, top: 12, width: 36, height: 28 },
+            to: { left: 12, top: 58, width: 296, height: 482 }, viewport: { width: 320, height: 568 } },
+        { from: { left: 42, top: 2, width: 12, height: 8 },
+            to: { left: 4, top: 16, width: 20, height: 12 }, viewport: { width: 64, height: 48 } },
+    ].map(scenario => ({ from: Object.freeze(scenario.from), to: Object.freeze(scenario.to), viewport: Object.freeze(scenario.viewport) }));
+    const inputs = JSON.stringify(scenarios);
+    const fields = scenarios.map(scenario => buildExplanationDustParticles(scenario.from, scenario.to, scenario.viewport));
+    check(EXPLANATION_DUST_COUNT === 224 && inputs === JSON.stringify(scenarios) && fields.every((particles, index) => {
+        const scenario = scenarios[index];
+        return particles.length === EXPLANATION_DUST_COUNT &&
+            JSON.stringify(particles) === JSON.stringify(buildExplanationDustParticles(scenario.from, scenario.to, scenario.viewport)) &&
+            particles.some(particle => particle.boundary) && particles.some(particle => !particle.boundary) &&
+            particles.some(particle => particle.fromTrigger) && particles.some(particle => !particle.fromTrigger) &&
+            particles.every(particle => particle.target.x >= scenario.to.left && particle.target.x <= scenario.to.left + scenario.to.width &&
+                particle.target.y >= scenario.to.top && particle.target.y <= scenario.to.top + scenario.to.height &&
+                particle.delayMs >= 0 && particle.delayMs < EXPLANATION_ASSEMBLY_MS && particle.radius > 0);
+    }),
+    'Desktop, phone and small dust fields deterministically contain 224 trigger and field particles with contour and interior targets inside the final panel, without changing input bounds');
+
+    const distance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
+    check(fields.every((particles, index) => {
+        const bounds = scenarios[index].to, center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+        return particles.every(particle => {
+            const start = sampleExplanationDustParticle(particle, center, particle.delayMs);
+            const end = sampleExplanationDustParticle(particle, center, EXPLANATION_TRAIL_DURATION_MS);
+            const relativeArrivalError = (beforeMs: number): number => {
+                const time = EXPLANATION_ASSEMBLY_MS - beforeMs;
+                return distance(sampleExplanationDustParticle(particle, center, time),
+                    projectExplanationWindowPoint(particle.target, center, getExplanationAssemblyFrame(time)));
+            };
+            return start.progress === 0 && distance(start, particle.origin) < 1e-9 && end.progress === 1 && distance(end, particle.target) < 1e-9 &&
+                distance(sampleExplanationDustParticle(particle, center, particle.delayMs + 4), particle.origin) <=
+                    distance(sampleExplanationDustParticle(particle, center, particle.delayMs + 8), particle.origin) * 0.2 + 1e-9 &&
+                relativeArrivalError(4) <= relativeArrivalError(8) * 0.2 + 1e-9 &&
+                Array.from({ length: 43 }, (_, step) => sampleExplanationDustParticle(particle, center, step * 100)).every(point =>
+                    Number.isFinite(point.x) && Number.isFinite(point.y) && point.progress >= 0 && point.progress <= 1);
+        });
+    }),
+    'Every dust trajectory stays finite at desktop and phone sizes, starts at its delayed origin with C2 easing, joins the moving plane with C2 easing and ends at its exact panel target');
 
     const savedGlobals = ['window', 'document', 'HTMLElement', 'Element'].map(name =>
         ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
@@ -410,7 +545,7 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
             canvas.style.getPropertyValue('pointer-events') === 'none' && dialog.dataset.entryAnimation === 'true' &&
             transform.join(',') === '1.5,0,0,1.5,0,0',
         'Opening a trail creates one noninteractive decorative canvas with a bounded DPR and one temporary frame');
-        [5000, 5100, 5350, 5750].forEach(pump);
+        [5000, 5100, 5350, 5750, 7800, 8300, 9000].forEach(pump);
         const animated = pending.size === 1 && drawCount >= 5 && finiteDrawing;
         pump(5000 + EXPLANATION_TRAIL_DURATION_MS);
         dispose(); dispose();
@@ -464,4 +599,4 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
         }
     }
 }
-// КОНЕЦ РАЗДЕЛА 4
+// КОНЕЦ РАЗДЕЛА 5

@@ -2,7 +2,8 @@
 // ФАЙЛ: frontend/src/core/buttonSolid.ts
 // НАЗНАЧЕНИЕ: CSS-кубоиды с двумя читаемыми гранями внутри семантических элементов HUD.
 // РАЗДЕЛЫ: 1. Контракты и исходный DOM; 2. Грани и размеры; 3. Пакетный жизненный цикл.
-// ФУНКЦИИ: cloneMeasuringNode, makeSpan, copySolidLabels, measureSolid, setSolidButtonLabel;
+// ФУНКЦИИ: cloneMeasuringNode, makeSpan, copySolidLabels, measureSolid, setSolidButtonLabel,
+//          setSolidButtonBackLabel;
 //          ButtonSolidManager: constructor, mount, dispose.
 // Размеры берутся из layout box; измеритель не зависит от вращения тела.
 // ============================================================================
@@ -23,11 +24,12 @@ interface SolidRecord {
     readonly originalCanonical: string | undefined;
     readonly originalMarker: string | undefined;
     readonly originalKind: string | undefined;
+    readonly originalBackLabel: string | undefined;
     readonly originalStyles: { property: string; value: string; priority: string }[];
     readonly canonicalNode: HTMLElement | null;
     readonly label: HTMLElement;
     readonly backLabel: HTMLElement;
-    readonly configuredBackLabel: string | undefined;
+    configuredBackLabel: string | undefined;
     readonly visual: HTMLElement;
     readonly measurer: HTMLElement;
     readonly kind: 'status' | 'control';
@@ -68,6 +70,10 @@ function copySolidLabels(record: SolidRecord): void {
         record.backLabel.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
         record.measurer.replaceChildren(...Array.from(record.label.childNodes).map(cloneMeasuringNode));
         return;
+    }
+    if (record.measurer.style.getPropertyValue('display') !== 'inline-grid') {
+        record.measurer.style.setProperty('display', 'inline-grid');
+        record.measurer.style.setProperty('grid-template-columns', 'max-content');
     }
     record.backLabel.textContent = record.configuredBackLabel;
     const front = makeSpan(record.host, 'solid-button-measure-label');
@@ -115,6 +121,21 @@ export function setSolidButtonLabel(host: HTMLElement, text: string): boolean {
     return true;
 }
 // КОНЕЦ ФУНКЦИИ setSolidButtonLabel
+
+// НАЧАЛО ФУНКЦИИ setSolidButtonBackLabel
+/** Меняет перевод обратной грани по событию, сохраняя канон, доступное имя и вращение. */
+export function setSolidButtonBackLabel(host: HTMLElement, text: string): boolean {
+    const record = mountedSolids.get(host);
+    if (!record) return false;
+    if (host.dataset.solidBackLabel !== text) host.dataset.solidBackLabel = text;
+    if (record.configuredBackLabel !== text) {
+        record.configuredBackLabel = text;
+        copySolidLabels(record);
+        record.measure();
+    }
+    return true;
+}
+// КОНЕЦ ФУНКЦИИ setSolidButtonBackLabel
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. ПАКЕТНОЕ МОНТИРОВАНИЕ И ОСВОБОЖДЕНИЕ
@@ -150,10 +171,6 @@ export class ButtonSolidManager {
             measurer.setAttribute('aria-hidden', 'true');
             measurer.setAttribute('inert', '');
             const configuredBackLabel = host.dataset.solidBackLabel;
-            if (configuredBackLabel !== undefined) {
-                measurer.style.setProperty('display', 'inline-grid');
-                measurer.style.setProperty('grid-template-columns', 'max-content');
-            }
             const body = makeSpan(host, 'solid-button-body');
             body.setAttribute('aria-hidden', 'true');
             const restoredContainers = [originalVisual, originalCanonicalNode]
@@ -163,6 +180,7 @@ export class ButtonSolidManager {
                 host, originalChildren, restoredContainers,
                 originalAria: host.getAttribute('aria-label'), originalCanonical: host.dataset.canonicalText,
                 originalMarker: host.dataset.buttonSolid, originalKind: host.dataset.buttonSolidKind,
+                originalBackLabel: configuredBackLabel,
                 originalStyles: SOLID_PROPERTIES.map((property) => ({ property,
                     value: host.style.getPropertyValue(property), priority: host.style.getPropertyPriority(property) })),
                 canonicalNode, label, backLabel, configuredBackLabel, visual: originalVisual ?? label, measurer, kind,
@@ -208,8 +226,8 @@ export class ButtonSolidManager {
             record.host.replaceChildren(...record.originalChildren);
             if (record.originalAria === null) record.host.removeAttribute('aria-label');
             else record.host.setAttribute('aria-label', record.originalAria);
-            (['canonicalText', 'buttonSolid', 'buttonSolidKind'] as const).forEach((key, index) => {
-                const value = [record.originalCanonical, record.originalMarker, record.originalKind][index];
+            (['canonicalText', 'buttonSolid', 'buttonSolidKind', 'solidBackLabel'] as const).forEach((key, index) => {
+                const value = [record.originalCanonical, record.originalMarker, record.originalKind, record.originalBackLabel][index];
                 if (value === undefined) delete record.host.dataset[key];
                 else record.host.dataset[key] = value;
             });

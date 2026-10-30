@@ -2,19 +2,25 @@
 // ФАЙЛ: frontend/src/layers/ExplanationDialog.ts
 // НАЗНАЧЕНИЕ: Общее доступное окно объяснений сцены и терминов финальной карточки.
 // РАЗДЕЛЫ: 1. Контракт и безопасные DOM-узлы; 2. Содержимое; 3. Жизненный цикл окна.
-// ФУНКЦИИ: element, appendMath, canRestoreFocus, mountExplanationDialog,
-// revealTopicInNavigation, renderTopic, restoreReadingState, close, open, handleClick, guardKeyboard,
+// ФУНКЦИИ: element, setExplanationButtonText, setExplanationButtonBackText, createExplanationContour, appendMath, canRestoreFocus, mountExplanationDialog,
+// syncLocaleLabels, revealTopicInNavigation, renderTopic, revealIntroduction,
+// resizeExplanationContour, observeExplanationContour, restoreReadingState, close, open, handleClick, guardKeyboard,
 // outsidePanel, handlePointerDown, handlePointerUp, handlePointerCancel,
 // handleCancel, handleClose, dispose.
 // ============================================================================
 
 import {
-    EXPLAINER_OVERVIEW_ID, EXPLAINER_TOPICS, getExplainerTopic,
+    EXPLAINER_OVERVIEW_ID, EXPLAINER_TOPICS, getExplainerTopic, getExplainerTopics,
 } from '../core/explainerTopics';
 import { calmGlyphHover } from '../core/glyphHover';
+import { setSolidButtonBackLabel, setSolidButtonLabel } from '../core/buttonSolid';
+import { getLocale, subscribeLocale, translateUi } from '../core/locale';
 import { resourceLedger } from '../core/resourceLedger';
-import { waterfallAnimator } from './Layer2_Metrics';
-import { playExplanationTrail } from './explanationTrail';
+import { getVisualSignals } from '../core/visualSignals';
+import { buildLivingBreachContourPath, waterfallAnimator } from './Layer2_Metrics';
+import { mountExplanationButtonMotion, type ExplanationButtonMotionBinding } from './explanationButtonMotion';
+import { startExplanationTextReveal } from './explanationTextReveal';
+import { EXPLANATION_ASSEMBLY_MS, playExplanationTrail } from './explanationTrail';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И DOM-УЗЛЫ
 export interface ExplanationDialogBinding {
@@ -40,6 +46,41 @@ function element<K extends keyof HTMLElementTagNameMap>(
 }
 // --- КОНЕЦ ФУНКЦИИ element ---
 
+// --- НАЧАЛО ФУНКЦИИ setExplanationButtonText ---
+/** Перевод меняет подписи существующих граней, сохраняя кнопку, фокус и её объёмное тело. */
+function setExplanationButtonText(button: HTMLButtonElement, text: string): void {
+    if (!setSolidButtonLabel(button, text) && button.textContent !== text) button.textContent = text;
+}
+// --- КОНЕЦ ФУНКЦИИ setExplanationButtonText ---
+
+// --- НАЧАЛО ФУНКЦИИ setExplanationButtonBackText ---
+/** Обратная грань остаётся английской; измеритель общего кубоида учитывает обе подписи. */
+function setExplanationButtonBackText(button: HTMLButtonElement, text: string): void {
+    if (!setSolidButtonBackLabel(button, text)) button.dataset.solidBackLabel = text;
+}
+// --- КОНЕЦ ФУНКЦИИ setExplanationButtonBackText ---
+
+// --- НАЧАЛО ФУНКЦИИ createExplanationContour ---
+/** Та же SVG-мембрана обновляется общим контроллером каскадов без отдельного кадра. */
+function createExplanationContour(): SVGSVGElement {
+    const namespace = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(namespace, 'svg');
+    svg.setAttribute('class', 'waterfall-contour-svg');
+    svg.setAttribute('viewBox', '0 0 418 280');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(namespace, 'path');
+    path.setAttribute('data-breach-contour', '5');
+    path.setAttribute('d', buildLivingBreachContourPath(418, 280, waterfallAnimator.getTimeSec(), 3.75, 0.2));
+    path.setAttribute('fill', 'rgba(3, 8, 20, 0.94)');
+    path.setAttribute('stroke', 'rgba(125, 211, 252, 0.35)');
+    path.setAttribute('stroke-width', '1.45');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(path);
+    return svg;
+}
+// --- КОНЕЦ ФУНКЦИИ createExplanationContour ---
+
 // --- НАЧАЛО ФУНКЦИИ appendMath ---
 /** Разбираются только константы каталога; текст формулы остаётся видимым и доступным. */
 function appendMath(container: HTMLElement, source: string | undefined): void {
@@ -53,6 +94,7 @@ function appendMath(container: HTMLElement, source: string | undefined): void {
             !(node.localName === 'mspace' && attribute.name === 'width' && /^\d+(\.\d+)?(em|ex|px)$/.test(attribute.value))))) return;
     const visual = element('div', 'explanation-math');
     visual.setAttribute('aria-hidden', 'true');
+    visual.dir = 'ltr';
     visual.append(document.importNode(math, true));
     container.append(visual);
 }
@@ -83,11 +125,12 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     const symbolField = element('div', 'starfall-drops-layer explanation-symbol-field');
     symbolField.dataset.cascadeDrops = '5';
     symbolField.setAttribute('aria-hidden', 'true');
-    symbolAnchor.append(symbolField);
+    const contourSvg = createExplanationContour();
+    symbolAnchor.append(contourSvg, symbolField);
     const panel = element('div', 'explanation-panel');
     const header = element('header', 'explanation-header');
     const headingGroup = element('div', 'explanation-heading');
-    const kicker = element('p', 'explanation-kicker', 'UNIVERSE / ПУТЕВОДИТЕЛЬ');
+    const kicker = element('p', 'explanation-kicker', translateUi('UNIVERSE / ПУТЕВОДИТЕЛЬ'));
     kicker.dataset.breathSlot = 'l5_explain_kicker';
     kicker.dataset.breathSeed = '0.4';
     const title = element('h2', 'explanation-title');
@@ -96,7 +139,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     title.dataset.breathSlot = 'l5_explain_title';
     title.dataset.breathSeed = '1.1';
     headingGroup.append(kicker, title);
-    const closeButton = element('button', 'explanation-close', 'Закрыть ×');
+    const closeButton = element('button', 'explanation-close', translateUi('Закрыть ×'));
     closeButton.type = 'button';
     closeButton.dataset.explanationClose = 'true';
     header.append(headingGroup, closeButton);
@@ -105,9 +148,9 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     const controls = element('div', 'explanation-controls');
     const modeGroup = element('div', 'explanation-mode');
     modeGroup.setAttribute('role', 'group');
-    modeGroup.setAttribute('aria-label', 'Глубина объяснения');
+    modeGroup.setAttribute('aria-label', translateUi('Глубина объяснения'));
     const modeButtons = (['simple', 'expert'] as const).map((value) => {
-        const button = element('button', 'explanation-mode-button', value === 'simple' ? 'Просто' : 'Технически');
+        const button = element('button', 'explanation-mode-button', translateUi(value === 'simple' ? 'Просто' : 'Технически'));
         button.type = 'button';
         button.dataset.explanationMode = value;
         modeGroup.append(button);
@@ -115,9 +158,9 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     });
     controls.append(modeGroup);
     const navigation = element('nav', 'explanation-nav');
-    navigation.setAttribute('aria-label', 'Темы объяснения');
+    navigation.setAttribute('aria-label', translateUi('Темы объяснения'));
     const content = element('div', 'explanation-content');
-    const sceneNote = element('p', 'explanation-pause-note', 'Наблюдайте за сценой и управляйте звуком, пока изучаете объяснения.');
+    const sceneNote = element('p', 'explanation-pause-note', translateUi('Наблюдайте за сценой и управляйте звуком, пока изучаете объяснения.'));
     panel.append(header, summary, controls, navigation, content, sceneNote);
     dialog.append(symbolAnchor, panel);
     document.body.append(dialog);
@@ -130,10 +173,41 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     let backdropPointerId: number | null = null;
     let previousBodyMarker: string | undefined;
     let disposeTrail: (() => void) | null = null;
+    let disposeTextReveal: (() => void) | null = null;
+    let buttonMotion: ExplanationButtonMotionBinding | null = null;
+    let revealTargets: HTMLElement[] = [];
     let cascadeBound = false;
+    let contourResizeObserver: ResizeObserver | null = null;
+    let contourSize = '';
     const topicButtons = new Map<string, HTMLButtonElement>();
 
     // НАЧАЛО РАЗДЕЛА 2. СОДЕРЖИМОЕ ПО ЗАПРОСУ
+    // --- НАЧАЛО ФУНКЦИИ syncLocaleLabels ---
+    /** Переводит стабильные элементы управления, сохраняя фокус и привязки общего каскада. */
+    function syncLocaleLabels(): void {
+        dialog.lang = getLocale();
+        dialog.dir = getLocale() === 'he' ? 'rtl' : 'ltr';
+        kicker.textContent = translateUi('UNIVERSE / ПУТЕВОДИТЕЛЬ');
+        setExplanationButtonText(closeButton, translateUi('Закрыть ×'));
+        setExplanationButtonBackText(closeButton, translateUi('Закрыть ×', 'en'));
+        modeGroup.setAttribute('aria-label', translateUi('Глубина объяснения'));
+        for (const button of modeButtons) {
+            const source = button.dataset.explanationMode === 'simple' ? 'Просто' : 'Технически';
+            setExplanationButtonText(button, translateUi(source));
+            setExplanationButtonBackText(button, translateUi(source, 'en'));
+        }
+        for (const topic of getExplainerTopics()) {
+            const button = topicButtons.get(topic.id);
+            if (button) {
+                setExplanationButtonText(button, topic.label);
+                setExplanationButtonBackText(button, getExplainerTopic(topic.id, 'en')?.label ?? topic.label);
+            }
+        }
+        navigation.setAttribute('aria-label', translateUi('Темы объяснения'));
+        sceneNote.textContent = translateUi('Наблюдайте за сценой и управляйте звуком, пока изучаете объяснения.');
+    }
+    // --- КОНЕЦ ФУНКЦИИ syncLocaleLabels ---
+
     // --- НАЧАЛО ФУНКЦИИ revealTopicInNavigation ---
     /** Прокручивает только список тем, сохраняя положение окна и страницы. */
     function revealTopicInNavigation(): void {
@@ -154,6 +228,10 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     function renderTopic(topicId: string): void {
         const topic = getExplainerTopic(topicId) ?? getExplainerTopic(EXPLAINER_OVERVIEW_ID);
         if (!topic) return;
+        disposeTextReveal?.();
+        disposeTextReveal = null;
+        syncLocaleLabels();
+        const localizedTopics = new Map(getExplainerTopics().map((item) => [item.id, item]));
         currentTopicId = topic.id;
         dialog.dataset.topic = topic.id;
         dialog.dataset.mode = mode;
@@ -161,7 +239,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         summary.textContent = topic.summary;
         if (topicButtons.size === 0) {
             for (const item of EXPLAINER_TOPICS) {
-                const button = element('button', 'explanation-topic', item.label);
+                const button = element('button', 'explanation-topic', localizedTopics.get(item.id)?.label ?? item.label);
                 button.type = 'button';
                 button.dataset.explainTopic = item.id;
                 navigation.append(button);
@@ -169,6 +247,8 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
             }
         }
         for (const [id, button] of topicButtons) {
+            setExplanationButtonText(button, localizedTopics.get(id)?.label ?? button.dataset.canonicalText ?? button.textContent ?? '');
+            setExplanationButtonBackText(button, getExplainerTopic(id, 'en')?.label ?? button.dataset.canonicalText ?? '');
             if (id === topic.id) button.setAttribute('aria-current', 'page');
             else button.removeAttribute('aria-current');
         }
@@ -178,26 +258,31 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         }
 
         const experience = element('section', 'explanation-section');
-        experience.append(element('h3', '', 'Что видно в сцене'), element('p', '', topic.experience));
+        const experienceParagraph = element('p', '', topic.experience);
+        experience.append(element('h3', '', translateUi('Что видно в сцене')), experienceParagraph);
         const intuition = element('section', 'explanation-section');
-        intuition.append(element('h3', '', 'Простая идея'), element('p', '', topic.intuition));
+        const intuitionParagraph = element('p', '', topic.intuition);
+        intuition.append(element('h3', '', translateUi('Простая идея')), intuitionParagraph);
+        revealTargets = [summary, experienceParagraph, intuitionParagraph];
         const sections: HTMLElement[] = [experience, intuition];
 
         if (mode === 'expert') {
             const technical = element('section', 'explanation-section');
-            technical.append(element('h3', '', 'Как это реализовано'));
+            technical.append(element('h3', '', translateUi('Как это реализовано')));
             const details = element('ul', 'explanation-technical');
             for (const text of topic.technical) details.append(element('li', '', text));
             technical.append(details);
             sections.push(technical);
             if (topic.formulas.length > 0) {
                 const formulas = element('section', 'explanation-section explanation-formulas');
-                formulas.append(element('h3', '', 'Формулы и обозначения'));
+                formulas.append(element('h3', '', translateUi('Формулы и обозначения')));
                 for (const formula of topic.formulas) {
                     const figure = element('figure', 'explanation-formula');
                     figure.append(element('figcaption', '', formula.label));
                     appendMath(figure, formula.mathml);
-                    figure.append(element('p', 'explanation-formula-text', formula.text));
+                    const formulaText = element('p', 'explanation-formula-text', formula.text);
+                    formulaText.dir = 'ltr';
+                    figure.append(formulaText);
                     formulas.append(figure);
                 }
                 sections.push(formulas);
@@ -206,7 +291,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
 
         if (topic.sources.length > 0) {
             const sources = element('section', 'explanation-section');
-            sources.append(element('h3', '', 'Посмотреть исходный код'));
+            sources.append(element('h3', '', translateUi('Посмотреть исходный код')));
             const links = element('ul', 'explanation-sources');
             for (const source of topic.sources) {
                 const item = element('li', '');
@@ -223,11 +308,59 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         content.replaceChildren(...sections);
     }
     // --- КОНЕЦ ФУНКЦИИ renderTopic ---
+
+    // --- НАЧАЛО ФУНКЦИИ revealIntroduction ---
+    function revealIntroduction(delayMs: number): void {
+        disposeTextReveal?.();
+        let reducedMotion = getVisualSignals().reducedMotion;
+        try { reducedMotion ||= typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+        catch { /* Среда без MediaQueryList сохраняет режим общего кадра. */ }
+        disposeTextReveal = startExplanationTextReveal(revealTargets, reducedMotion, delayMs);
+    }
+    // --- КОНЕЦ ФУНКЦИИ revealIntroduction ---
     // КОНЕЦ РАЗДЕЛА 2
 
     // НАЧАЛО РАЗДЕЛА 3. ЖИЗНЕННЫЙ ЦИКЛ И СОБЫТИЯ
+    // --- НАЧАЛО ФУНКЦИИ resizeExplanationContour ---
+    /** Физические CSS-пиксели сохраняют амплитуду стенки при любой высоте левой панели. */
+    function resizeExplanationContour(width: number, height: number): void {
+        if (!cascadeBound || !dialog.open || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+        const size = `${width}:${height}`;
+        if (size === contourSize) return;
+        waterfallAnimator.resizeCascadeContour(5, width, height);
+        const viewBox = `0 0 ${width} ${height}`;
+        if (contourSvg.getAttribute('viewBox') !== viewBox) contourSvg.setAttribute('viewBox', viewBox);
+        contourSize = size;
+    }
+    // --- КОНЕЦ ФУНКЦИИ resizeExplanationContour ---
+
+    // --- НАЧАЛО ФУНКЦИИ observeExplanationContour ---
+    /** Размер читается при открытии и из ResizeObserver, а не из общего анимационного кадра. */
+    function observeExplanationContour(): void {
+        resizeExplanationContour(contourSvg.clientWidth, contourSvg.clientHeight);
+        if (contourResizeObserver || typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver((entries) => {
+            if (contourResizeObserver !== observer) return;
+            for (const entry of entries) {
+                if (entry.target !== contourSvg) continue;
+                resizeExplanationContour(entry.contentRect.width, entry.contentRect.height);
+            }
+        });
+        contourResizeObserver = observer;
+        observer.observe(contourSvg);
+    }
+    // --- КОНЕЦ ФУНКЦИИ observeExplanationContour ---
+
     // --- НАЧАЛО ФУНКЦИИ restoreReadingState ---
     function restoreReadingState(): void {
+        contourResizeObserver?.disconnect();
+        contourResizeObserver = null;
+        contourSize = '';
+        buttonMotion?.dispose();
+        buttonMotion = null;
+        syncLocaleLabels();
+        disposeTextReveal?.();
+        disposeTextReveal = null;
         disposeTrail?.();
         disposeTrail = null;
         if (cascadeBound) {
@@ -277,9 +410,12 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
             symbolField.replaceChildren();
             waterfallAnimator.bindCascade(5, dialog);
             cascadeBound = true;
+            observeExplanationContour();
         }
+        if (!buttonMotion) buttonMotion = mountExplanationButtonMotion([closeButton, ...modeButtons, ...topicButtons.values()]);
         dialog.scrollTop = panel.scrollTop = content.scrollTop = 0;
         revealTopicInNavigation();
+        revealIntroduction(externalTrigger ? EXPLANATION_ASSEMBLY_MS + 1000 : 0);
         if (externalTrigger) disposeTrail = playExplanationTrail(externalTrigger, dialog);
         title.focus({ preventScroll: true });
     }
@@ -364,12 +500,20 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     dialog.addEventListener('pointercancel', handlePointerCancel);
     dialog.addEventListener('cancel', handleCancel);
     dialog.addEventListener('close', handleClose);
-    resourceLedger.trackPageLifetimeAllocation('listeners', 8);
+    const unsubscribeLocale = subscribeLocale(() => {
+        if (!disposed && dialog.open) {
+            renderTopic(currentTopicId);
+            revealIntroduction(0);
+        }
+    });
+    resourceLedger.trackPageLifetimeAllocation('listeners', 9);
+    syncLocaleLabels();
 
     // --- НАЧАЛО ФУНКЦИИ dispose ---
     function dispose(): void {
         if (disposed) return;
         disposed = true;
+        unsubscribeLocale();
         close();
         document.removeEventListener('click', handleClick);
         window.removeEventListener('keydown', guardKeyboard, true);
@@ -379,7 +523,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         dialog.removeEventListener('pointercancel', handlePointerCancel);
         dialog.removeEventListener('cancel', handleCancel);
         dialog.removeEventListener('close', handleClose);
-        resourceLedger.trackPageLifetimeRelease('listeners', 8);
+        resourceLedger.trackPageLifetimeRelease('listeners', 9);
         dialog.remove();
     }
     // --- КОНЕЦ ФУНКЦИИ dispose ---

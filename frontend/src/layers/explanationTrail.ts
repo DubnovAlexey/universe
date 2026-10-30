@@ -1,10 +1,11 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/explanationTrail.ts
-// НАЗНАЧЕНИЕ: Короткий звёздный след от выбранной кнопки к окну объяснения.
-// РАЗДЕЛЫ: 1. Геометрия пути; 2. Частицы и отрисовка; 3. Временный жизненный цикл.
-// ФУНКЦИИ: buildExplanationTrailPath, sampleExplanationTrailPath, fraction,
-// makeTrailStars, paintExplanationTrail, playExplanationTrail, cleanup,
-// handleVisibilityChange, frame.
+// НАЗНАЧЕНИЕ: Пылевые точки поля собирают плоскость окна в его конечной левой позиции.
+// РАЗДЕЛЫ: 1. Геометрия и стадии сборки; 2. Частицы поля и плоскости; 3. Временный Canvas.
+// ФУНКЦИИ: buildExplanationTrailPath, sampleExplanationTrailPath, smooth,
+// getExplanationAssemblyFrame, fraction, buildExplanationDustParticles,
+// projectExplanationWindowPoint, sampleExplanationDustParticle, paintExplanationTrail,
+// playExplanationTrail, positionPanel, cleanup, handleVisibilityChange, frame.
 // ============================================================================
 
 import { resourceLedger } from '../core/resourceLedger';
@@ -17,10 +18,10 @@ export interface ExplanationTrailPath {
     readonly end: ExplanationTrailPoint;
 }
 interface TrailBounds { readonly left: number; readonly top: number; readonly width: number; readonly height: number; }
-export const EXPLANATION_TRAIL_DURATION_MS = 1100;
-const TRAVEL_MS = 350;
-const DUST_MS = EXPLANATION_TRAIL_DURATION_MS - TRAVEL_MS;
-const STAR_COUNT = 80;
+export const EXPLANATION_TRAIL_DURATION_MS = 4200;
+export const EXPLANATION_ASSEMBLY_MS = 3000;
+export const EXPLANATION_DUST_COUNT = 224;
+const PERIMETER_COUNT = 176;
 
 // НАЧАЛО ФУНКЦИИ buildExplanationTrailPath
 /** Центры реальных layout-прямоугольников задают концы плавной квадратичной кривой. */
@@ -41,7 +42,7 @@ export function buildExplanationTrailPath(from: TrailBounds, to: TrailBounds): E
 
 // НАЧАЛО ФУНКЦИИ sampleExplanationTrailPath
 export function sampleExplanationTrailPath(path: ExplanationTrailPath, progress: number): ExplanationTrailPoint {
-    const t = Math.max(0, Math.min(1, progress));
+    const t = smooth(progress);
     const u = 1 - t;
     return {
         x: u * u * path.start.x + 2 * u * t * path.control.x + t * t * path.end.x,
@@ -49,17 +50,50 @@ export function sampleExplanationTrailPath(path: ExplanationTrailPath, progress:
     };
 }
 // КОНЕЦ ФУНКЦИИ sampleExplanationTrailPath
+
+// НАЧАЛО ФУНКЦИИ smooth
+/** Квинтическая граница имеет нулевые скорость и ускорение на обоих концах. */
+function smooth(progress: number): number {
+    const p = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+    return p * p * p * (p * (p * 6 - 15) + 10);
+}
+// КОНЕЦ ФУНКЦИИ smooth
+
+export interface ExplanationAssemblyFrame {
+    readonly gather: number;
+    readonly nativeOpacity: number;
+    readonly dustOpacity: number;
+    readonly yaw: number;
+    readonly scale: number;
+}
+
+// НАЧАЛО ФУНКЦИИ getExplanationAssemblyFrame
+/** Плоскость собирается за три секунды; готовое окно появляется только на месте сборки. */
+export function getExplanationAssemblyFrame(elapsedMs: number): ExplanationAssemblyFrame {
+    const time = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+    const gather = smooth(time / EXPLANATION_ASSEMBLY_MS);
+    const nativeOpacity = smooth((time - EXPLANATION_ASSEMBLY_MS) / 1000);
+    const remaining = 1 - smooth(time / 4000);
+    return {
+        gather, nativeOpacity,
+        dustOpacity: 1 - smooth((time - 3300) / 900),
+        yaw: -14 * (1 - nativeOpacity) + Math.sin(time * 0.00145) * 1.8 * remaining,
+        scale: 0.985 + nativeOpacity * 0.015,
+    };
+}
+// КОНЕЦ ФУНКЦИИ getExplanationAssemblyFrame
 // КОНЕЦ РАЗДЕЛА 1
 
-// НАЧАЛО РАЗДЕЛА 2. ДЕТЕРМИНИРОВАННЫЕ ЧАСТИЦЫ И ОТРИСОВКА
-interface TrailStar {
-    readonly point: ExplanationTrailPoint;
-    readonly birthMs: number;
-    readonly driftX: number;
-    readonly driftY: number;
+// НАЧАЛО РАЗДЕЛА 2. ДЕТЕРМИНИРОВАННЫЕ ЧАСТИЦЫ И ПЛОСКОСТЬ
+export interface ExplanationDustParticle {
+    readonly origin: ExplanationTrailPoint;
+    readonly target: ExplanationTrailPoint;
+    readonly bend: ExplanationTrailPoint;
+    readonly delayMs: number;
     readonly radius: number;
+    readonly boundary: boolean;
+    readonly fromTrigger: boolean;
     readonly warm: boolean;
-    readonly cross: boolean;
 }
 
 // НАЧАЛО ФУНКЦИИ fraction
@@ -70,67 +104,129 @@ function fraction(index: number): number {
 }
 // КОНЕЦ ФУНКЦИИ fraction
 
-// НАЧАЛО ФУНКЦИИ makeTrailStars
-function makeTrailStars(path: ExplanationTrailPath): readonly TrailStar[] {
-    return Array.from({ length: STAR_COUNT }, (_, index) => {
-        const t = index / (STAR_COUNT - 1);
-        const point = sampleExplanationTrailPath(path, t);
-        const tangentX = (1 - t) * (path.control.x - path.start.x) + t * (path.end.x - path.control.x);
-        const tangentY = (1 - t) * (path.control.y - path.start.y) + t * (path.end.y - path.control.y);
-        const length = Math.hypot(tangentX, tangentY) || 1;
-        const spread = (fraction(index * 3) - 0.5) * 18;
+// НАЧАЛО ФУНКЦИИ buildExplanationDustParticles
+/** Это декоративная выборка поля: исходная Вселенная не изменяется и её точки не исчезают. */
+export function buildExplanationDustParticles(
+    from: TrailBounds, to: TrailBounds, viewport: { readonly width: number; readonly height: number },
+): readonly ExplanationDustParticle[] {
+    const start = buildExplanationTrailPath(from, to).start;
+    const insetX = Math.min(16, to.width * 0.035);
+    const insetY = Math.min(18, to.height * 0.035);
+    const left = to.left + insetX, top = to.top + insetY;
+    const width = Math.max(1, to.width - insetX * 2), height = Math.max(1, to.height - insetY * 2);
+    const perimeter = 2 * (width + height);
+    return Array.from({ length: EXPLANATION_DUST_COUNT }, (_, index) => {
+        const boundary = index < PERIMETER_COUNT;
+        let x: number, y: number;
+        if (boundary) {
+            const distance = index / PERIMETER_COUNT * perimeter;
+            if (distance < width) { x = left + distance; y = top; }
+            else if (distance < width + height) { x = left + width; y = top + distance - width; }
+            else if (distance < width * 2 + height) { x = left + width - (distance - width - height); y = top + height; }
+            else { x = left; y = top + height - (distance - width * 2 - height); }
+        } else {
+            const planeIndex = index - PERIMETER_COUNT;
+            x = left + ((planeIndex % 8) + 0.5) / 8 * width;
+            y = top + (Math.floor(planeIndex / 8) + 0.5) / 6 * height;
+        }
+        const fromTrigger = index % 13 === 0;
+        const origin = fromTrigger
+            ? { x: start.x + (fraction(index + 59) - 0.5) * from.width * 0.4,
+                y: start.y + (fraction(index + 83) - 0.5) * from.height * 0.4 }
+            : { x: fraction(index * 7 + 17) * viewport.width, y: fraction(index * 11 + 43) * viewport.height };
         return {
-            point: { x: point.x - tangentY / length * spread, y: point.y + tangentX / length * spread },
-            birthMs: t * TRAVEL_MS,
-            driftX: (fraction(index * 3 + 1) - 0.5) * 30,
-            driftY: (fraction(index * 3 + 2) - 0.5) * 30,
-            radius: 0.8 + fraction(index + 251) * 1.3,
-            warm: index % 7 === 0,
-            cross: index % 5 === 0,
+            origin, target: { x, y }, boundary, fromTrigger,
+            bend: { x: (fraction(index * 3 + 1) - 0.5) * (width * 0.32 + 48),
+                y: (fraction(index * 3 + 2) - 0.65) * (height * 0.18 + 42) },
+            delayMs: fraction(index + 151) * 320,
+            radius: (boundary ? 0.9 : 0.6) + fraction(index + 251) * 0.8,
+            warm: index % 11 === 0,
         };
     });
 }
-// КОНЕЦ ФУНКЦИИ makeTrailStars
+// КОНЕЦ ФУНКЦИИ buildExplanationDustParticles
+
+// НАЧАЛО ФУНКЦИИ projectExplanationWindowPoint
+/** Та же перспектива и Y-раскрытие, что у нативного окна; центр плоскости неподвижен. */
+export function projectExplanationWindowPoint(
+    point: ExplanationTrailPoint, center: ExplanationTrailPoint, state: ExplanationAssemblyFrame,
+): ExplanationTrailPoint {
+    const angle = state.yaw * Math.PI / 180;
+    const x = point.x - center.x, y = point.y - center.y;
+    const z = -x * Math.sin(angle);
+    const perspective = 1000 / Math.max(400, 1000 - z);
+    return { x: center.x + x * Math.cos(angle) * perspective * state.scale,
+        y: center.y + y * perspective * state.scale };
+}
+// КОНЕЦ ФУНКЦИИ projectExplanationWindowPoint
+
+// НАЧАЛО ФУНКЦИИ sampleExplanationDustParticle
+export function sampleExplanationDustParticle(
+    particle: ExplanationDustParticle, center: ExplanationTrailPoint, elapsedMs: number,
+): ExplanationTrailPoint & { readonly progress: number } {
+    const progress = smooth((elapsedMs - particle.delayMs) / (EXPLANATION_ASSEMBLY_MS - particle.delayMs));
+    const target = projectExplanationWindowPoint(particle.target, center, getExplanationAssemblyFrame(elapsedMs));
+    const control = { x: (particle.origin.x + target.x) / 2 + particle.bend.x,
+        y: (particle.origin.y + target.y) / 2 + particle.bend.y };
+    const u = 1 - progress;
+    return {
+        x: u * u * particle.origin.x + 2 * u * progress * control.x + progress * progress * target.x,
+        y: u * u * particle.origin.y + 2 * u * progress * control.y + progress * progress * target.y,
+        progress,
+    };
+}
+// КОНЕЦ ФУНКЦИИ sampleExplanationDustParticle
 
 // НАЧАЛО ФУНКЦИИ paintExplanationTrail
 function paintExplanationTrail(
-    context: CanvasRenderingContext2D, path: ExplanationTrailPath, stars: readonly TrailStar[],
+    context: CanvasRenderingContext2D, path: ExplanationTrailPath, particles: readonly ExplanationDustParticle[],
     elapsedMs: number, width: number, height: number,
 ): void {
     context.clearRect(0, 0, width, height);
     context.globalCompositeOperation = 'lighter';
-    const travel = Math.min(1, elapsedMs / TRAVEL_MS);
-    const tailFade = Math.max(0, 1 - Math.max(0, elapsedMs - TRAVEL_MS) / 400);
-    if (tailFade > 0) {
+    const state = getExplanationAssemblyFrame(elapsedMs);
+    const points = particles.map((particle) => sampleExplanationDustParticle(particle, path.end, elapsedMs));
+    const appear = 0.25 + 0.75 * smooth(elapsedMs / 650);
+    const contourOpacity = smooth((state.gather - 0.94) / 0.06) * state.dustOpacity;
+    if (contourOpacity > 0) {
         context.beginPath();
-        for (let index = 0; index <= 36; index++) {
-            const point = sampleExplanationTrailPath(path, Math.max(0, travel - 0.8) + Math.min(travel, 0.8) * index / 36);
+        for (let index = 0; index <= PERIMETER_COUNT; index++) {
+            const point = points[index % PERIMETER_COUNT];
             if (index === 0) context.moveTo(point.x, point.y);
             else context.lineTo(point.x, point.y);
         }
-        context.strokeStyle = `rgba(119, 211, 255, ${tailFade * 0.58})`;
-        context.lineWidth = 1.25;
+        context.fillStyle = `rgba(74, 151, 193, ${contourOpacity * 0.025})`;
+        context.fill();
+        context.strokeStyle = `rgba(119, 211, 255, ${contourOpacity * 0.26})`;
+        context.lineWidth = 0.85;
         context.shadowColor = '#74d8ff';
-        context.shadowBlur = 13;
+        context.shadowBlur = 8;
         context.stroke();
     }
 
-    for (const star of stars) {
-        const age = elapsedMs - star.birthMs;
-        if (age < 0 || age >= DUST_MS) continue;
-        const life = age / DUST_MS;
-        const alpha = Math.pow(1 - life, 1.5) * 0.88;
-        const x = star.point.x + star.driftX * life;
-        const y = star.point.y + star.driftY * life;
-        const color = star.warm ? '255, 223, 166' : '180, 230, 255';
+    for (let index = 0; index < particles.length; index++) {
+        const particle = particles[index];
+        const point = points[index];
+        const alpha = (particle.boundary ? 0.76 : 0.34) * appear * state.dustOpacity * (0.48 + point.progress * 0.52);
+        if (alpha <= 0) continue;
+        const { x, y } = point;
+        const color = particle.warm ? '255, 223, 166' : '180, 230, 255';
+        if (index % 3 === 0 && point.progress > 0.08 && point.progress < 0.96) {
+            const previous = sampleExplanationDustParticle(particle, path.end, Math.max(0, elapsedMs - 45));
+            context.shadowBlur = 0;
+            context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(x, y);
+            context.lineWidth = 0.65;
+            context.strokeStyle = `rgba(${color}, ${alpha * 0.3})`;
+            context.stroke();
+        }
         context.fillStyle = `rgba(${color}, ${alpha})`;
-        context.shadowColor = star.warm ? '#ffdca1' : '#81d8ff';
-        context.shadowBlur = star.cross ? 11 : 6;
+        context.shadowColor = particle.warm ? '#ffdca1' : '#81d8ff';
+        context.shadowBlur = particle.boundary ? 7 : 4;
         context.beginPath();
-        context.arc(x, y, star.radius * (1 - life * 0.35), 0, Math.PI * 2);
+        context.arc(x, y, particle.radius, 0, Math.PI * 2);
         context.fill();
-        if (star.cross) {
-            const arm = star.radius * 2.9;
+        if (index % 17 === 0) {
+            const arm = particle.radius * 2.6;
             context.beginPath();
             context.moveTo(x - arm, y); context.lineTo(x + arm, y);
             context.moveTo(x, y - arm); context.lineTo(x, y + arm);
@@ -140,20 +236,12 @@ function paintExplanationTrail(
         }
     }
 
-    if (elapsedMs < TRAVEL_MS + 220) {
-        const leader = sampleExplanationTrailPath(path, travel);
-        const alpha = Math.max(0, 1 - Math.max(0, elapsedMs - TRAVEL_MS) / 220);
-        context.shadowColor = '#9de6ff';
-        context.shadowBlur = 22;
-        context.fillStyle = `rgba(240, 251, 255, ${alpha})`;
-        context.beginPath(); context.arc(leader.x, leader.y, 3.8, 0, Math.PI * 2); context.fill();
-    }
-    if (elapsedMs < 260) {
-        const halo = elapsedMs / 260;
+    if (elapsedMs < 650) {
+        const halo = smooth(elapsedMs / 650);
         context.shadowColor = '#82d9ff';
         context.shadowBlur = 13;
-        context.strokeStyle = `rgba(143, 224, 255, ${(1 - halo) * 0.9})`;
-        context.lineWidth = 1.5;
+        context.strokeStyle = `rgba(143, 224, 255, ${(1 - halo) * 0.65})`;
+        context.lineWidth = 1.1;
         context.beginPath(); context.arc(path.start.x, path.start.y, 12 + halo * 28, 0, Math.PI * 2); context.stroke();
     }
     context.shadowBlur = 0;
@@ -163,13 +251,17 @@ function paintExplanationTrail(
 
 // НАЧАЛО РАЗДЕЛА 3. ВРЕМЕННЫЙ CANVAS И ОГРАНИЧЕННЫЙ RAF
 // НАЧАЛО ФУНКЦИИ playExplanationTrail
-/** Собственные часы работают и при паузе сцены; после короткого пролёта ресурсов не остаётся. */
+/** Временный слой собирает пыль на месте окна, не меняя ни одной частицы основной сцены. */
 export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDialogElement): () => void {
     const noop = (): void => {};
     if (typeof window === 'undefined' || typeof document === 'undefined' || !trigger?.isConnected || !dialog.open ||
         document.hidden || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function' ||
         typeof window.matchMedia !== 'function') return noop;
-    try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return noop; }
+    let motionPreference: MediaQueryList;
+    try {
+        motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (motionPreference.matches) return noop;
+    }
     catch { return noop; }
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -185,7 +277,7 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
     const to = dialog.getBoundingClientRect();
     if ([from, to].some((rect) => ![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0)) return noop;
     const path = buildExplanationTrailPath(from, to);
-    const stars = makeTrailStars(path);
+    const particles = buildExplanationDustParticles(from, to, { width, height });
     const dpr = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1));
     canvas.width = Math.ceil(width * dpr);
     canvas.height = Math.ceil(height * dpr);
@@ -197,6 +289,30 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
     })) canvas.style.setProperty(property, value);
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     document.body.append(canvas);
+    const flightProperties = ['--explanation-flight-x', '--explanation-flight-y', '--explanation-flight-scale',
+        '--explanation-flight-turn', '--explanation-flight-yaw', '--explanation-flight-opacity'];
+    const originalFlight = flightProperties.map((property) => ({ property, value: dialog.style.getPropertyValue(property), priority: dialog.style.getPropertyPriority(property) }));
+    const originalStage = dialog.dataset.entryStage;
+    const published = new Map<string, string>();
+    // НАЧАЛО ФУНКЦИИ positionPanel
+    /** Нативная панель не летит: проявляется с малым Y-раскрытием в конечном положении. */
+    function positionPanel(elapsedMs: number): void {
+        const state = getExplanationAssemblyFrame(elapsedMs);
+        const values: Record<string, string> = {
+            '--explanation-flight-x': '0px', '--explanation-flight-y': '0px', '--explanation-flight-turn': '0deg',
+            '--explanation-flight-scale': state.scale.toFixed(5), '--explanation-flight-yaw': `${state.yaw.toFixed(3)}deg`,
+            '--explanation-flight-opacity': state.nativeOpacity.toFixed(4),
+        };
+        for (const [property, value] of Object.entries(values)) {
+            if (published.get(property) === value) continue;
+            dialog.style.setProperty(property, value);
+            published.set(property, value);
+        }
+        const stage = elapsedMs < EXPLANATION_ASSEMBLY_MS ? 'gathering' : 'revealing';
+        if (dialog.dataset.entryStage !== stage) dialog.dataset.entryStage = stage;
+    }
+    // КОНЕЦ ФУНКЦИИ positionPanel
+    positionPanel(0);
     dialog.dataset.entryAnimation = 'true';
     resourceLedger.trackPageLifetimeAllocation('buffers', 1);
     resourceLedger.trackPageLifetimeAllocation('listeners', 2);
@@ -214,6 +330,12 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
         canvas.width = canvas.height = 0;
         canvas.remove();
         delete dialog.dataset.entryAnimation;
+        if (originalStage === undefined) delete dialog.dataset.entryStage;
+        else dialog.dataset.entryStage = originalStage;
+        originalFlight.forEach(({ property, value, priority }) => {
+            if (value) dialog.style.setProperty(property, value, priority);
+            else dialog.style.removeProperty(property);
+        });
         resourceLedger.trackPageLifetimeRelease('buffers', 1);
         resourceLedger.trackPageLifetimeRelease('listeners', 2);
     }
@@ -227,18 +349,19 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
     function frame(timestamp: number): void {
         if (disposed) return;
         frameId = null;
-        if (!dialog.open || !dialog.isConnected || document.hidden) { cleanup(); return; }
+        if (!dialog.open || !dialog.isConnected || document.hidden || motionPreference.matches) { cleanup(); return; }
         if (startMs === null) startMs = timestamp;
         const elapsed = Math.max(0, timestamp - startMs);
         if (elapsed >= EXPLANATION_TRAIL_DURATION_MS) { cleanup(); return; }
-        paintExplanationTrail(context!, path, stars, elapsed, width, height);
+        positionPanel(elapsed);
+        paintExplanationTrail(context!, path, particles, elapsed, width, height);
         frameId = window.requestAnimationFrame(frame);
     }
     // КОНЕЦ ФУНКЦИИ frame
 
     window.addEventListener('resize', cleanup, { passive: true });
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    paintExplanationTrail(context, path, stars, 0, width, height);
+    paintExplanationTrail(context, path, particles, 0, width, height);
     frameId = window.requestAnimationFrame(frame);
     return cleanup;
 }

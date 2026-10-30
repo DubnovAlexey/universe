@@ -7,7 +7,8 @@
 import { type PhaseId, type UniverseState } from '../../store/universeState';
 import { resourceLedger } from '../../core/resourceLedger';
 import { calmGlyphHover } from '../../core/glyphHover';
-import { setSolidButtonLabel } from '../../core/buttonSolid';
+import { setSolidButtonBackLabel, setSolidButtonLabel } from '../../core/buttonSolid';
+import { translateUi } from '../../core/locale';
 
 // НАЧАЛО РАЗДЕЛА 1. КАНОНИЧЕСКИЕ ПОДПИСИ
 // --- НАЧАЛО ФУНКЦИИ setCanonicalElementText ---
@@ -15,8 +16,12 @@ import { setSolidButtonLabel } from '../../core/buttonSolid';
  * Передаёт канонический текст общему контроллеру с сохранением доступного имени.
  */
 function setCanonicalElementText(el: HTMLElement | null, nextText: string): void {
-    if (!el || setSolidButtonLabel(el, nextText)) return;
-    calmGlyphHover.setCanonical(el, nextText);
+    if (!el) return;
+    if (el.dataset.localeSource !== nextText) el.dataset.localeSource = nextText;
+    const translated = translateUi(nextText);
+    setSolidButtonBackLabel(el, translateUi(nextText, 'en'));
+    if (setSolidButtonLabel(el, translated)) return;
+    calmGlyphHover.setCanonical(el, translated);
 }
 // --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
 // КОНЕЦ РАЗДЕЛА 1. КАНОНИЧЕСКИЕ ПОДПИСИ
@@ -70,14 +75,12 @@ export function syncHudDomWithState(state: Readonly<UniverseState>): void {
     const codenameEl = document.getElementById('ui-phase-codename');
     const titleEl = document.getElementById('ui-phase-title');
     const subtitleEl = document.getElementById('ui-phase-subtitle');
-    const philosophyEl = document.getElementById('ui-phase-philosophy');
     const progressEl = document.getElementById('ui-phase-progress');
     const overlayRoot = document.getElementById('hud-overlay-root');
 
     setCanonicalElementText(codenameEl, state.phaseMeta.codeName);
     setCanonicalElementText(titleEl, state.phaseMeta.titleRu);
     setCanonicalElementText(subtitleEl, state.phaseMeta.subtitleRu);
-    setCanonicalElementText(philosophyEl, state.phaseMeta.philosophyRu);
 
     if (progressEl) {
         progressEl.style.width = `${(state.telemetry.phaseProgress * 100).toFixed(1)}%`;
