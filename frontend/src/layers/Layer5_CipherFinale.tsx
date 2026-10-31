@@ -124,16 +124,19 @@ export function bindFinaleQuantumCells(line: HTMLElement | null, canonical = get
 // --- НАЧАЛО ФУНКЦИИ updateFinaleQuantumCells ---
 /** Меняет только содержимое кешированных ячеек, сохраняя сетку и индивидуальный темп. */
 export function updateFinaleQuantumCells(cells: readonly FinaleQuantumCell[], glyphPool: readonly string[], step: number, reducedMotion: boolean,
-    writes?: (() => void)[]): void {
+    writes?: (() => void)[], fitKeys?: readonly string[]): void {
     const updates: { cell: FinaleQuantumCell; glyph: string; fitKey: string; fit: GlyphInkFit }[] = [];
     const fontEpoch = getGlyphFontEpoch();
-    for (const cell of cells) {
+    for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+        const cell = cells[cellIndex];
         const index = cell.sourceIndex;
         const slotStride = index % 3 === 0 ? 1 : 2;
         const charTick = Math.floor((step + index * 7) / slotStride);
         const glyphIndex = (index * 19 + charTick * 7 + (index % 5) * 13) % glyphPool.length;
         const glyph = reducedMotion || !glyphPool.length ? cell.canonical : glyphPool[glyphIndex];
-        const fitKey = `${fontEpoch}:${cell.node.clientWidth}:${cell.node.clientHeight}`;
+        // Готовый ключ размеров от кадра визитки (перемер сетки только при смене layout или шрифта)
+        // избавляет от чтения clientWidth и принудительного layout на каждом шаге строки.
+        const fitKey = fitKeys?.[cellIndex] ?? `${fontEpoch}:${cell.node.clientWidth}:${cell.node.clientHeight}`;
         if (cell.glyph !== glyph || cell.fitKey !== fitKey) {
             updates.push({ cell, glyph, fitKey, fit: prepareFittedGlyph(cell.ink, glyph, cell.canonical, fitKey) });
         }
@@ -188,6 +191,11 @@ class FinaleCardDomAnimator {
     private line0El: HTMLElement | null = null;
     private line1El: HTMLElement | null = null;
     private quantumCells: readonly FinaleQuantumCell[] = [];
+    /** Ключи размеров 25 окон: читаются из layout только при смене размеров или шрифта. */
+    private quantumFitKeys: readonly string[] = [];
+    /** Последний записанный текст каждой строки: неизменную строку кадр не трогает. */
+    private readonly lastLineTexts = new Map<HTMLElement, string>();
+    private lastLineFontEpoch = -1;
     private line3El: HTMLElement | null = null;
     private line4El: HTMLElement | null = null;
     private readonly topicParts = new Map<HTMLElement, readonly { node: HTMLElement; start: number; length: number }[]>();
@@ -210,6 +218,9 @@ class FinaleCardDomAnimator {
         this.quantumCells = bindFinaleQuantumCells(root.querySelector<HTMLElement>('[data-bind="l5-line-2"]'));
         this.lastQuantumStep = -1;
         this.lastQuantumFontEpoch = -1;
+        this.quantumFitKeys = [];
+        this.lastLineTexts.clear();
+        this.lastLineFontEpoch = -1;
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
@@ -247,6 +258,21 @@ class FinaleCardDomAnimator {
         }
     }
     // КОНЕЦ ФУНКЦИИ setLineVisualText
+
+    // НАЧАЛО ФУНКЦИИ updateLine
+    /**
+     * Пишет строку только при смене текста, layout или шрифта. setVisualText читает offsetWidth, и после
+     * записей других подписчиков кадра каждый такой вызов стоил принудительного layout всей страницы.
+     */
+    private updateLine(element: HTMLElement, text: string, writes: (() => void)[], layoutStale: boolean): void {
+        if (calmGlyphHover.isActive(element)) { this.lastLineTexts.delete(element); return; }
+        if (!layoutStale && this.lastLineTexts.get(element) === text) return;
+        this.setLineVisualText(element, text, writes);
+        // Пока термин под курсором, строка обновляется каждый кадр, чтобы после наведения вернуть общий фронт.
+        const partBusy = this.topicParts.get(element)?.some((part) => calmGlyphHover.isActive(part.node)) ?? false;
+        if (partBusy) this.lastLineTexts.delete(element); else this.lastLineTexts.set(element, text);
+    }
+    // КОНЕЦ ФУНКЦИИ updateLine
 
     // --- НАЧАЛО ФУНКЦИИ startIfNeeded ---
     public startIfNeeded(): void {
@@ -375,8 +401,10 @@ class FinaleCardDomAnimator {
                     : 0.04 + 0.96 * smootherstep(0.0, 0.46, p);
 
             // Спокойное дыхание зафиксированной визитки в такт низкочастотной огибающей музыки
+            // Под курсором поднятая визитка замирает (без дыхания и дробных сдвигов), чтобы текст был резким.
+            const settledForReading = hasLoopCard && state.isFinaleCardHovered;
             const breathEnv =
-                state.reducedMotion ? 0 : smootherstep(0.48, 0.88, p);
+                state.reducedMotion || settledForReading ? 0 : smootherstep(0.48, 0.88, p);
             const musicPulse = 1.0 + this.breathHeartbeat * 0.42;
             const heartbeatScale =
                 1.0 +
@@ -386,7 +414,8 @@ class FinaleCardDomAnimator {
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
             const finalScale = emergeScale * heartbeatScale * settledScale;
-            const cardTransform = `translate3d(0, ${(floatY - ambientRise).toFixed(
+            const offsetY = floatY - ambientRise;
+            const cardTransform = `translate3d(0, ${(settledForReading ? Math.round(offsetY) : offsetY).toFixed(
                 1
             )}px, 0) scale(${finalScale.toFixed(4)})`;
 
@@ -396,57 +425,19 @@ class FinaleCardDomAnimator {
             }
             const assemblyStep = Math.floor(this.accumulatedAssemblyPhase);
 
-            if (p < 0.76 && !state.reducedMotion) {
-                if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    this.setLineVisualText(this.line0El, this.formatOdometerLineForProgress(
-                        getFinaleLines()[0],
-                        0,
-                        p,
-                        assemblyStep,
-                        glyphPool
-                    ), glyphWrites);
-                }
-                if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    this.setLineVisualText(this.line1El, this.formatOdometerLineForProgress(
-                        getFinaleLines()[1],
-                        1,
-                        p,
-                        assemblyStep,
-                        glyphPool
-                    ), glyphWrites);
-                }
-                if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    this.setLineVisualText(this.line3El, this.formatOdometerLineForProgress(
-                        getFinaleLines()[3],
-                        3,
-                        p,
-                        assemblyStep,
-                        glyphPool
-                    ), glyphWrites);
-                }
-                if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    this.setLineVisualText(this.line4El, this.formatOdometerLineForProgress(
-                        getFinaleLines()[4],
-                        4,
-                        p,
-                        assemblyStep,
-                        glyphPool
-                    ), glyphWrites);
-                }
-            } else {
-                if (this.line0El && !calmGlyphHover.isActive(this.line0El)) {
-                    this.setLineVisualText(this.line0El, getFinaleLines()[0], glyphWrites);
-                }
-                if (this.line1El && !calmGlyphHover.isActive(this.line1El)) {
-                    this.setLineVisualText(this.line1El, getFinaleLines()[1], glyphWrites);
-                }
-                if (this.line3El && !calmGlyphHover.isActive(this.line3El)) {
-                    this.setLineVisualText(this.line3El, getFinaleLines()[3], glyphWrites);
-                }
-                if (this.line4El && !calmGlyphHover.isActive(this.line4El)) {
-                    this.setLineVisualText(this.line4El, getFinaleLines()[4], glyphWrites);
-                }
-            }
+            // Сборка одометра до p = 0.76 и канон после неё; неизменные строки кадр не перезаписывает.
+            const fontEpoch = getGlyphFontEpoch();
+            const lineLayoutStale = this.layoutDirty || fontEpoch !== this.lastLineFontEpoch;
+            const lines = getFinaleLines();
+            const assembling = p < 0.76 && !state.reducedMotion;
+            [this.line0El, this.line1El, null, this.line3El, this.line4El].forEach((element, lineIndex) => {
+                if (!element) return;
+                const text = assembling
+                    ? this.formatOdometerLineForProgress(lines[lineIndex], lineIndex, p, assemblyStep, glyphPool)
+                    : lines[lineIndex];
+                this.updateLine(element, text, glyphWrites, lineLayoutStale);
+            });
+            this.lastLineFontEpoch = fontEpoch;
 
             // Накопительный такт квантовой строки с ограниченной частотой:
             // Фаза накапливается через dtSec * boundedRateHz в диапазоне [18.0 .. 26.0] шагов/с.
@@ -464,12 +455,15 @@ class FinaleCardDomAnimator {
             }
 
             const qStep = Math.floor(this.accumulatedQuantumPhase);
-            const fontEpoch = getGlyphFontEpoch();
             if (this.quantumCells.length && (state.reducedMotion || qStep !== this.lastQuantumStep ||
                 this.layoutDirty || fontEpoch !== this.lastQuantumFontEpoch)) {
+                // Размеры 25 окон задаёт сетка: перемер нужен только при смене layout или шрифта, не на каждом шаге.
+                if (this.layoutDirty || fontEpoch !== this.lastQuantumFontEpoch || this.quantumFitKeys.length !== this.quantumCells.length) {
+                    this.quantumFitKeys = this.quantumCells.map((cell) => `${fontEpoch}:${cell.node.clientWidth}:${cell.node.clientHeight}`);
+                }
                 this.lastQuantumStep = qStep;
                 this.lastQuantumFontEpoch = fontEpoch;
-                updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion, glyphWrites);
+                updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion, glyphWrites, this.quantumFitKeys);
             }
             // Один пакет для всех строк: transform и текст не прерывают измерения следующей строки.
             glyphWrites.forEach(apply => apply());

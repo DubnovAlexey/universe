@@ -54,6 +54,8 @@ const REEL_HOLD_MS = 120;
 const SLOT_WAVE_MS = 90;
 const MAX_WAVE_MS = 1700;
 let metricsContext: CanvasRenderingContext2D | null | undefined;
+/** Последний назначенный шрифт измерителя: назначение font с веб-шрифтом стоит ~0.5 мс даже для той же строки. */
+let metricsFont = '';
 export interface GlyphInkFit {
     readonly scale: number;
     readonly left: number;
@@ -128,6 +130,8 @@ function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean, la
         // Новые начертания не оставляют в памяти измерения прежнего поколения шрифтов.
         fitCache.clear();
         fitCacheEpoch = fontEpoch;
+        // Загруженное начертание подхватывается только новым назначением font.
+        metricsFont = '';
     }
     const slot = element.parentElement!;
     const metricsKey = `${fontEpoch}:${window.innerWidth}:${window.innerHeight}:${layoutKey ?? ''}`;
@@ -158,7 +162,11 @@ function symbolFit(element: HTMLElement, glyph: string, isCanonical: boolean, la
     }
     let metrics: Partial<TextMetrics> = {};
     if (metricsContext) {
-        metricsContext.font = font;
+        // Сборка визитки измеряет сотни новых знаков одним и тем же шрифтом: font назначается только при смене.
+        if (metricsFont !== font) {
+            metricsContext.font = font;
+            metricsFont = font;
+        }
         metricsContext.textBaseline = 'alphabetic';
         metricsContext.textAlign = 'left';
         metricsContext.direction = 'ltr';

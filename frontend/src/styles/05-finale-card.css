@@ -72,9 +72,11 @@
     transform-origin: center center;
     will-change: transform, opacity;
     user-select: text;
+    scale: 1;
     transition:
             opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
-            background 0.55s ease;
+            background 0.55s ease,
+            scale 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .finale-stage-container.visible .finale-manifesto-card {
@@ -87,6 +89,9 @@
     --finale-core-alpha: 0.44;
     --finale-mid-alpha: 0.20;
     opacity: 0.60;
+    /* Поднятая визитка в покое меньше и «висит» от верхнего края; наведение плавно возвращает размер. */
+    transform-origin: 50% 0;
+    scale: 0.86;
 }
 
 .finale-manifesto-card.ambient-loop:hover,
@@ -96,6 +101,9 @@
     --finale-core-alpha: 0.64;
     --finale-mid-alpha: 0.38;
     opacity: 0.98;
+    scale: 1;
+    /* Без подсказки transform браузер перерисует замершую под курсором визитку в её масштабе — текст резкий. */
+    will-change: opacity;
 }
 /* КОНЕЦ РАЗДЕЛА 1. СЦЕНА ВИЗИТКИ, ТОНАЛЬНЫЕ СЛОИ И РЕЖИМ ambient-loop */
 
@@ -159,6 +167,9 @@
     height: 1.9em;
     white-space: nowrap;
     line-height: 1.65;
+    /* Размер окна задаёт сетка, а не знак: смена символа 18–26 раз в секунду пересчитывает только
+       эту ячейку, а не раскладку всей страницы. Без contain: paint — вписанное начертание может выходить за окно. */
+    contain: size layout style;
 }
 
 .finale-line-stack {
