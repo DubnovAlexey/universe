@@ -1,42 +1,59 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/core/explanationAssembly.ts
-// НАЗНАЧЕНИЕ: Общие часы и детерминированная геометрия «песчаного вихря», из которого
-//             собирается окно путеводителя. DOM-окно и Canvas-проход читают одно состояние.
-// РАЗДЕЛЫ: 1. Константы и кривые времени; 2. Дуга вихря; 3. Поле песчинок;
-//          4. Положение песчинки; 5. Общее состояние страницы.
-// ФУНКЦИИ: smootherstep, getExplanationAssemblyFrame, buildExplanationVortexPath,
-// sampleExplanationVortexPath, fraction, wrapAngle, buildPanelTargets, buildDustOrigins,
-// buildExplanationDustField, sampleExplanationDustGrain;
-// ExplanationAssemblyState: begin, end, isActive, getActive, getRemainingTextDelayMs, ensureField, reset.
+// НАЗНАЧЕНИЕ: Общие часы и детерминированная геометрия сборки окна путеводителя из пыли сцены.
+//             Часть пыли со всех сторон летит к окну и, закручиваясь у цели, ложится на его
+//             контур и плоскость; песчинки остаются частью открытого окна, а при закрытии
+//             рассыпаются обратно в поле. DOM-окно и Canvas-проход читают одно состояние.
+// РАЗДЕЛЫ: 1. Константы и кривые времени; 2. Поле песчинок; 3. Положение песчинки;
+//          4. Общее состояние страницы.
+// ФУНКЦИИ: smootherstep, getExplanationAssemblyFrame, fraction, buildPanelTargets, buildDirectionWeights,
+// buildDustOrigins, buildExplanationDustField, sampleExplanationDustGrain, sampleExplanationDustScatter;
+// ExplanationAssemblyState: begin, scatter, end, isActive, getActive, getRemainingTextDelayMs, ensureField, reset.
 // Собственного RAF, таймеров и DOM здесь нет: кадр задают renderer и окно.
 // ============================================================================
 
 import { resourceLedger } from './resourceLedger';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНСТАНТЫ И КРИВЫЕ ВРЕМЕНИ
-/** Полёт песчинок от поля сцены до места окна. */
-export const EXPLANATION_ASSEMBLY_MS = 2000;
-/** Окно начинает проявляться, пока последние песчинки ещё садятся на контур. */
-export const EXPLANATION_REVEAL_START_MS = 1650;
-export const EXPLANATION_REVEAL_MS = 600;
+/** Полёт песчинок от поля сцены до места окна: отдельный неторопливый визуальный номер. */
+export const EXPLANATION_ASSEMBLY_MS = 3600;
+/** Окно начинает проявляться, пока последние песчинки плоскости ещё ввинчиваются на место. */
+export const EXPLANATION_REVEAL_START_MS = 3000;
+export const EXPLANATION_REVEAL_MS = 900;
 /** Текст набирается только после того, как окно стало непрозрачным. */
 export const EXPLANATION_TEXT_DELAY_MS = EXPLANATION_REVEAL_START_MS + EXPLANATION_REVEAL_MS;
-const DUST_FADE_START_MS = 2050;
-const DUST_FADE_MS = 550;
-/** После этого момента временных ресурсов сборки не остаётся. */
-export const EXPLANATION_TRAIL_DURATION_MS = DUST_FADE_START_MS + DUST_FADE_MS;
+/** Поза окна (прозрачность и поворот) анимируется до этого момента; песчинки остаются, пока окно открыто. */
+export const EXPLANATION_TRAIL_DURATION_MS = EXPLANATION_TEXT_DELAY_MS;
+/** После закрытия окно рассыпается обратно в поле пыли за это время. */
+export const EXPLANATION_SCATTER_MS = 1600;
 /** Песчинок на большом экране и на телефоне/узком окне. */
 export const EXPLANATION_DUST_COUNT = 560;
 export const EXPLANATION_DUST_COUNT_COMPACT = 300;
 const MIN_DUST_COUNT = 24;
 const MAX_DUST_COUNT = 2000;
-/** Доли: контур окна, песчинки из нажатой кнопки, максимальная задержка старта. */
+/** Доли: контур окна и песчинки из нажатой кнопки. */
 const CONTOUR_SHARE = 0.42;
 const TRIGGER_SHARE = 0.12;
-const MAX_DELAY_SHARE = 0.3;
-/** Насколько вихрь сжимается в середине пути и сколько полных оборотов делает. */
-export const EXPLANATION_SWIRL_SQUEEZE = 0.58;
-const SWIRL_TURNS = 1;
+/** Задержки старта в долях полёта: контур садится первым, затем заполняется плоскость. */
+const CONTOUR_DELAY_SHARE = 0.22;
+const PLANE_DELAY_MIN_SHARE = 0.12;
+export const EXPLANATION_MAX_DELAY_SHARE = 0.4;
+/** Изгиб прямого пути: доля расстояния и предел в пикселях. */
+const BEND_SHARE = 0.18;
+const BEND_MAX_PX = 90;
+/** Спираль у цели: с какой доли пути песчинка начинает «ввинчиваться», обороты и радиус. */
+export const EXPLANATION_CURL_START = 0.55;
+export const EXPLANATION_CURL_TURNS_MIN = 0.6;
+export const EXPLANATION_CURL_TURNS_MAX = 1.1;
+export const EXPLANATION_CURL_RADIUS_MAX = 26;
+/** Песчинки не стартуют «под» окном: старты внутри расширенного прямоугольника окна пропускаются. */
+const ORIGIN_CLEARANCE_PX = 24;
+/** Рамка из пыли проходит на столько пикселей снаружи окна: панель её не закрывает. */
+export const EXPLANATION_CONTOUR_OUTSET_PX = 4;
+/** Направление «с пылью»: до ближайшей по углу частицы сцены не больше 2°. */
+const DUST_COVER_RAD = Math.PI / 90;
+/** Одна частица сцены отдаёт окну около стольких песчинок, не больше: ни одна точка не становится «фонтаном». */
+export const EXPLANATION_MAX_GRAINS_PER_PARTICLE = 4;
 const TAU = Math.PI * 2;
 
 // НАЧАЛО ФУНКЦИИ smootherstep
@@ -50,20 +67,21 @@ export function smootherstep(value: number): number {
 export interface ExplanationAssemblyFrame {
     readonly gather: number;
     readonly nativeOpacity: number;
+    /** Пыль окна не гаснет: она остаётся контуром и плоскостью, пока окно открыто. */
     readonly dustOpacity: number;
     readonly yaw: number;
     readonly scale: number;
 }
 
 // НАЧАЛО ФУНКЦИИ getExplanationAssemblyFrame
-/** Один кадр общей шкалы: сбор песка, проявление окна и угасание песчинок. */
+/** Один кадр общей шкалы: сбор пыли и проявление окна на её месте. */
 export function getExplanationAssemblyFrame(elapsedMs: number): ExplanationAssemblyFrame {
     const time = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
     const nativeOpacity = smootherstep((time - EXPLANATION_REVEAL_START_MS) / EXPLANATION_REVEAL_MS);
     return {
         gather: smootherstep(time / EXPLANATION_ASSEMBLY_MS),
         nativeOpacity,
-        dustOpacity: 1 - smootherstep((time - DUST_FADE_START_MS) / DUST_FADE_MS),
+        dustOpacity: 1,
         // Небольшой поворот вокруг Y гаснет вместе с проявлением: плоскость «встаёт» на место.
         yaw: -7 * (1 - nativeOpacity),
         scale: 0.985 + nativeOpacity * 0.015,
@@ -72,48 +90,11 @@ export function getExplanationAssemblyFrame(elapsedMs: number): ExplanationAssem
 // КОНЕЦ ФУНКЦИИ getExplanationAssemblyFrame
 // КОНЕЦ РАЗДЕЛА 1
 
-// НАЧАЛО РАЗДЕЛА 2. ДУГА, ПО КОТОРОЙ ПЛЫВЁТ ЦЕНТР ВИХРЯ
+// НАЧАЛО РАЗДЕЛА 2. ДЕТЕРМИНИРОВАННОЕ ПОЛЕ ПЕСЧИНОК
 export interface ExplanationPoint { readonly x: number; readonly y: number; }
 export interface ExplanationRect { readonly left: number; readonly top: number; readonly width: number; readonly height: number; }
 export interface ExplanationViewport { readonly width: number; readonly height: number; }
-export interface ExplanationVortexPath {
-    readonly start: ExplanationPoint;
-    readonly control: ExplanationPoint;
-    readonly end: ExplanationPoint;
-}
 
-// НАЧАЛО ФУНКЦИИ buildExplanationVortexPath
-/** Квадратичная дуга от центра облака к центру окна; изгиб всегда направлен вверх по экрану. */
-export function buildExplanationVortexPath(start: ExplanationPoint, end: ExplanationPoint): ExplanationVortexPath {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const distance = Math.hypot(dx, dy);
-    const bend = Math.min(170, distance * 0.24);
-    let nx = distance > 0 ? -dy / distance : 0;
-    let ny = distance > 0 ? dx / distance : 0;
-    if (ny > 0) { nx = -nx; ny = -ny; }
-    return {
-        start: { x: start.x, y: start.y },
-        control: { x: (start.x + end.x) / 2 + nx * bend, y: (start.y + end.y) / 2 + ny * bend },
-        end: { x: end.x, y: end.y },
-    };
-}
-// КОНЕЦ ФУНКЦИИ buildExplanationVortexPath
-
-// НАЧАЛО ФУНКЦИИ sampleExplanationVortexPath
-/** Параметр уже сглажен вызывающим; значения за пределами [0, 1] прижимаются к концам. */
-export function sampleExplanationVortexPath(path: ExplanationVortexPath, progress: number): ExplanationPoint {
-    const t = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
-    const u = 1 - t;
-    return {
-        x: u * u * path.start.x + 2 * u * t * path.control.x + t * t * path.end.x,
-        y: u * u * path.start.y + 2 * u * t * path.control.y + t * t * path.end.y,
-    };
-}
-// КОНЕЦ ФУНКЦИИ sampleExplanationVortexPath
-// КОНЕЦ РАЗДЕЛА 2
-
-// НАЧАЛО РАЗДЕЛА 3. ДЕТЕРМИНИРОВАННОЕ ПОЛЕ ПЕСЧИНОК
 /** Флаги песчинки в поле kind. */
 export const DUST_KIND_CONTOUR = 1;
 export const DUST_KIND_TRIGGER = 2;
@@ -123,17 +104,18 @@ export interface ExplanationDustField {
     readonly count: number;
     /** Песчинки 0..contourCount-1 лежат на контуре окна по обходу периметра. */
     readonly contourCount: number;
-    readonly path: ExplanationVortexPath;
+    /** Центр окна: относительно него старты и цели сопоставлены по направлению. */
+    readonly center: ExplanationPoint;
     readonly trigger: ExplanationPoint | null;
     readonly originX: Float64Array;
     readonly originY: Float64Array;
     readonly targetX: Float64Array;
     readonly targetY: Float64Array;
-    /** Полярные координаты относительно концов дуги: старт — центр облака, финиш — центр окна. */
-    readonly rho0: Float64Array;
-    readonly phi0: Float64Array;
-    readonly rho1: Float64Array;
-    readonly turn: Float64Array;
+    /** Изгиб прямого пути (пиксели, знак — сторона) и спираль у цели: радиус, фаза, обороты. */
+    readonly bend: Float64Array;
+    readonly curlRadius: Float64Array;
+    readonly curlPhase: Float64Array;
+    readonly curlTurns: Float64Array;
     readonly delayMs: Float64Array;
     readonly radius: Float64Array;
     readonly kind: Uint8Array;
@@ -144,7 +126,7 @@ export interface ExplanationDustInput {
     readonly to: ExplanationRect;
     readonly viewport: ExplanationViewport;
     readonly count?: number;
-    /** Точки поля сцены; песчинки «отрываются» от реальных частиц Вселенной. */
+    /** Точки поля сцены; песчинки отделяются от реальных частиц Вселенной (сами частицы остаются). */
     readonly sources?: ArrayLike<{ readonly x: number; readonly y: number }> | null;
 }
 
@@ -157,32 +139,31 @@ function fraction(index: number): number {
 }
 // КОНЕЦ ФУНКЦИИ fraction
 
-// НАЧАЛО ФУНКЦИИ wrapAngle
-/** Угол в полуинтервале (-π, π]. */
-function wrapAngle(angle: number): number {
-    let value = angle % TAU;
-    if (value <= -Math.PI) value += TAU;
-    else if (value > Math.PI) value -= TAU;
-    return value;
-}
-// КОНЕЦ ФУНКЦИИ wrapAngle
-
 // НАЧАЛО ФУНКЦИИ buildPanelTargets
-/** Контур по периметру (по часовой от левого верхнего угла) и неровная решётка плоскости. */
+/**
+ * Контур — по периметру прямоугольника окна, расширенного на EXPLANATION_CONTOUR_OUTSET_PX (по часовой
+ * от левого верхнего угла): панель почти непрозрачна, и рамка снаружи остаётся видна, пока окно
+ * открыто. Плоскость — неровная решётка внутри окна, под панелью; она снова видна при закрытии.
+ */
 function buildPanelTargets(to: ExplanationRect, count: number, contourCount: number): { x: Float64Array; y: Float64Array } {
     const x = new Float64Array(count), y = new Float64Array(count);
+    const outset = EXPLANATION_CONTOUR_OUTSET_PX;
+    const frameLeft = to.left - outset, frameTop = to.top - outset;
+    const frameWidth = to.width + outset * 2, frameHeight = to.height + outset * 2;
+    const perimeter = 2 * (frameWidth + frameHeight);
+    for (let index = 0; index < contourCount; index++) {
+        const distance = index / contourCount * perimeter;
+        if (distance < frameWidth) { x[index] = frameLeft + distance; y[index] = frameTop; }
+        else if (distance < frameWidth + frameHeight) { x[index] = frameLeft + frameWidth; y[index] = frameTop + distance - frameWidth; }
+        else if (distance < frameWidth * 2 + frameHeight) {
+            x[index] = frameLeft + frameWidth - (distance - frameWidth - frameHeight); y[index] = frameTop + frameHeight;
+        }
+        else { x[index] = frameLeft; y[index] = frameTop + frameHeight - (distance - frameWidth * 2 - frameHeight); }
+    }
     const insetX = Math.min(14, to.width * 0.04);
     const insetY = Math.min(16, to.height * 0.04);
     const left = to.left + insetX, top = to.top + insetY;
     const width = Math.max(1, to.width - insetX * 2), height = Math.max(1, to.height - insetY * 2);
-    const perimeter = 2 * (width + height);
-    for (let index = 0; index < contourCount; index++) {
-        const distance = index / contourCount * perimeter;
-        if (distance < width) { x[index] = left + distance; y[index] = top; }
-        else if (distance < width + height) { x[index] = left + width; y[index] = top + distance - width; }
-        else if (distance < width * 2 + height) { x[index] = left + width - (distance - width - height); y[index] = top + height; }
-        else { x[index] = left; y[index] = top + height - (distance - width * 2 - height); }
-    }
     const planeCount = count - contourCount;
     const columns = Math.max(2, Math.round(Math.sqrt(planeCount * width / height)));
     const rows = Math.max(1, Math.ceil(planeCount / columns));
@@ -198,27 +179,73 @@ function buildPanelTargets(to: ExplanationRect, count: number, contourCount: num
 }
 // КОНЕЦ ФУНКЦИИ buildPanelTargets
 
+// НАЧАЛО ФУНКЦИИ buildDirectionWeights
+/**
+ * Вес частицы сцены — её доля направлений вокруг окна: половины промежутков до соседей по углу,
+ * каждая не больше DUST_COVER_RAD, так что пустой сектор у края экрана почти не засчитывается.
+ * Вес ограничен сверху так, чтобы одна частица отдавала не больше EXPLANATION_MAX_GRAINS_PER_PARTICLE
+ * песчинок; если частиц слишком мало и для этого, все веса равны.
+ */
+function buildDirectionWeights(candidates: readonly { readonly angle: number }[], fieldCount: number): Float64Array {
+    const count = candidates.length;
+    const cells = new Float64Array(count);
+    for (let index = 0; index < count; index++) {
+        const next = index + 1 < count ? candidates[index + 1].angle : candidates[0].angle + TAU;
+        const half = Math.min(DUST_COVER_RAD, (next - candidates[index].angle) / 2);
+        cells[index] += half;
+        cells[(index + 1) % count] += half;
+    }
+    // Песчинок у самой «весомой» частицы при пределе веса limit; растёт вместе с limit.
+    const busiest = (limit: number): number => {
+        let sum = 0;
+        for (let index = 0; index < count; index++) sum += Math.min(cells[index], limit);
+        return sum > 0 ? fieldCount * limit / sum : Infinity;
+    };
+    let low = 0, high = 0;
+    for (let index = 0; index < count; index++) high = Math.max(high, cells[index]);
+    if (busiest(high) <= EXPLANATION_MAX_GRAINS_PER_PARTICLE) low = high;
+    else for (let step = 0; step < 40; step++) {
+        const middle = (low + high) / 2;
+        if (busiest(middle) <= EXPLANATION_MAX_GRAINS_PER_PARTICLE) low = middle; else high = middle;
+    }
+    for (let index = 0; index < count; index++) cells[index] = low > 0 ? Math.min(cells[index], low) : 1;
+    return cells;
+}
+// КОНЕЦ ФУНКЦИИ buildDirectionWeights
+
 // НАЧАЛО ФУНКЦИИ buildDustOrigins
 /**
- * Старты: часть песчинок вылетает из нажатой кнопки, остальные отрываются от частиц сцены.
- * Без частиц (тест, ранний кадр) используется детерминированный диск вокруг центра экрана.
+ * Старты «со всех сторон»: направления вокруг окна распределены равномерно, но только там, где
+ * в сцене есть пыль. Окно у края экрана не получает «фонтанов» из одной крайней частицы на
+ * пустой стороне, а скопление частиц делится между соседними направлениями. Частицы не
+ * исчезают — песчинка лишь стартует из их текущей точки. Часть песчинок вылетает из нажатой
+ * кнопки. Без частиц (тест, ранний кадр) — кольцо вокруг окна за краем поля.
  */
-function buildDustOrigins(input: ExplanationDustInput, count: number, triggerCount: number): { x: Float64Array; y: Float64Array } {
+function buildDustOrigins(input: ExplanationDustInput, count: number, triggerCount: number,
+    center: ExplanationPoint): { x: Float64Array; y: Float64Array } {
     const x = new Float64Array(count), y = new Float64Array(count);
     const { width, height } = input.viewport;
-    const from = input.from;
-    const valid: number[] = [];
+    const { from, to } = input;
+    const candidates: { angle: number; x: number; y: number }[] = [];
     const sources = input.sources;
     if (sources) {
         for (let index = 0; index < sources.length; index++) {
             const point = sources[index];
-            if (point && Number.isFinite(point.x) && Number.isFinite(point.y) &&
-                point.x >= -40 && point.x <= width + 40 && point.y >= -40 && point.y <= height + 40) valid.push(index);
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
+                point.x < -40 || point.x > width + 40 || point.y < -40 || point.y > height + 40) continue;
+            const underPanel = point.x > to.left - ORIGIN_CLEARANCE_PX && point.x < to.left + to.width + ORIGIN_CLEARANCE_PX &&
+                point.y > to.top - ORIGIN_CLEARANCE_PX && point.y < to.top + to.height + ORIGIN_CLEARANCE_PX;
+            if (!underPanel) candidates.push({ angle: Math.atan2(point.y - center.y, point.x - center.x), x: point.x, y: point.y });
         }
+        candidates.sort((a, b) => a.angle - b.angle);
     }
     const fieldCount = count - triggerCount;
-    const stride = valid.length / Math.max(1, fieldCount);
-    const radius = Math.min(width, height) * 0.42;
+    const useSources = candidates.length >= Math.min(fieldCount, 12);
+    const weights = useSources ? buildDirectionWeights(candidates, fieldCount) : null;
+    let total = 0;
+    if (weights) for (let index = 0; index < weights.length; index++) total += weights[index];
+    let candidate = 0, cumulative = weights ? weights[0] : 0;
+    const ringRadius = Math.hypot(width, height) * 0.55;
     for (let index = 0; index < count; index++) {
         if (from && index < triggerCount) {
             x[index] = from.left + from.width / 2 + (fraction(index + 59) - 0.5) * from.width * 0.9;
@@ -226,17 +253,20 @@ function buildDustOrigins(input: ExplanationDustInput, count: number, triggerCou
             continue;
         }
         const fieldIndex = index - triggerCount;
-        if (valid.length >= fieldCount * 0.5 && sources) {
-            const point = sources[valid[Math.min(valid.length - 1, Math.floor((fieldIndex + 0.5) * stride))]];
-            x[index] = point.x;
-            y[index] = point.y;
+        // Равномерные доли круга с детерминированным сдвигом: пыль приходит со всех сторон.
+        const share = (fieldIndex + 0.25 + fraction(index * 7 + 17) * 0.5) / Math.max(1, fieldCount);
+        if (weights) {
+            // Доли растут вместе с fieldIndex, поэтому частицы по углу проходятся один раз за всё поле.
+            const position = share * total;
+            while (candidate < weights.length - 1 && cumulative <= position) cumulative += weights[++candidate];
+            x[index] = candidates[candidate].x;
+            y[index] = candidates[candidate].y;
             continue;
         }
-        // Запасное облако: эллиптический диск с лёгким спиральным закручиванием.
-        const r = (0.08 + 0.92 * Math.sqrt(fraction(index * 7 + 17))) * radius;
-        const angle = fraction(index * 11 + 43) * TAU + r / radius * 2.2;
-        x[index] = width / 2 + Math.cos(angle) * r * 1.35;
-        y[index] = height / 2 + Math.sin(angle) * r * 0.78;
+        const angle = -Math.PI + share * TAU;
+        const r = ringRadius * (0.7 + 0.3 * fraction(index * 11 + 43));
+        x[index] = center.x + Math.cos(angle) * r;
+        y[index] = center.y + Math.sin(angle) * r;
     }
     return { x, y };
 }
@@ -244,74 +274,73 @@ function buildDustOrigins(input: ExplanationDustInput, count: number, triggerCou
 
 // НАЧАЛО ФУНКЦИИ buildExplanationDustField
 /**
- * Песчинка i всегда садится в точку окна i. Старты и цели сопоставляются по углу вокруг
- * своих центров, поэтому весь рой поворачивается согласованно — получается вихрь, а не хаос.
+ * Песчинка i всегда садится в точку окна i. Старты и цели сопоставляются по направлению от центра
+ * окна: пыль с каждой стороны летит к ближней к ней части окна, потоки не пересекаются и не
+ * образуют общего вихря. Изгиб, спираль и задержка у каждой песчинки свои.
  */
 export function buildExplanationDustField(input: ExplanationDustInput): ExplanationDustField {
     const requested = Number.isFinite(input.count) ? Math.round(input.count!) : EXPLANATION_DUST_COUNT;
     const count = Math.max(MIN_DUST_COUNT, Math.min(MAX_DUST_COUNT, requested));
     const contourCount = Math.round(count * CONTOUR_SHARE);
     const triggerCount = input.from ? Math.round(count * TRIGGER_SHARE) : 0;
+    const center = { x: input.to.left + input.to.width / 2, y: input.to.top + input.to.height / 2 };
     const targets = buildPanelTargets(input.to, count, contourCount);
-    const origins = buildDustOrigins(input, count, triggerCount);
+    const origins = buildDustOrigins(input, count, triggerCount, center);
 
-    let sumX = 0, sumY = 0;
-    for (let index = 0; index < count; index++) { sumX += origins.x[index]; sumY += origins.y[index]; }
-    const start = { x: sumX / count, y: sumY / count };
-    const end = { x: input.to.left + input.to.width / 2, y: input.to.top + input.to.height / 2 };
-    const path = buildExplanationVortexPath(start, end);
-
-    // Сопоставление по углу: k-я по углу цель получает k-й по углу старт.
-    const byOriginAngle = Array.from({ length: count }, (_, index) => index)
-        .map((index) => ({ index, angle: Math.atan2(origins.y[index] - start.y, origins.x[index] - start.x) }))
-        .sort((a, b) => a.angle - b.angle || a.index - b.index);
-    const byTargetAngle = Array.from({ length: count }, (_, index) => index)
-        .map((index) => ({ index, angle: Math.atan2(targets.y[index] - end.y, targets.x[index] - end.x) }))
-        .sort((a, b) => a.angle - b.angle || a.index - b.index);
+    // Сопоставление по углу: k-я по направлению цель получает k-й по направлению старт.
+    const angleOrder = (xs: Float64Array, ys: Float64Array): number[] => Array.from({ length: count }, (_, index) => index)
+        .map((index) => ({ index, angle: Math.atan2(ys[index] - center.y, xs[index] - center.x) }))
+        .sort((a, b) => a.angle - b.angle || a.index - b.index)
+        .map((entry) => entry.index);
+    const byOrigin = angleOrder(origins.x, origins.y);
+    const byTarget = angleOrder(targets.x, targets.y);
 
     const field: ExplanationDustField = {
-        count, contourCount, path,
+        count, contourCount, center,
         trigger: input.from ? { x: input.from.left + input.from.width / 2, y: input.from.top + input.from.height / 2 } : null,
         originX: new Float64Array(count), originY: new Float64Array(count),
         targetX: targets.x, targetY: targets.y,
-        rho0: new Float64Array(count), phi0: new Float64Array(count),
-        rho1: new Float64Array(count), turn: new Float64Array(count),
+        bend: new Float64Array(count), curlRadius: new Float64Array(count),
+        curlPhase: new Float64Array(count), curlTurns: new Float64Array(count),
         delayMs: new Float64Array(count), radius: new Float64Array(count), kind: new Uint8Array(count),
     };
     for (let rank = 0; rank < count; rank++) {
-        const target = byTargetAngle[rank].index;
-        const origin = byOriginAngle[rank].index;
+        const target = byTarget[rank];
+        const origin = byOrigin[rank];
         const ox = origins.x[origin], oy = origins.y[origin];
-        const tx = targets.x[target], ty = targets.y[target];
         field.originX[target] = ox;
         field.originY[target] = oy;
-        const phi0 = Math.atan2(oy - start.y, ox - start.x);
-        const phi1 = Math.atan2(ty - end.y, tx - end.x);
-        field.rho0[target] = Math.hypot(ox - start.x, oy - start.y);
-        field.phi0[target] = phi0;
-        field.rho1[target] = Math.hypot(tx - end.x, ty - end.y);
-        // Все песчинки крутятся в одну сторону (против часовой стрелки на экране) и попадают точно в цель.
-        field.turn[target] = wrapAngle(phi1 - phi0) - TAU * SWIRL_TURNS;
+        const distance = Math.hypot(targets.x[target] - ox, targets.y[target] - oy);
+        // Мягкая дуга вправо или влево: соседние потоки изгибаются по-разному, как струйки пыли.
+        field.bend[target] = (fraction(target * 3 + 7) - 0.5) * 2 * Math.min(BEND_MAX_PX, distance * BEND_SHARE);
+        field.curlRadius[target] = Math.min(EXPLANATION_CURL_RADIUS_MAX, 4 + distance * 0.12) * (0.6 + 0.4 * fraction(target * 13 + 5));
+        field.curlPhase[target] = fraction(target * 17 + 3) * TAU;
+        field.curlTurns[target] = EXPLANATION_CURL_TURNS_MIN +
+            (EXPLANATION_CURL_TURNS_MAX - EXPLANATION_CURL_TURNS_MIN) * fraction(target * 19 + 11);
         const fromTrigger = input.from !== null && origin < triggerCount;
         const contour = target < contourCount;
         field.kind[target] = (contour ? DUST_KIND_CONTOUR : 0) | (fromTrigger ? DUST_KIND_TRIGGER : 0) |
             (target % 9 === 4 ? DUST_KIND_WARM : 0);
-        // Песок из кнопки стартует сразу: это мгновенный отклик на нажатие.
-        field.delayMs[target] = fraction(target + 151) * EXPLANATION_ASSEMBLY_MS * (fromTrigger ? 0.08 : MAX_DELAY_SHARE);
+        // Песок из кнопки стартует сразу (отклик на нажатие); контур — раньше плоскости.
+        const delayShare = fromTrigger ? fraction(target + 151) * 0.06
+            : contour ? fraction(target + 151) * CONTOUR_DELAY_SHARE
+                : PLANE_DELAY_MIN_SHARE + fraction(target + 151) * (EXPLANATION_MAX_DELAY_SHARE - PLANE_DELAY_MIN_SHARE);
+        field.delayMs[target] = delayShare * EXPLANATION_ASSEMBLY_MS;
         field.radius[target] = (contour ? 1.05 : 0.75) + fraction(target + 251) * (contour ? 0.85 : 0.6);
     }
     return field;
 }
 // КОНЕЦ ФУНКЦИИ buildExplanationDustField
-// КОНЕЦ РАЗДЕЛА 3
+// КОНЕЦ РАЗДЕЛА 2
 
-// НАЧАЛО РАЗДЕЛА 4. ПОЛОЖЕНИЕ ПЕСЧИНКИ БЕЗ ВЫДЕЛЕНИЯ ПАМЯТИ
+// НАЧАЛО РАЗДЕЛА 3. ПОЛОЖЕНИЕ ПЕСЧИНКИ БЕЗ ВЫДЕЛЕНИЯ ПАМЯТИ
 export interface ExplanationGrainSample { x: number; y: number; progress: number; }
 
 // НАЧАЛО ФУНКЦИИ sampleExplanationDustGrain
 /**
- * Центр вихря плывёт по дуге, песчинка обращается вокруг него и меняет радиус:
- * в середине пути рой сжимается в плотную воронку, к концу раскрывается в прямоугольник окна.
+ * Песчинка летит к своей точке напрямую по мягкой дуге, а на последних 45% пути закручивается
+ * вокруг цели спиралью убывающего радиуса и «ввинчивается» на место. Обе части гладкие:
+ * скорость и ускорение нулевые при отрыве и при посадке (квинтическая кривая и sin³).
  * Результат пишется в out, чтобы кадр с сотнями песчинок не создавал мусор для GC.
  */
 export function sampleExplanationDustGrain(field: ExplanationDustField, index: number, elapsedMs: number,
@@ -320,23 +349,62 @@ export function sampleExplanationDustGrain(field: ExplanationDustField, index: n
     const time = Number.isFinite(elapsedMs) ? elapsedMs : 0;
     const progress = smootherstep((time - delay) / Math.max(1, EXPLANATION_ASSEMBLY_MS - delay));
     out.progress = progress;
-    if (progress <= 0) { out.x = field.originX[index]; out.y = field.originY[index]; return out; }
-    if (progress >= 1) { out.x = field.targetX[index]; out.y = field.targetY[index]; return out; }
-    const path = field.path;
-    const u = 1 - progress;
-    const centerX = u * u * path.start.x + 2 * u * progress * path.control.x + progress * progress * path.end.x;
-    const centerY = u * u * path.start.y + 2 * u * progress * path.control.y + progress * progress * path.end.y;
-    const squeeze = 1 - EXPLANATION_SWIRL_SQUEEZE * Math.sin(Math.PI * progress);
-    const rho = (field.rho0[index] * u + field.rho1[index] * progress) * squeeze;
-    const phi = field.phi0[index] + field.turn[index] * progress;
-    out.x = centerX + rho * Math.cos(phi);
-    out.y = centerY + rho * Math.sin(phi);
+    const ox = field.originX[index], oy = field.originY[index];
+    const tx = field.targetX[index], ty = field.targetY[index];
+    if (progress <= 0) { out.x = ox; out.y = oy; return out; }
+    if (progress >= 1) { out.x = tx; out.y = ty; return out; }
+    const dx = tx - ox, dy = ty - oy;
+    const distance = Math.hypot(dx, dy);
+    const bend = field.bend[index] * Math.sin(Math.PI * progress);
+    let x = ox + dx * progress + (distance > 0 ? -dy / distance : 0) * bend;
+    let y = oy + dy * progress + (distance > 0 ? dx / distance : 0) * bend;
+    const curl = (progress - EXPLANATION_CURL_START) / (1 - EXPLANATION_CURL_START);
+    if (curl > 0) {
+        const swell = Math.sin(Math.PI * curl);
+        const rho = field.curlRadius[index] * swell * swell * swell;
+        // Все песчинки ввинчиваются в одну сторону — против часовой стрелки на экране.
+        const phi = field.curlPhase[index] - TAU * field.curlTurns[index] * curl;
+        x += rho * Math.cos(phi);
+        y += rho * Math.sin(phi);
+    }
+    out.x = x;
+    out.y = y;
     return out;
 }
 // КОНЕЦ ФУНКЦИИ sampleExplanationDustGrain
-// КОНЕЦ РАЗДЕЛА 4
 
-// НАЧАЛО РАЗДЕЛА 5. ОДНА АКТИВНАЯ СБОРКА НА СТРАНИЦУ
+// НАЧАЛО ФУНКЦИИ sampleExplanationDustScatter
+/**
+ * Рассыпание после закрытия: песчинка возвращается туда, откуда пришла, по обратной дуге —
+ * из точки окна или, если окно закрыли во время сборки, из того места полёта, где она была
+ * в момент закрытия (closedAtMs — время сборки на этот момент). Плоскость уходит первой,
+ * контур — последним. progress — доля обратного пути (0..1).
+ */
+export function sampleExplanationDustScatter(field: ExplanationDustField, index: number, scatterElapsedMs: number,
+    closedAtMs: number, out: ExplanationGrainSample): ExplanationGrainSample {
+    const contour = index < field.contourCount;
+    const delay = (contour ? 0.1 + fraction(index + 401) * 0.2 : fraction(index + 401) * 0.15) * EXPLANATION_SCATTER_MS;
+    const time = Number.isFinite(scatterElapsedMs) ? scatterElapsedMs : 0;
+    const progress = smootherstep((time - delay) / Math.max(1, EXPLANATION_SCATTER_MS - delay));
+    sampleExplanationDustGrain(field, index, Number.isFinite(closedAtMs) ? closedAtMs : EXPLANATION_ASSEMBLY_MS, out);
+    out.progress = progress;
+    const sx = out.x, sy = out.y;
+    const ox = field.originX[index], oy = field.originY[index];
+    if (progress <= 0) return out;
+    if (progress >= 1) { out.x = ox; out.y = oy; return out; }
+    const dx = ox - sx, dy = oy - sy;
+    const distance = Math.hypot(dx, dy);
+    // Изгиб пропорционален оставшемуся пути: песчинка, не успевшая далеко улететь, возвращается почти прямо.
+    const flight = Math.hypot(field.targetX[index] - ox, field.targetY[index] - oy);
+    const bend = -0.6 * field.bend[index] * (flight > 0 ? distance / flight : 0) * Math.sin(Math.PI * progress);
+    out.x = sx + dx * progress + (distance > 0 ? -dy / distance : 0) * bend;
+    out.y = sy + dy * progress + (distance > 0 ? dx / distance : 0) * bend;
+    return out;
+}
+// КОНЕЦ ФУНКЦИИ sampleExplanationDustScatter
+// КОНЕЦ РАЗДЕЛА 3
+
+// НАЧАЛО РАЗДЕЛА 4. ОДНА АКТИВНАЯ СБОРКА НА СТРАНИЦУ
 export interface ExplanationAssemblySpec {
     readonly from: ExplanationRect | null;
     readonly to: ExplanationRect;
@@ -348,6 +416,10 @@ interface ActiveAssembly {
     readonly token: number;
     readonly spec: ExplanationAssemblySpec;
     field: ExplanationDustField | null;
+    /** Момент закрытия окна: с него песчинки рассыпаются обратно в поле; null — окно открыто. */
+    scatterStartMs: number | null;
+    /** Время сборки на момент закрытия: рассыпание начинается с того кадра, который был на экране. */
+    closedAtMs: number;
 }
 
 export class ExplanationAssemblyState {
@@ -355,14 +427,24 @@ export class ExplanationAssemblyState {
     private nextToken = 1;
 
     // НАЧАЛО ФУНКЦИИ begin
-    /** Новая сборка заменяет прежнюю; поле строится лениво на первом кадре renderer. */
+    /** Новая сборка заменяет прежнюю (и её рассыпание); поле строится лениво на первом кадре renderer. */
     public begin(spec: ExplanationAssemblySpec): number {
         this.end(this.active?.token ?? -1);
         const token = this.nextToken++;
-        this.active = { token, spec, field: null };
+        this.active = { token, spec, field: null, scatterStartMs: null, closedAtMs: 0 };
         return token;
     }
     // КОНЕЦ ФУНКЦИИ begin
+
+    // НАЧАЛО ФУНКЦИИ scatter
+    /** Окно закрыто: песчинки своей сборки начинают рассыпаться; освобождает их renderer по окончании. */
+    public scatter(token: number, nowMs: number): void {
+        if (!this.active || this.active.token !== token || this.active.scatterStartMs !== null) return;
+        if (!Number.isFinite(nowMs) || !this.active.field) { this.end(token); return; }
+        this.active.scatterStartMs = nowMs;
+        this.active.closedAtMs = Math.max(0, nowMs - this.active.spec.startMs);
+    }
+    // КОНЕЦ ФУНКЦИИ scatter
 
     // НАЧАЛО ФУНКЦИИ end
     /** Освобождает только свою сборку: поздний cleanup старого окна не гасит новую. */
@@ -378,7 +460,8 @@ export class ExplanationAssemblyState {
     // КОНЕЦ ФУНКЦИИ isActive
 
     // НАЧАЛО ФУНКЦИИ getActive
-    public getActive(): Readonly<{ token: number; spec: ExplanationAssemblySpec; field: ExplanationDustField | null }> | null {
+    public getActive(): Readonly<{ token: number; spec: ExplanationAssemblySpec; field: ExplanationDustField | null;
+        scatterStartMs: number | null; closedAtMs: number }> | null {
         return this.active;
     }
     // КОНЕЦ ФУНКЦИИ getActive
@@ -386,7 +469,7 @@ export class ExplanationAssemblyState {
     // НАЧАЛО ФУНКЦИИ getRemainingTextDelayMs
     /** Сколько ещё ждать набору текста, чтобы он не начался под невидимым окном. */
     public getRemainingTextDelayMs(nowMs: number): number {
-        if (!this.active || !Number.isFinite(nowMs)) return 0;
+        if (!this.active || this.active.scatterStartMs !== null || !Number.isFinite(nowMs)) return 0;
         return Math.max(0, EXPLANATION_TEXT_DELAY_MS - Math.max(0, nowMs - this.active.spec.startMs));
     }
     // КОНЕЦ ФУНКЦИИ getRemainingTextDelayMs
@@ -410,4 +493,4 @@ export class ExplanationAssemblyState {
 }
 
 export const explanationAssembly = new ExplanationAssemblyState();
-// КОНЕЦ РАЗДЕЛА 5
+// КОНЕЦ РАЗДЕЛА 4

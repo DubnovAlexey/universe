@@ -565,7 +565,7 @@ export class UniverseRenderer {
                 profileMarkMs = endMs;
             }
             this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
-            // Песчаный вихрь окна путеводителя рисуется в этом же кадре и Canvas, поверх всех фаз.
+            // Пыль, собирающая окно путеводителя, рисуется в этом же кадре и Canvas, поверх всех фаз.
             renderExplanationAssemblyPass(this.pipeline.getContext(), this.getSimParticles(), nowMs);
             if (profileWork) profileWork.renderMs = performance.now() - profileMarkMs;
             this.consecutiveFrameErrors = 0;

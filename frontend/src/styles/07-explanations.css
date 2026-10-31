@@ -91,7 +91,7 @@
     overflow: hidden;
     scrollbar-color: #385c7c #0b1423;
 }
-/* Прозрачность и малый поворот при сборке из песка пишет explanationTrail.ts прямо в style окна. */
+/* Прозрачность и малый поворот при сборке из пыли пишет explanationTrail.ts прямо в style окна. */
 .explanation-dialog[open][data-entry-stage="gathering"] { pointer-events: none; }
 /* Одна область чтения остаётся внутри волн при любом положении прокрутки.
    Резерв под полосу прокрутки с обеих сторон: текст стоит по центру стенок окна. */

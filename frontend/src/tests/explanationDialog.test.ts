@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/explanationDialog.test.ts
 // НАЗНАЧЕНИЕ: Проверить каталог, связи терминов и настоящий жизненный цикл окна.
 // РАЗДЕЛЫ: 1. Минимальное дерево DOM; 2. Каталог; 3. Живая сцена, ввод и освобождение;
-//          4. Читаемый текст на паузе и часы появления; 5. Песчаный вихрь: геометрия, шкала, Canvas и ресурсы окна.
+//          4. Читаемый текст на паузе и часы появления; 5. Сборка окна из пыли: геометрия, шкала, Canvas и ресурсы окна.
 // ФУНКЦИИ: descendants, dispatch, runExplanationDialogChecks, runExplanationTextRevealPauseChecks, runExplanationTrailChecks;
 //          методы DialogNode.
 // ============================================================================
@@ -13,10 +13,12 @@ import { FINALE_TOPIC_TERMS, renderLayer5CipherFinaleView } from '../layers/Laye
 import { mountExplanationDialog, type ExplanationDialogBinding } from '../layers/ExplanationDialog';
 import { playExplanationTrail } from '../layers/explanationTrail';
 import {
-    EXPLANATION_ASSEMBLY_MS, EXPLANATION_DUST_COUNT, EXPLANATION_DUST_COUNT_COMPACT, EXPLANATION_REVEAL_MS,
-    EXPLANATION_REVEAL_START_MS, EXPLANATION_TEXT_DELAY_MS, EXPLANATION_TRAIL_DURATION_MS, DUST_KIND_CONTOUR, DUST_KIND_TRIGGER,
-    ExplanationAssemblyState, explanationAssembly, buildExplanationDustField, buildExplanationVortexPath,
-    getExplanationAssemblyFrame, sampleExplanationDustGrain, sampleExplanationVortexPath, type ExplanationDustField,
+    EXPLANATION_ASSEMBLY_MS, EXPLANATION_CONTOUR_OUTSET_PX, EXPLANATION_CURL_START, EXPLANATION_CURL_TURNS_MAX, EXPLANATION_CURL_TURNS_MIN,
+    EXPLANATION_CURL_RADIUS_MAX, EXPLANATION_DUST_COUNT, EXPLANATION_DUST_COUNT_COMPACT, EXPLANATION_MAX_DELAY_SHARE,
+    EXPLANATION_MAX_GRAINS_PER_PARTICLE, EXPLANATION_REVEAL_MS, EXPLANATION_REVEAL_START_MS, EXPLANATION_SCATTER_MS, EXPLANATION_TEXT_DELAY_MS,
+    EXPLANATION_TRAIL_DURATION_MS, DUST_KIND_CONTOUR, DUST_KIND_TRIGGER,
+    ExplanationAssemblyState, explanationAssembly, buildExplanationDustField,
+    getExplanationAssemblyFrame, sampleExplanationDustGrain, sampleExplanationDustScatter, type ExplanationDustField,
 } from '../core/explanationAssembly';
 import { renderExplanationAssemblyPass } from '../engine/passes/explanationAssemblyPass';
 import { universeStore } from '../store/universeState';
@@ -443,36 +445,62 @@ function runExplanationTextRevealPauseChecks(check: (passed: boolean, descriptio
 }
 // КОНЕЦ РАЗДЕЛА 4
 
-// НАЧАЛО РАЗДЕЛА 5. ПЕСЧАНЫЙ ВИХРЬ: ГЕОМЕТРИЯ, ШКАЛА, ПРОХОД CANVAS И РЕСУРСЫ ОКНА
+// НАЧАЛО РАЗДЕЛА 5. СБОРКА ОКНА ИЗ ПЫЛИ: ГЕОМЕТРИЯ, ШКАЛА, ПРОХОД CANVAS И РЕСУРСЫ ОКНА
 function runExplanationTrailChecks(check: (passed: boolean, description: string) => void): void {
-    // 5.1. Дуга, по которой плывёт центр вихря.
-    const leftward = buildExplanationVortexPath({ x: 960, y: 450 }, { x: 220, y: 470 });
-    const start = sampleExplanationVortexPath(leftward, 0), end = sampleExplanationVortexPath(leftward, 1);
-    const stationary = buildExplanationVortexPath({ x: 40, y: 40 }, { x: 40, y: 40 });
-    check(start.x === 960 && start.y === 450 && end.x === 220 && end.y === 470 &&
-        sampleExplanationVortexPath(leftward, -1).x === 960 && sampleExplanationVortexPath(leftward, 2).y === 470 &&
-        leftward.control.y < (leftward.start.y + leftward.end.y) / 2 &&
-        Array.from({ length: 21 }, (_, index) => sampleExplanationVortexPath(stationary, index / 20))
-            .every(point => Math.abs(point.x - 40) < 1e-9 && Math.abs(point.y - 40) < 1e-9) &&
-        Number.isFinite(sampleExplanationVortexPath(leftward, Number.NaN).x),
-    'The whirl center travels on an upward arc from the field to the panel, clamps its parameter and stays finite for coincident ends');
+    // 5.1. Пыль приходит со всех сторон и летит к ближней стороне окна, а не кружит вокруг общего центра.
+    const ring = buildExplanationDustField({ from: null, to: { left: 760, top: 300, width: 400, height: 300 },
+        viewport: { width: 1920, height: 900 }, count: 240, sources: null });
+    const angleAround = (x: number, y: number): number => Math.atan2(y - ring.center.y, x - ring.center.x);
+    const sectors = new Set(Array.from({ length: ring.count }, (_, k) =>
+        Math.floor((angleAround(ring.originX[k], ring.originY[k]) + Math.PI) / (Math.PI / 6)) % 12));
+    const nearSide = Array.from({ length: ring.count }, (_, k) => k).filter(k => {
+        const gap = Math.abs(angleAround(ring.originX[k], ring.originY[k]) - angleAround(ring.targetX[k], ring.targetY[k]));
+        return Math.min(gap, 2 * Math.PI - gap) < Math.PI / 2;
+    }).length;
+    check(sectors.size === 12 && nearSide >= ring.count * 0.9 &&
+        ring.center.x === 960 && ring.center.y === 450,
+    'Dust arrives from every direction around the panel and each grain flies toward the near side of the window instead of circling a shared vortex');
 
-    // 5.2. Общая шкала: сбор, проявление окна, угасание песка.
+    // Окно у края экрана: пыль идёт сверху, сбоку и снизу, а не «фонтанами» из крайних частиц пустой стороны.
+    let seed = 7;
+    const random = (): number => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 0x100000000;
+    const sceneDust = Array.from({ length: 820 }, () => ({ x: random() * 1920, y: random() * 900 }));
+    const docked = { left: 20, top: 130, width: 384, height: 690 };
+    const dockedField = buildExplanationDustField({ from: { left: 870, top: 840, width: 180, height: 40 }, to: docked,
+        viewport: { width: 1920, height: 900 }, count: EXPLANATION_DUST_COUNT, sources: sceneDust });
+    const fed = new Map<string, number>();
+    const sides = { above: 0, beside: 0, below: 0 };
+    let sceneGrains = 0;
+    for (let k = 0; k < dockedField.count; k++) {
+        if ((dockedField.kind[k] & DUST_KIND_TRIGGER) !== 0) continue;
+        const x = dockedField.originX[k], y = dockedField.originY[k];
+        sceneGrains++;
+        fed.set(`${x}:${y}`, (fed.get(`${x}:${y}`) ?? 0) + 1);
+        if (y < docked.top) sides.above++;
+        else if (y > docked.top + docked.height) sides.below++;
+        else if (x > docked.left + docked.width) sides.beside++;
+    }
+    check(sceneGrains > 0 && Object.values(sides).every(side => side >= sceneGrains * 0.1) &&
+        sides.above + sides.beside + sides.below === sceneGrains &&
+        Math.max(...fed.values()) <= EXPLANATION_MAX_GRAINS_PER_PARTICLE + 1,
+    'A panel docked at the screen edge draws scene dust from above, beside and below it, and no particle feeds more than about four grains');
+
+    // 5.2. Общая шкала: неторопливый сбор пыли, проявление окна на её месте; пыль не гаснет.
     const timeline = Array.from({ length: Math.ceil((EXPLANATION_TRAIL_DURATION_MS + 200) / 20) + 1 },
         (_, index) => getExplanationAssemblyFrame(index * 20));
     const first = timeline[0], last = timeline[timeline.length - 1];
     check(EXPLANATION_TEXT_DELAY_MS === EXPLANATION_REVEAL_START_MS + EXPLANATION_REVEAL_MS &&
-        EXPLANATION_REVEAL_START_MS < EXPLANATION_ASSEMBLY_MS && EXPLANATION_TEXT_DELAY_MS < EXPLANATION_TRAIL_DURATION_MS &&
-        EXPLANATION_TRAIL_DURATION_MS <= 3000 &&
+        EXPLANATION_TRAIL_DURATION_MS === EXPLANATION_TEXT_DELAY_MS &&
+        EXPLANATION_REVEAL_START_MS < EXPLANATION_ASSEMBLY_MS && EXPLANATION_ASSEMBLY_MS >= 3000 &&
+        EXPLANATION_TEXT_DELAY_MS <= 4500 &&
         first.gather === 0 && first.nativeOpacity === 0 && first.dustOpacity === 1 &&
-        last.gather === 1 && last.nativeOpacity === 1 && last.dustOpacity === 0 && last.yaw === 0 && last.scale === 1 &&
-        timeline.every((frame, index) => Object.values(frame).every(Number.isFinite) &&
+        last.gather === 1 && last.nativeOpacity === 1 && last.dustOpacity === 1 && last.yaw === 0 && last.scale === 1 &&
+        timeline.every((frame, index) => Object.values(frame).every(Number.isFinite) && frame.dustOpacity === 1 &&
             (index * 20 > EXPLANATION_REVEAL_START_MS || frame.nativeOpacity === 0) &&
             (index * 20 < EXPLANATION_TEXT_DELAY_MS || frame.nativeOpacity === 1) &&
-            (!index || (frame.gather >= timeline[index - 1].gather && frame.nativeOpacity >= timeline[index - 1].nativeOpacity &&
-                frame.dustOpacity <= timeline[index - 1].dustOpacity))) &&
+            (!index || (frame.gather >= timeline[index - 1].gather && frame.nativeOpacity >= timeline[index - 1].nativeOpacity))) &&
         JSON.stringify(getExplanationAssemblyFrame(Number.NaN)) === JSON.stringify(first),
-    'Sand gathers for two seconds, the panel appears in place by 2.25 s and the grains are gone by 2.6 s; the timeline is monotonic and NaN-safe');
+    'The dust gathers unhurriedly for 3.6 s, the panel appears in place by 3.9 s and the grains stay as part of it; the timeline is monotonic and NaN-safe');
 
     // 5.3. Детерминированное поле песчинок.
     const sources = Array.from({ length: 820 }, (_, index) => ({ x: 200 + (index * 37) % 1500, y: 120 + (index * 53) % 700 }));
@@ -486,9 +514,9 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
         { from: null, to: { left: 4, top: 16, width: 20, height: 12 }, viewport: { width: 64, height: 48 }, count: 5 },
     ];
     const inputs = JSON.stringify(scenarios);
-    const digest = (field: ExplanationDustField): string => JSON.stringify([field.count, field.contourCount, field.path, field.trigger,
-        ...[field.originX, field.originY, field.targetX, field.targetY, field.rho0, field.phi0, field.rho1, field.turn,
-            field.delayMs, field.radius, field.kind].map(values => Array.from(values))]);
+    const digest = (field: ExplanationDustField): string => JSON.stringify([field.count, field.contourCount, field.center, field.trigger,
+        ...[field.originX, field.originY, field.targetX, field.targetY, field.bend, field.curlRadius, field.curlPhase,
+            field.curlTurns, field.delayMs, field.radius, field.kind].map(values => Array.from(values))]);
     const fields = scenarios.map(scenario => buildExplanationDustField(scenario));
     const sourceKeys = new Set(sources.map(point => `${point.x}:${point.y}`));
     check(inputs === JSON.stringify(scenarios) && fields.every((field, index) => {
@@ -504,16 +532,23 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
             triggers === (scenario.from ? Math.round(expected * 0.12) : 0) &&
             Array.from(field.kind).every((kind, k) => ((kind & DUST_KIND_CONTOUR) !== 0) === (k < field.contourCount)) &&
             contour.every(p => Math.min(Math.abs(p.x - minX), Math.abs(p.x - maxX), Math.abs(p.y - minY), Math.abs(p.y - maxY)) < 1e-6) &&
+            // Рамка из пыли — снаружи окна на EXPLANATION_CONTOUR_OUTSET_PX, плоскость — внутри окна.
+            Math.abs(minX - (bounds.left - EXPLANATION_CONTOUR_OUTSET_PX)) < 1e-9 &&
+            Math.abs(maxX - (bounds.left + bounds.width + EXPLANATION_CONTOUR_OUTSET_PX)) < 1e-9 &&
+            Math.abs(minY - (bounds.top - EXPLANATION_CONTOUR_OUTSET_PX)) < 1e-9 &&
+            Math.abs(maxY - (bounds.top + bounds.height + EXPLANATION_CONTOUR_OUTSET_PX)) < 1e-9 &&
             Array.from({ length: field.count }, (_, k) => k).every(k =>
-                field.targetX[k] >= bounds.left && field.targetX[k] <= bounds.left + bounds.width &&
-                field.targetY[k] >= bounds.top && field.targetY[k] <= bounds.top + bounds.height &&
+                (k < field.contourCount || (field.targetX[k] >= bounds.left && field.targetX[k] <= bounds.left + bounds.width &&
+                    field.targetY[k] >= bounds.top && field.targetY[k] <= bounds.top + bounds.height)) &&
                 Number.isFinite(field.originX[k] + field.originY[k]) && field.radius[k] > 0 &&
-                field.delayMs[k] >= 0 && field.delayMs[k] <= EXPLANATION_ASSEMBLY_MS * 0.3) &&
+                field.delayMs[k] >= 0 && field.delayMs[k] <= EXPLANATION_ASSEMBLY_MS * EXPLANATION_MAX_DELAY_SHARE) &&
             (index !== 0 || Array.from({ length: field.count }, (_, k) => k)
                 .filter(k => (field.kind[k] & DUST_KIND_TRIGGER) === 0)
-                .every(k => sourceKeys.has(`${field.originX[k]}:${field.originY[k]}`)));
+                .every(k => sourceKeys.has(`${field.originX[k]}:${field.originY[k]}`) &&
+                    (field.originX[k] <= bounds.left - 24 || field.originX[k] >= bounds.left + bounds.width + 24 ||
+                        field.originY[k] <= bounds.top - 24 || field.originY[k] >= bounds.top + bounds.height + 24)));
     }),
-    'Desktop, phone, small and degenerate panels get deterministic grain fields: an exact contour outline, interior targets, button grains and real scene particles as origins');
+    'Desktop, phone, small and degenerate panels get deterministic grain fields: a dust frame just outside the panel, interior surface targets, button grains and real scene particles outside the panel as origins');
 
     // 5.4. Траектории: точный старт и финиш, плавные (C2) отрыв и посадка.
     const grain = { x: 0, y: 0, progress: 0 };
@@ -530,25 +565,61 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
         return startPoint.progress === 0 && startPoint.x === origin.x && startPoint.y === origin.y &&
             endPoint.progress === 1 && endPoint.x === target.x && endPoint.y === target.y &&
             nearStart(4) <= nearStart(8) * 0.2 + 1e-9 && nearEnd(4) <= nearEnd(8) * 0.2 + 1e-9 &&
-            Array.from({ length: 31 }, (_, step) => at(field, index, step * 100)).every(point =>
+            Array.from({ length: 41 }, (_, step) => at(field, index, step * 100)).every(point =>
                 Number.isFinite(point.x) && Number.isFinite(point.y) && point.progress >= 0 && point.progress <= 1);
     })),
     'Every grain leaves its origin and lands on its exact panel point with C2 easing and stays finite on every screen size');
 
-    // 5.5. Вихрь: одно направление вращения, центр плывёт влево, рой сжимается в середине пути.
-    const desktop = fields[0];
-    const spread = (time: number): number => {
-        const points = Array.from({ length: desktop.count }, (_, index) => at(desktop, index, time));
-        const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length;
-        const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length;
-        return points.reduce((sum, p) => sum + Math.hypot(p.x - cx, p.y - cy), 0) / points.length;
+    // 5.5. Полёт напрямую и спираль у цели: до спирали песчинка только приближается к своей точке, затем
+    //      ввинчивается в одну сторону с ограниченным радиусом; рой в целом сходится к окну.
+    const planar = (field: ExplanationDustField, index: number, progress: number): { x: number; y: number } => {
+        const ox = field.originX[index], oy = field.originY[index];
+        const dx = field.targetX[index] - ox, dy = field.targetY[index] - oy;
+        const length = Math.hypot(dx, dy) || 1;
+        const bend = field.bend[index] * Math.sin(Math.PI * progress);
+        return { x: ox + dx * progress - dy / length * bend, y: oy + dy * progress + dx / length * bend };
     };
-    const midSpread = spread(EXPLANATION_ASSEMBLY_MS * 0.55);
-    check(Array.from(desktop.turn).every(turn => turn < 0 && turn >= -3 * Math.PI - 1e-9 && turn <= -Math.PI + 1e-9) &&
-        desktop.path.end.x < desktop.path.start.x && midSpread < spread(0) * 0.8 && midSpread < spread(EXPLANATION_ASSEMBLY_MS),
-    'All grains turn the same way by half to one and a half revolutions while the whirl drifts left and contracts mid-flight before opening into the panel');
+    const flights = [fields[0], fields[1], ring, dockedField];
+    const approaches = flights.every(field => Array.from({ length: field.count }, (_, index) => index).every(index => {
+        let previousDistance = Infinity;
+        for (let time = 0; time <= EXPLANATION_ASSEMBLY_MS; time += 40) {
+            const point = at(field, index, time);
+            if (point.progress > EXPLANATION_CURL_START) break;
+            const remaining = Math.hypot(point.x - field.targetX[index], point.y - field.targetY[index]);
+            if (remaining > previousDistance + 1e-9) return false;
+            previousDistance = remaining;
+        }
+        return true;
+    }));
+    const spirals = flights.every(field => Array.from({ length: field.count }, (_, index) => index).every(index => {
+        const turns = field.curlTurns[index], radius = field.curlRadius[index];
+        // Около середины спирали (доля пути ≈ 0,78) смещение от дуги равно радиусу спирали.
+        const time = field.delayMs[index] + 0.657 * (EXPLANATION_ASSEMBLY_MS - field.delayMs[index]);
+        const offset = (ms: number): { x: number; y: number; expected: number } => {
+            const point = at(field, index, ms), base = planar(field, index, point.progress);
+            const curl = (point.progress - EXPLANATION_CURL_START) / (1 - EXPLANATION_CURL_START);
+            return { x: point.x - base.x, y: point.y - base.y, expected: radius * Math.sin(Math.PI * curl) ** 3 };
+        };
+        const first = offset(time), next = offset(time + 40);
+        return turns >= EXPLANATION_CURL_TURNS_MIN && turns <= EXPLANATION_CURL_TURNS_MAX &&
+            radius > 0 && radius <= EXPLANATION_CURL_RADIUS_MAX &&
+            Math.abs(Math.hypot(first.x, first.y) - first.expected) < 1e-6 && Math.hypot(first.x, first.y) >= 1.5 &&
+            first.x * next.y - first.y * next.x < 0;
+    }));
+    const meanDistance = (field: ExplanationDustField, time: number): number => Array.from({ length: field.count }, (_, index) => {
+        const point = at(field, index, time);
+        return Math.hypot(point.x - field.center.x, point.y - field.center.y);
+    }).reduce((sum, value) => sum + value, 0) / field.count;
+    const converges = flights.every(field => {
+        const distances = [0, 900, 1800, 2700, 3600].map(time => meanDistance(field, time));
+        return distances.every((value, index) => !index || value <= distances[index - 1] + 1e-9) &&
+            distances[distances.length - 1] < distances[0] * 0.75;
+    });
+    check(approaches && spirals && converges,
+    'Grains fly straight at their spot, then corkscrew into it the same way with a bounded radius, and the whole swarm converges on the panel');
 
-    // 5.6. Проход основного Canvas: без сборки — ни одного вызова; во время — пакеты без shadowBlur.
+    // 5.6. Проход основного Canvas: без сборки — ни одного вызова; полёт, покой открытого окна и
+    //      рассыпание — пакеты без shadowBlur; буфер поля освобождается, когда пыль вернулась в поле.
     const calls = { save: 0, restore: 0, fill: 0, stroke: 0, drawImage: 0 };
     let shadowTouched = false, finiteDrawing = true;
     const track = (x: number, y: number): void => { finiteDrawing &&= Number.isFinite(x) && Number.isFinite(y); };
@@ -571,22 +642,52 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
     const idleCalls = total();
     const token = state.begin({ ...scenarios[0], startMs: 1000 });
     const perFrame: { fill: number; stroke: number }[] = [];
-    let drew = true;
-    for (const time of [0, 300, 900, 1500, 1900, 2300]) {
+    const frameAt = (nowMs: number): boolean => {
         const before = { ...calls };
-        drew &&= renderExplanationAssemblyPass(context, sources, 1000 + time, state);
+        const result = renderExplanationAssemblyPass(context, sources, nowMs, state);
         perFrame.push({ fill: calls.fill - before.fill, stroke: calls.stroke - before.stroke });
-    }
+        return result;
+    };
+    let drew = true;
+    for (const time of [0, 400, 1200, 2000, 2800, 3500]) drew &&= frameAt(1000 + time);
+    const resting = frameAt(1000 + EXPLANATION_ASSEMBLY_MS + 2000) && frameAt(1000 + EXPLANATION_ASSEMBLY_MS + 60000);
     const buffersDuring = resourceLedger.getCounters().buffers;
-    const after = renderExplanationAssemblyPass(context, sources, 1000 + EXPLANATION_TRAIL_DURATION_MS, state);
-    state.end(token); state.end(token);
-    check(!idle && idleCalls === 0 && drew && !after && !shadowTouched && finiteDrawing && calls.save === calls.restore &&
-        perFrame.every(frame => frame.fill <= 3 && frame.stroke <= 4) && buffersDuring === ledger.buffers + 1 &&
-        resourceLedger.getCounters().buffers === ledger.buffers &&
+    state.scatter(token, 90000);
+    const scattering = state.getActive()?.scatterStartMs === 90000 && state.getRemainingTextDelayMs(90000) === 0 &&
+        frameAt(90000) && frameAt(90000 + EXPLANATION_SCATTER_MS / 2);
+    const scattered = !frameAt(90000 + EXPLANATION_SCATTER_MS);
+    state.end(token);
+    check(!idle && idleCalls === 0 && drew && resting && scattering && scattered && !shadowTouched && finiteDrawing &&
+        calls.save === calls.restore && perFrame.every(frame => frame.fill <= 3 && frame.stroke <= 4) &&
+        buffersDuring === ledger.buffers + 1 && resourceLedger.getCounters().buffers === ledger.buffers &&
         resourceLedger.getCounters().underflowCount === ledger.underflowCount && !state.isActive(),
-    'The main-canvas pass costs nothing while idle, batches hundreds of grains into a few fills and strokes without shadowBlur and releases its buffer');
+    'The main-canvas pass costs nothing while idle, keeps the grains glowing while the panel is open, scatters them after closing and batches every frame without shadowBlur');
 
-    // 5.7. Окно: проявление на месте, полное освобождение, прерывания, навигация и reduced motion.
+    // Рассыпание: песчинка уходит туда, откуда пришла, — из точки окна или с того места полёта, где
+    // её застало закрытие; плоскость раньше контура.
+    const desktopField = fields[0];
+    const firstPlane = desktopField.contourCount;
+    const scatterPoint = { x: 0, y: 0, progress: 0 };
+    const scatterAt = (index: number, ms: number, closedAtMs = EXPLANATION_ASSEMBLY_MS): { x: number; y: number; progress: number } =>
+        ({ ...sampleExplanationDustScatter(desktopField, index, ms, closedAtMs, scatterPoint) });
+    check(Array.from({ length: desktopField.count }, (_, index) => index).every(index => {
+        const start = scatterAt(index, 0), end = scatterAt(index, EXPLANATION_SCATTER_MS);
+        const midFlight = at(desktopField, index, 1500);
+        const interrupted = scatterAt(index, 0, 1500), interruptedEnd = scatterAt(index, EXPLANATION_SCATTER_MS, 1500);
+        return start.x === desktopField.targetX[index] && start.y === desktopField.targetY[index] && start.progress === 0 &&
+            end.x === desktopField.originX[index] && end.y === desktopField.originY[index] && end.progress === 1 &&
+            interrupted.x === midFlight.x && interrupted.y === midFlight.y &&
+            interruptedEnd.x === desktopField.originX[index] && interruptedEnd.y === desktopField.originY[index] &&
+            Array.from({ length: 17 }, (_, step) => [scatterAt(index, step * 100), scatterAt(index, step * 100, 1500)])
+                .every(points => points.every(point => Number.isFinite(point.x) && Number.isFinite(point.y)));
+    }) && scatterAt(0, EXPLANATION_SCATTER_MS * 0.1).progress === 0 &&
+        Array.from({ length: desktopField.count - firstPlane }, (_, k) => firstPlane + k)
+            .some(index => scatterAt(index, EXPLANATION_SCATTER_MS * 0.1).progress > 0) &&
+        Number.isFinite(scatterAt(0, Number.NaN).x) && Number.isFinite(scatterAt(0, 100, Number.NaN).x),
+    'Closing scatters every grain back to where it came from, starting exactly where the close found it, the surface before the outline, NaN-safe');
+
+    // 5.7. Окно: проявление на месте, пыль остаётся при открытом окне и рассыпается при закрытии;
+    //      прерывания, навигация и reduced motion.
     const savedGlobals = ['window', 'document', 'HTMLElement', 'Element'].map(name =>
         ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
     const savedSignals = getVisualSignals();
@@ -640,23 +741,36 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
         const opened = trailState.isActive() && trailState.getActive()!.spec.startMs === 5000 && pending.size === 1 &&
             document.body.querySelectorAll('canvas').length === 0 && dialog.dataset.entryAnimation === 'true' &&
             dialog.dataset.entryStage === 'gathering' && dialog.style.getPropertyValue('opacity') === '0.0000' &&
-            resourceLedger.getCounters().listeners === baseline.listeners + 2;
+            resourceLedger.getCounters().listeners === baseline.listeners + 3;
         nowMs = 6000; pump();
         const hiddenWhileGathering = dialog.style.getPropertyValue('opacity') === '0.0000' && dialog.dataset.entryStage === 'gathering';
-        nowMs = 5000 + EXPLANATION_TEXT_DELAY_MS + 50; pump();
-        const revealedInPlace = dialog.style.getPropertyValue('opacity') === '1.0000' && dialog.dataset.entryStage === 'revealing' &&
-            dialog.style.getPropertyValue('transform').includes('rotateY(0.000deg)');
+        nowMs = 5000 + EXPLANATION_REVEAL_START_MS + EXPLANATION_REVEAL_MS / 2; pump();
+        const revealingInPlace = dialog.style.getPropertyValue('opacity') === '0.5000' && dialog.dataset.entryStage === 'revealing' &&
+            dialog.style.getPropertyValue('transform') === 'perspective(1000px) rotateY(-3.500deg) scale(0.99250)';
         nowMs = 5000 + EXPLANATION_TRAIL_DURATION_MS; pump();
+        // Поза снята, окно полностью видно, а пыль остаётся частью открытого окна.
+        const dustStays = pending.size === 0 && dialog.dataset.entryAnimation === undefined &&
+            dialog.dataset.entryStage === undefined && dialog.style.getPropertyValue('opacity') === '' &&
+            dialog.style.getPropertyValue('transform') === '' && trailState.isActive() &&
+            trailState.getActive()!.scatterStartMs === null && resourceLedger.getCounters().listeners === baseline.listeners + 3;
+        trailState.ensureField(null);
+        nowMs += 700; dialog.close();
+        const scatters = trailState.getActive()?.scatterStartMs === nowMs && trailState.getRemainingTextDelayMs(nowMs) === 0 &&
+            resourceLedger.getCounters().listeners === baseline.listeners &&
+            resourceLedger.getCounters().buffers === baseline.buffers + 1;
+        trailState.reset();
         dispose(); dispose();
-        check(opened && hiddenWhileGathering && revealedInPlace && released(),
-            'The panel stays transparent while sand gathers, appears exactly in place, then releases its frame, listeners and inline pose without any extra canvas');
+        dialog.open = true;
+        check(opened && hiddenWhileGathering && revealingInPlace && dustStays && scatters && released(),
+            'The panel stays transparent while dust gathers and turns into place, the grains stay with the open panel, closing scatters them and every listener and buffer is released');
 
         const interrupted: boolean[] = [];
         for (const reason of ['resize', 'hidden', 'closed', 'removed', 'dispose']) {
             nowMs = 9000; dispose = play(); nowMs = 9100; pump();
             if (reason === 'resize') dispatch(window, 'resize');
             else if (reason === 'hidden') { document.hidden = true; dispatch(document, 'visibilitychange'); }
-            else if (reason === 'closed') { dialog.close(); pump(); }
+            // Закрытие отменяет кадр позы само; без построенного поля рассыпать нечего — сборка завершается.
+            else if (reason === 'closed') dialog.close();
             else if (reason === 'removed') { dialog.remove(); pump(); }
             else dispose();
             interrupted.push(released()); dispose();

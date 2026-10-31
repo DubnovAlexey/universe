@@ -466,7 +466,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         dialog.scrollTop = panel.scrollTop = content.scrollTop = 0;
         revealTopicInNavigation();
         if (externalTrigger) disposeTrail = playExplanationTrail(externalTrigger, dialog);
-        // Набор текста ждёт, пока песчаный вихрь соберёт и проявит окно; без сборки — сразу.
+        // Набор текста ждёт, пока пыль соберёт и проявит окно; без сборки — сразу.
         revealIntroduction(explanationAssembly.getRemainingTextDelayMs(performance.now()));
         title.focus({ preventScroll: true });
     }
@@ -576,6 +576,8 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         dialog.removeEventListener('close', handleClose);
         resourceLedger.trackPageLifetimeRelease('listeners', 9);
         dialog.remove();
+        // Снятое окно не оставляет рассыпающейся пыли и её буфера.
+        explanationAssembly.reset();
     }
     // --- КОНЕЦ ФУНКЦИИ dispose ---
     // КОНЕЦ РАЗДЕЛА 3

@@ -1,8 +1,10 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/explanationTrail.ts
-// НАЗНАЧЕНИЕ: Проявление окна путеводителя на месте, где его собирает песчаный вихрь.
+// НАЗНАЧЕНИЕ: Проявление окна путеводителя на месте, где его собирает пыль сцены, и судьба
+//             этой пыли: она остаётся частью открытого окна и рассыпается при закрытии.
 // РАЗДЕЛЫ: 1. Проверка среды и геометрии; 2. Поза окна на общей шкале; 3. Освобождение.
-// ФУНКЦИИ: playExplanationTrail, applyPose, cleanup, handleVisibilityChange, frame.
+// ФУНКЦИИ: playExplanationTrail, applyPose, finishPose, release, handleResize, handleVisibilityChange,
+//          handleClose, frame.
 // Песчинки рисует основной renderer (engine/passes/explanationAssemblyPass.ts) по общему
 // состоянию core/explanationAssembly.ts. Здесь только окно: прозрачность и малый поворот,
 // записанные прямо в style (не через наследуемые CSS-переменные всего поддерева).
@@ -85,22 +87,20 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
 
     applyPose(0);
     dialog.dataset.entryAnimation = 'true';
-    resourceLedger.trackPageLifetimeAllocation('listeners', 2);
-    let disposed = false;
+    resourceLedger.trackPageLifetimeAllocation('listeners', 3);
+    let poseActive = true;
+    let released = false;
     let frameId: number | null = null;
     // КОНЕЦ РАЗДЕЛА 2
 
     // НАЧАЛО РАЗДЕЛА 3. ОСВОБОЖДЕНИЕ
-    // НАЧАЛО ФУНКЦИИ cleanup
-    /** Любая остановка оставляет окно полностью видимым и возвращает исходные inline-стили. */
-    function cleanup(): void {
-        if (disposed) return;
-        disposed = true;
+    // НАЧАЛО ФУНКЦИИ finishPose
+    /** Окно полностью видно: кадр позы останавливается, исходные inline-стили возвращаются; пыль остаётся. */
+    function finishPose(): void {
+        if (!poseActive) return;
+        poseActive = false;
         if (frameId !== null) window.cancelAnimationFrame(frameId);
         frameId = null;
-        window.removeEventListener('resize', cleanup);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        state.end(token);
         delete dialog.dataset.entryAnimation;
         if (originalStage === undefined) delete dialog.dataset.entryStage;
         else dialog.dataset.entryStage = originalStage;
@@ -108,30 +108,60 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
             if (value) dialog.style.setProperty(property, value, priority);
             else dialog.style.removeProperty(property);
         });
-        resourceLedger.trackPageLifetimeRelease('listeners', 2);
     }
-    // КОНЕЦ ФУНКЦИИ cleanup
+    // КОНЕЦ ФУНКЦИИ finishPose
+
+    // НАЧАЛО ФУНКЦИИ release
+    /**
+     * Закрытое окно рассыпается обратно в пыль (её освобождает renderer по окончании);
+     * resize, скрытие вкладки, отсоединение окна и повторная сборка убирают пыль сразу.
+     * Любая остановка оставляет окно полностью видимым и возвращает исходные inline-стили.
+     */
+    function release(mode: 'scatter' | 'end'): void {
+        if (released) return;
+        released = true;
+        finishPose();
+        window.removeEventListener('resize', handleResize);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        dialog.removeEventListener('close', handleClose);
+        if (mode === 'scatter') state.scatter(token, clock());
+        else state.end(token);
+        resourceLedger.trackPageLifetimeRelease('listeners', 3);
+    }
+    // КОНЕЦ ФУНКЦИИ release
+
+    // НАЧАЛО ФУНКЦИИ handleResize
+    function handleResize(): void { release('end'); }
+    // КОНЕЦ ФУНКЦИИ handleResize
 
     // НАЧАЛО ФУНКЦИИ handleVisibilityChange
-    function handleVisibilityChange(): void { if (document.hidden) cleanup(); }
+    function handleVisibilityChange(): void { if (document.hidden) release('end'); }
     // КОНЕЦ ФУНКЦИИ handleVisibilityChange
+
+    // НАЧАЛО ФУНКЦИИ handleClose
+    function handleClose(): void { release(dialog.isConnected ? 'scatter' : 'end'); }
+    // КОНЕЦ ФУНКЦИИ handleClose
 
     // НАЧАЛО ФУНКЦИИ frame
     function frame(): void {
-        if (disposed) return;
+        if (!poseActive) return;
         frameId = null;
-        if (!dialog.open || !dialog.isConnected || document.hidden || motionPreference.matches) { cleanup(); return; }
+        if (!dialog.isConnected || document.hidden || motionPreference.matches) { release('end'); return; }
+        if (!dialog.open) { release('scatter'); return; }
         const elapsed = clock() - startMs;
-        if (!Number.isFinite(elapsed) || elapsed >= EXPLANATION_TRAIL_DURATION_MS) { cleanup(); return; }
+        if (!Number.isFinite(elapsed)) { release('end'); return; }
+        if (elapsed >= EXPLANATION_TRAIL_DURATION_MS) { finishPose(); return; }
         applyPose(Math.max(0, elapsed));
         frameId = window.requestAnimationFrame(frame);
     }
     // КОНЕЦ ФУНКЦИИ frame
 
-    window.addEventListener('resize', cleanup, { passive: true });
+    window.addEventListener('resize', handleResize, { passive: true });
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    dialog.addEventListener('close', handleClose);
     frameId = window.requestAnimationFrame(frame);
-    return cleanup;
+    // Внешняя остановка: открытое окно (повторная сборка, снятие страницы) — сразу, закрытое — рассыпание.
+    return () => release(dialog.open || !dialog.isConnected ? 'end' : 'scatter');
     // КОНЕЦ РАЗДЕЛА 3
 }
 // КОНЕЦ ФУНКЦИИ playExplanationTrail
