@@ -97,8 +97,7 @@ export function getFinaleCardPlacement(layout: FinaleCardLayout, renderScale = g
     const topClearance = compact
         ? Math.max(48, layout.paddingTop - 8, layout.headerBottom + 4)
         : 8;
-    const maximumRise = Math.max(0, centeredTop - topClearance - breathMargin);
-    const risePx = maximumRise;
+    const risePx = Math.max(0, centeredTop - topClearance - breathMargin);
     const settledTopPx = centeredTop - risePx - breathMargin;
     const settledBottomPx = centeredBottom - risePx + breathMargin;
     return {
