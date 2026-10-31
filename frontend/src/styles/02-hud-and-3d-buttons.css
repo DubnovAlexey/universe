@@ -186,7 +186,10 @@
     top: 0;
     width: var(--solid-width);
     height: var(--solid-height);
-    transform: rotate3d(var(--button-axis-x), var(--button-axis-y), var(--button-axis-z), var(--button-spin-angle));
+    /* Тело отодвинуто на полглубины: в покое лицевая грань лежит в плоскости экрана (z = 0)
+       и проецируется 1:1. Без сдвига перспектива увеличивала её на ~1%, и текст мутнел. */
+    transform: translateZ(calc(var(--solid-depth) / -2))
+            rotate3d(var(--button-axis-x), var(--button-axis-y), var(--button-axis-z), var(--button-spin-angle));
     transform-origin: center center;
     transform-style: preserve-3d;
     backface-visibility: visible;
