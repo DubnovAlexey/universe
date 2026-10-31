@@ -103,7 +103,9 @@ class IntegrationRegistryManager {
                 language: 'WGSL/WebGPU',
                 sourceTag: 'RENDERER',
                 ownerFile: 'frontend/src/engine/webgpu/ouroboros.wgsl',
-                status: 'fallback',
+                // До прогрева Ouroboros (перед ACT_D) WebGPU ещё не запрашивался: это не отказ, а ожидание.
+                // Настоящий FALLBACK ставит OuroborosEffect.failGpu, когда адаптер действительно недоступен.
+                status: 'inactive',
                 version: '2.5.0',
                 loadMs: 0,
                 lastStepMs: 0,

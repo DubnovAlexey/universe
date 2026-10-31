@@ -23,4 +23,8 @@ export default defineConfig({
     build: {
         assets: '_astro',
     },
+    // Панель разработчика Astro появляется только в astro dev и перекрывает нижние кнопки HUD.
+    devToolbar: {
+        enabled: false,
+    },
 });

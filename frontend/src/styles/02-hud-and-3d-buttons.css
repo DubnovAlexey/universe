@@ -167,7 +167,10 @@
     box-shadow:
             0 3px 7px rgba(0, 0, 0, 0.94),
             0 0 16px rgba(73, 124, 181, 0.76);
-    transform: translate(var(--button-shadow-x), var(--button-shadow-y))
+    /* Тень лежит позади задней грани тела: в общем 3D-контексте (окно путеводителя) она не делит
+       плоскость z = 0 с лицевой гранью и не просвечивает чёрным пятном поверх текста. */
+    transform: translateZ(calc(var(--solid-depth) * -1 - 1px))
+            translate(var(--button-shadow-x), var(--button-shadow-y))
             scale(var(--button-shadow-scale-x), var(--button-shadow-scale-y));
     transform-origin: center;
     scale: var(--solid-live-scale);
@@ -181,14 +184,18 @@
 }
 
 .solid-button-body {
+    /* Суперсэмплинг: тело строится в --solid-ss раз крупнее и уменьшается тем же scale. Слои с перспективой
+       Chrome растрирует в масштабе экрана, поэтому запас детализации держит буквы резкими и в покое, и в повороте. */
+    --solid-ss: 2;
     position: absolute;
-    left: 0;
-    top: 0;
-    width: var(--solid-width);
-    height: var(--solid-height);
+    left: calc(var(--solid-width) * (1 - var(--solid-ss)) / 2);
+    top: calc(var(--solid-height) * (1 - var(--solid-ss)) / 2);
+    width: calc(var(--solid-width) * var(--solid-ss));
+    height: calc(var(--solid-height) * var(--solid-ss));
+    font-size: calc(100% * var(--solid-ss));
     /* Тело отодвинуто на полглубины: в покое лицевая грань лежит в плоскости экрана (z = 0)
        и проецируется 1:1. Без сдвига перспектива увеличивала её на ~1%, и текст мутнел. */
-    transform: translateZ(calc(var(--solid-depth) / -2))
+    transform: translateZ(calc(var(--solid-depth) * var(--solid-ss) / -2))
             rotate3d(var(--button-axis-x), var(--button-axis-y), var(--button-axis-z), var(--button-spin-angle));
     transform-origin: center center;
     transform-style: preserve-3d;
@@ -198,20 +205,23 @@
     filter: none;
     will-change: transform;
     pointer-events: none;
-    scale: var(--solid-live-scale) var(--solid-live-scale) var(--solid-live-scale);
-    translate: var(--solid-shift-x) var(--solid-shift-y);
+    scale: calc(var(--solid-live-scale) / var(--solid-ss)) calc(var(--solid-live-scale) / var(--solid-ss))
+            calc(var(--solid-live-scale) / var(--solid-ss));
+    /* Проценты сдвига считаются от увеличенного тела, поэтому делятся на тот же коэффициент. */
+    translate: calc(var(--solid-shift-x) / var(--solid-ss)) calc(var(--solid-shift-y) / var(--solid-ss));
     transition:
             scale 0.45s cubic-bezier(0.22, 1, 0.36, 1),
             translate 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Все размеры граней ниже — в увеличенном пространстве тела (× --solid-ss), включая рамки и вставки. */
 .solid-button-face {
     position: absolute;
     left: 50%;
     top: 50%;
-    width: var(--solid-width);
-    height: var(--solid-height);
-    border: 1px solid rgba(166, 206, 234, 0.55);
+    width: calc(var(--solid-width) * var(--solid-ss));
+    height: calc(var(--solid-height) * var(--solid-ss));
+    border: calc(1px * var(--solid-ss)) solid rgba(166, 206, 234, 0.55);
     border-radius: 0;
     background-color: #10243a;
     backface-visibility: hidden;
@@ -220,46 +230,48 @@
 }
 
 .solid-button-face--front {
-    transform: translate(-50%, -50%) translateZ(calc(var(--solid-depth) / 2));
+    transform: translate(-50%, -50%) translateZ(calc(var(--solid-depth) * var(--solid-ss) / 2));
     background-image: linear-gradient(165deg, #28455f, #0b1829 70%);
-    box-shadow: inset 0 1px 0 rgba(224, 242, 254, 0.5), inset 0 -1px 0 #020712;
+    box-shadow: inset 0 calc(1px * var(--solid-ss)) 0 rgba(224, 242, 254, 0.5),
+        inset 0 calc(-1px * var(--solid-ss)) 0 #020712;
 }
 
 .solid-button-face--back {
-    transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--solid-depth) / 2));
+    transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--solid-depth) * var(--solid-ss) / 2));
     background-color: #081524;
     background-image: linear-gradient(165deg, rgba(40, 69, 95, 0.78), rgba(11, 24, 41, 0.9) 70%),
-        repeating-linear-gradient(135deg, transparent 0 7px, rgba(136, 181, 213, 0.12) 7px 8px);
-    box-shadow: inset 0 0 0 3px #0e2438;
+        repeating-linear-gradient(135deg, transparent 0 calc(7px * var(--solid-ss)),
+            rgba(136, 181, 213, 0.12) calc(7px * var(--solid-ss)) calc(8px * var(--solid-ss)));
+    box-shadow: inset 0 0 0 calc(3px * var(--solid-ss)) #0e2438;
 }
 
 .solid-button-face--top,
 .solid-button-face--bottom {
-    height: var(--solid-depth);
+    height: calc(var(--solid-depth) * var(--solid-ss));
 }
 
 .solid-button-face--top {
-    transform: translate(-50%, -50%) rotateX(90deg) translateZ(calc(var(--solid-height) / 2));
+    transform: translate(-50%, -50%) rotateX(90deg) translateZ(calc(var(--solid-height) * var(--solid-ss) / 2));
     background-color: #426887;
 }
 
 .solid-button-face--bottom {
-    transform: translate(-50%, -50%) rotateX(-90deg) translateZ(calc(var(--solid-height) / 2));
+    transform: translate(-50%, -50%) rotateX(-90deg) translateZ(calc(var(--solid-height) * var(--solid-ss) / 2));
     background-color: #030913;
 }
 
 .solid-button-face--left,
 .solid-button-face--right {
-    width: var(--solid-depth);
+    width: calc(var(--solid-depth) * var(--solid-ss));
 }
 
 .solid-button-face--left {
-    transform: translate(-50%, -50%) rotateY(-90deg) translateZ(calc(var(--solid-width) / 2));
+    transform: translate(-50%, -50%) rotateY(-90deg) translateZ(calc(var(--solid-width) * var(--solid-ss) / 2));
     background-color: #142b40;
 }
 
 .solid-button-face--right {
-    transform: translate(-50%, -50%) rotateY(90deg) translateZ(calc(var(--solid-width) / 2));
+    transform: translate(-50%, -50%) rotateY(90deg) translateZ(calc(var(--solid-width) * var(--solid-ss) / 2));
     background-color: #294b68;
 }
 
@@ -270,7 +282,7 @@
     width: 100%;
     height: 100%;
     min-width: 0;
-    padding: calc(var(--solid-pad-y) - 1px) calc(var(--solid-pad-x) - 1px);
+    padding: calc((var(--solid-pad-y) - 1px) * var(--solid-ss)) calc((var(--solid-pad-x) - 1px) * var(--solid-ss));
     color: inherit;
     font: inherit;
     line-height: inherit;
@@ -318,6 +330,13 @@
     --solid-live-scale: var(--solid-read-scale);
     --solid-shadow-lift: 3px;
     --solid-shadow-fade: 0.82;
+}
+
+/* Увеличенная («читаемая») кнопка повёрнута лицом к зрителю: без will-change браузер заново рисует её текст
+   в масштабе --solid-read-scale, а не растягивает растр, снятый в масштабе 1, — иначе надпись мутная. */
+:root [data-button-solid="1"]:not(.phase-pill):is(:hover, :focus-visible) .solid-button-body,
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"] .solid-button-body {
+    will-change: auto;
 }
 
 :root .phase-pill[data-button-solid="1"],

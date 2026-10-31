@@ -37,6 +37,11 @@ export interface RenderCapabilities {
 // РАЗДЕЛ 2. КЛАСС ГРАФИЧЕСКОГО КОНВЕЙЕРА (RenderPipeline)
 // Кэш строк rgba(): префикс цвета и 1001 значение прозрачности на каждый HEX.
 const RGBA_STRING_CACHE = new Map<string, { readonly prefix: string; readonly values: (string | undefined)[] }>();
+/**
+ * Нижняя граница DPR холста. При масштабе страницы меньше 100% (DPR < 1) холст рисуется в физических
+ * пикселях экрана: иначе кадр больше самого экрана, браузер его ещё и уменьшает — лишняя нагрузка и мыло.
+ */
+const MIN_CANVAS_DPR = 0.5;
 // ============================================================================
 
 export class RenderPipeline {
@@ -67,7 +72,7 @@ export class RenderPipeline {
         this.ctx = context;
         const maxDpr = qualityGovernor.getProfile().maxDpr;
         const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
-        const dpr = Math.min(maxDpr, Math.max(1, rawDpr));
+        const dpr = Math.min(maxDpr, Math.max(MIN_CANVAS_DPR, rawDpr));
         const width = typeof window !== 'undefined' ? window.innerWidth : 1920;
         const height = typeof window !== 'undefined' ? window.innerHeight : 1080;
 
@@ -161,7 +166,7 @@ export class RenderPipeline {
     public updateViewportSize(): { width: number; height: number; dpr: number } {
         const maxDpr = qualityGovernor.getProfile().maxDpr;
         const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
-        const dpr = Math.min(maxDpr, Math.max(1, rawDpr));
+        const dpr = Math.min(maxDpr, Math.max(MIN_CANVAS_DPR, rawDpr));
         const width =
             typeof window !== 'undefined' ? Math.max(320, window.innerWidth) : 1920;
         const height =
@@ -186,7 +191,7 @@ export class RenderPipeline {
     public syncQualityProfile(): void {
         if (this.isDisposed) return;
         const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
-        const nextDpr = Math.min(qualityGovernor.getProfile().maxDpr, Math.max(1, rawDpr));
+        const nextDpr = Math.min(qualityGovernor.getProfile().maxDpr, Math.max(MIN_CANVAS_DPR, rawDpr));
         if (nextDpr !== this.capabilities.dpr) this.updateViewportSize();
     }
     // --- КОНЕЦ ФУНКЦИИ syncQualityProfile ---
