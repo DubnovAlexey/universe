@@ -70,7 +70,7 @@ npm run dev
 
 ## Проверки и документация
 
-`npm run verify:all` проверяет исходники, Python/Rust/TypeScript, жизненный цикл графики, реальный WASM и статический артефакт GitHub Pages.
+`npm run verify:all` проверяет исходники, Python/Rust/TypeScript, жизненный цикл графики, реальный WASM и статический артефакт GitHub Pages. На GitHub те же проверки запускаются автоматически: перед публикацией `main` (`deploy.yml`) и в каждом pull request и в ветке сайта `site` без публикации (`ci.yml`).
 
 - [Архитектура и конвейер данных](docs/ARCHITECTURE.md)
 - [Технический справочник и карта модулей](UNIVERSE_BIBLE.md)

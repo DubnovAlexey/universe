@@ -1,0 +1,111 @@
+# ============================================================================
+# ФАЙЛ: .github/workflows/ci.yml
+# НАЗНАЧЕНИЕ: Те же проверки полиглот-ядра, что и в deploy.yml, но без публикации Pages:
+#             для pull request в main и site и для пушей в ветку сайта (этап 2).
+# ФУНКЦИИ: Проверки Python, Rust, WASM и TypeScript; сборка и проверка Pages-артефакта.
+# ОГЛАВЛЕНИЕ РАЗДЕЛОВ:
+#   1. События запуска, разрешения и окружение workflow.
+#   2. Верификация исходников и сборка артефакта без публикации.
+# ============================================================================
+
+# ============================================================================
+# РАЗДЕЛ 1. СОБЫТИЯ ЗАПУСКА, РАЗРЕШЕНИЯ И ОКРУЖЕНИЕ WORKFLOW
+# ============================================================================
+
+name: Verify UNIVERSE (pull requests and site branch)
+
+# deploy.yml проверяет и публикует только main. Этот workflow ловит ошибки до слияния:
+# в каждом pull request и в ветке сайта, которая не публикуется до финального слияния.
+on:
+  pull_request:
+    branches:
+      - main
+      - site
+  push:
+    branches:
+      - site
+      - "site/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Новый пуш в ту же ветку или PR отменяет устаревшую проверку.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # РАЗДЕЛ 2. ВЕРИФИКАЦИЯ ИСХОДНИКОВ И СБОРКА АРТЕФАКТА БЕЗ ПУБЛИКАЦИИ
+  # ============================================================================
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 22 (Astro-compatible patch) with npm cache
+        uses: actions/setup-node@v7
+        with:
+          # Исключает старые patch-релизы из кэша runner: Astro требует >=22.23.4.
+          node-version: "^22.23.4"
+          cache: npm
+
+      - name: Verify Repository Source Completeness
+        run: npm run verify:repo
+
+      - name: Setup Python 3.11 for Backend Parity Verification
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Verify Python Core Golden PRNG, NEXUS Topology & Binary Packet Parity
+        run: python -B -m backend.main --verify
+
+      - name: Run Python Backend Unit Tests
+        run: python -B -m unittest discover -v
+
+      - name: Setup Rust Toolchain for Physics Crate Verification
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: physics_engine
+
+      - name: Run Rust Symplectic Physics Unit Tests
+        working-directory: ./physics_engine
+        run: cargo test --locked
+
+      - name: Install Workspace Dependencies
+        run: npm ci
+
+      - name: Build and Validate Raw Rust WebAssembly ABI v1
+        run: npm run build:wasm
+
+      - name: Verify Browser WebAssembly Runtime and TypeScript Parity
+        run: npm run verify:wasm
+
+      - name: TypeScript Strict Typecheck
+        working-directory: ./frontend
+        run: npm run typecheck
+
+      - name: Run Universe Verification & Regression Suite
+        working-directory: ./frontend
+        run: npm test
+
+      - name: Verify Graphics Lifecycle and Fallback Contracts
+        run: npm run verify:graphics
+
+      - name: Build Astro Production Bundle (same base as GitHub Pages)
+        working-directory: ./frontend
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Verify Pages Artifact Paths and Entry Points
+        working-directory: ./frontend
+        run: npm run verify:pages-artifact
