@@ -72,6 +72,7 @@ import { runLensDispersionChecks } from './lensDispersion.test';
 import { runAudioCommandChecks } from './audioCommands.test';
 import { runLocaleResolutionChecks } from './localeResolution.test';
 import { runNodeCalloutChecks } from './nodeCallout.test';
+import { runNexusGraphWorkerChecks } from './nexusGraphWorker.test';
 import { runPointerControlChecks } from './pointerControls.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
@@ -1022,6 +1023,7 @@ function runUniverseVerificationChecks(): VerificationSuiteResult {
     runSceneExplanationFocusChecks(check);
     runLensDispersionChecks(check);
     runNodeCalloutChecks(check);
+    runNexusGraphWorkerChecks(check);
     runPointerControlChecks(check);
     runAudioCommandChecks(check);
     runGlyphFontBudgetChecks(check);

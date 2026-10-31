@@ -14,7 +14,9 @@
 //   1. Зависимости, константы и контракты данных.
 //   2. Функции модуля: roundGraphDecimal.
 //   3. NexusGraphEngine: constructor, buildBezierArcLengthLUT, sampleBezierByArcLength, createGraphEdge,
-//      computeAuthenticGraphMetrics, buildDeterministicGraph, getLastTelemetry.
+//      computeAuthenticGraphMetrics, buildDeterministicGraph, getLastTelemetry, adoptTelemetry.
+// В браузере этот же класс выполняется в настоящем Web Worker (nexusGraphWorker.ts);
+// в тестах и при сбое потока — синхронно в главном потоке.
 // ============================================================================
 
 
@@ -472,6 +474,13 @@ export class NexusGraphEngine {
         return this.lastMetrics;
     }
     // --- КОНЕЦ ФУНКЦИИ getLastTelemetry (NexusGraphEngine) ---
+
+    // --- НАЧАЛО ФУНКЦИИ adoptTelemetry (NexusGraphEngine) ---
+    /** Метрики, посчитанные тем же движком в фоновом потоке, показываются панелью Layer 3. */
+    public adoptTelemetry(telemetry: Readonly<NexusGraphTelemetry>): void {
+        this.lastMetrics = { ...telemetry };
+    }
+    // --- КОНЕЦ ФУНКЦИИ adoptTelemetry (NexusGraphEngine) ---
 }
 
 export const nexusGraphEngine = new NexusGraphEngine();

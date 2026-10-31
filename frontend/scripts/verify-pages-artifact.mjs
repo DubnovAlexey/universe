@@ -7,13 +7,14 @@
 //   2. Проверка HTML-точек входа и путей к Astro-ресурсам.
 //   3. Проверка favicon, аудиотрека и самостоятельного Rust/WASM ABI v1.
 //   4. Проверка локальных шрифтов, предварительной загрузки и контрольных сумм.
+//   5. Проверка фонового потока NEXUS (Web Worker): отдельный чанк и ссылка из основного бандла.
 // ============================================================================
 
 // ============================================================================
 // РАЗДЕЛ 1. ЗАВИСИМОСТИ, ПУТИ И ПРОВЕРКА НАЛИЧИЯ ФАЙЛА
 // ============================================================================
 
-import { access, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -173,6 +174,27 @@ for (const font of glyphFonts.fonts) {
     }
 }
 
+// ============================================================================
+// РАЗДЕЛ 5. ФОНОВЫЙ ПОТОК NEXUS (WEB WORKER)
+// ============================================================================
+// Пересборка графа выполняется в отдельном чанке Vite; без него сайт молча вернулся бы
+// к синхронному пути, и реестр показывал бы worker-physics: FALLBACK.
+const astroFiles = await readdir(path.join(distDirectory, '_astro'));
+const workerChunks = astroFiles.filter((name) => /^nexusGraphWorker-[\w-]+\.js$/.test(name));
+if (workerChunks.length !== 1) {
+    throw new Error(`Expected exactly one NEXUS graph worker chunk in _astro, found ${workerChunks.length}.`);
+}
+const workerUrl = `${basePath}/_astro/${workerChunks[0]}`;
+const scriptContents = await Promise.all(bundledAssetRefs.filter((ref) => /\.m?js$/.test(new URL(ref, 'https://pages.invalid').pathname))
+    .map((ref) => readFile(path.join(distDirectory, new URL(ref, 'https://pages.invalid').pathname.slice(basePath.length + 1)), 'utf8')));
+if (!scriptContents.some((source) => source.includes(workerUrl))) {
+    throw new Error(`The main bundle does not start the NEXUS graph worker: ${workerUrl}`);
+}
+const workerSource = await readFile(path.join(distDirectory, '_astro', workerChunks[0]), 'utf8');
+if (!workerSource.includes('AXON_TRUNK') || !workerSource.includes('postMessage')) {
+    throw new Error('The NEXUS worker chunk does not contain the graph engine and its reply channel.');
+}
+
 console.log(
-    `Pages artifact smoke check passed: ${requiredHooks.length} UI hooks, ${bundledAssetRefs.length} Astro bundles, ${glyphFonts.fonts.length} licensed glyph subsets, favicon, soundtrack and valid Rust/WASM ABI v1.`
+    `Pages artifact smoke check passed: ${requiredHooks.length} UI hooks, ${bundledAssetRefs.length} Astro bundles, NEXUS graph worker, ${glyphFonts.fonts.length} licensed glyph subsets, favicon, soundtrack and valid Rust/WASM ABI v1.`
 );

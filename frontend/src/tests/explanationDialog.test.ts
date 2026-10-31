@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/explanationDialog.test.ts
 // НАЗНАЧЕНИЕ: Проверить каталог, связи терминов и настоящий жизненный цикл окна.
 // РАЗДЕЛЫ: 1. Минимальное дерево DOM; 2. Каталог; 3. Живая сцена, ввод и освобождение;
-//          4. Читаемый текст на паузе и часы появления; 5. Геометрия и временные ресурсы звёздного следа.
+//          4. Читаемый текст на паузе и часы появления; 5. Песчаный вихрь: геометрия, шкала, Canvas и ресурсы окна.
 // ФУНКЦИИ: descendants, dispatch, runExplanationDialogChecks, runExplanationTextRevealPauseChecks, runExplanationTrailChecks;
 //          методы DialogNode.
 // ============================================================================
@@ -11,11 +11,14 @@ import { resourceLedger } from '../core/resourceLedger';
 import { CANONICAL_FINALE_LINES } from '../bridge/cipherOdometerEngine';
 import { FINALE_TOPIC_TERMS, renderLayer5CipherFinaleView } from '../layers/Layer5_CipherFinale';
 import { mountExplanationDialog, type ExplanationDialogBinding } from '../layers/ExplanationDialog';
+import { playExplanationTrail } from '../layers/explanationTrail';
 import {
-    buildExplanationTrailPath, sampleExplanationTrailPath, playExplanationTrail, EXPLANATION_TRAIL_DURATION_MS,
-    getExplanationAssemblyFrame, buildExplanationDustParticles, sampleExplanationDustParticle, projectExplanationWindowPoint,
-    EXPLANATION_ASSEMBLY_MS, EXPLANATION_DUST_COUNT,
-} from '../layers/explanationTrail';
+    EXPLANATION_ASSEMBLY_MS, EXPLANATION_DUST_COUNT, EXPLANATION_DUST_COUNT_COMPACT, EXPLANATION_REVEAL_MS,
+    EXPLANATION_REVEAL_START_MS, EXPLANATION_TEXT_DELAY_MS, EXPLANATION_TRAIL_DURATION_MS, DUST_KIND_CONTOUR, DUST_KIND_TRIGGER,
+    ExplanationAssemblyState, explanationAssembly, buildExplanationDustField, buildExplanationVortexPath,
+    getExplanationAssemblyFrame, sampleExplanationDustGrain, sampleExplanationVortexPath, type ExplanationDustField,
+} from '../core/explanationAssembly';
+import { renderExplanationAssemblyPass } from '../engine/passes/explanationAssemblyPass';
 import { universeStore } from '../store/universeState';
 import { bindUniverseKeyboardShortcuts } from '../engine/hud/keyboardShortcuts';
 import { getVisualSignals, publishVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
@@ -440,107 +443,169 @@ function runExplanationTextRevealPauseChecks(check: (passed: boolean, descriptio
 }
 // КОНЕЦ РАЗДЕЛА 4
 
-// НАЧАЛО РАЗДЕЛА 5. ГЕОМЕТРИЯ И РЕСУРСЫ ЗВЁЗДНОГО СЛЕДА
+// НАЧАЛО РАЗДЕЛА 5. ПЕСЧАНЫЙ ВИХРЬ: ГЕОМЕТРИЯ, ШКАЛА, ПРОХОД CANVAS И РЕСУРСЫ ОКНА
 function runExplanationTrailChecks(check: (passed: boolean, description: string) => void): void {
-    const from = { left: 820, top: 24, width: 120, height: 36 };
-    const to = { left: 16, top: 122, width: 360, height: 460 };
-    const path = buildExplanationTrailPath(from, to);
-    const start = sampleExplanationTrailPath(path, 0), end = sampleExplanationTrailPath(path, 1);
-    check(start.x === 880 && start.y === 42 && end.x === 196 && end.y === 352 &&
-        sampleExplanationTrailPath(path, -1).x === start.x && sampleExplanationTrailPath(path, 2).y === end.y,
-    'The star trail connects the actual button center to the left dialog center and clamps sampling to its endpoints');
-    const phonePath = buildExplanationTrailPath({ left: 340, top: 18, width: 36, height: 28 },
-        { left: 12, top: 58, width: 366, height: 680 });
-    const stationaryPath = buildExplanationTrailPath(from, from);
-    check(phonePath.start.x === 358 && phonePath.end.x === 195 &&
-        [path, phonePath, stationaryPath].every(curve => Array.from({ length: 21 }, (_, index) =>
-            sampleExplanationTrailPath(curve, index / 20)).every(point => Number.isFinite(point.x) && Number.isFinite(point.y))) &&
-        sampleExplanationTrailPath(stationaryPath, 0.5).x === path.start.x,
-    'Off-center phone buttons and coincident centers produce finite continuous trail positions without depending on viewport symmetry');
+    // 5.1. Дуга, по которой плывёт центр вихря.
+    const leftward = buildExplanationVortexPath({ x: 960, y: 450 }, { x: 220, y: 470 });
+    const start = sampleExplanationVortexPath(leftward, 0), end = sampleExplanationVortexPath(leftward, 1);
+    const stationary = buildExplanationVortexPath({ x: 40, y: 40 }, { x: 40, y: 40 });
+    check(start.x === 960 && start.y === 450 && end.x === 220 && end.y === 470 &&
+        sampleExplanationVortexPath(leftward, -1).x === 960 && sampleExplanationVortexPath(leftward, 2).y === 470 &&
+        leftward.control.y < (leftward.start.y + leftward.end.y) / 2 &&
+        Array.from({ length: 21 }, (_, index) => sampleExplanationVortexPath(stationary, index / 20))
+            .every(point => Math.abs(point.x - 40) < 1e-9 && Math.abs(point.y - 40) < 1e-9) &&
+        Number.isFinite(sampleExplanationVortexPath(leftward, Number.NaN).x),
+    'The whirl center travels on an upward arc from the field to the panel, clamps its parameter and stays finite for coincident ends');
 
-    const assembly = Array.from({ length: 211 }, (_, index) => getExplanationAssemblyFrame(index * 20));
-    const initial = assembly[0], complete = assembly[assembly.length - 1];
-    check(EXPLANATION_ASSEMBLY_MS === 3000 && EXPLANATION_TRAIL_DURATION_MS === 4200 &&
-        initial.gather === 0 && initial.nativeOpacity === 0 && complete.gather === 1 && complete.nativeOpacity === 1 &&
-        complete.dustOpacity === 0 && complete.yaw === 0 && complete.scale === 1 &&
-        assembly.every((frame, index) => Object.values(frame).every(Number.isFinite) &&
-            frame.gather >= 0 && frame.gather <= 1 && frame.nativeOpacity >= 0 && frame.nativeOpacity <= 1 &&
-            frame.dustOpacity >= 0 && frame.dustOpacity <= 1 && frame.scale >= 0.985 && frame.scale <= 1 &&
-            (index * 20 > 3000 || frame.nativeOpacity === 0) && (index * 20 < 4000 || frame.nativeOpacity === 1) &&
-            (!index || (frame.gather >= assembly[index - 1].gather && frame.nativeOpacity >= assembly[index - 1].nativeOpacity &&
-                frame.dustOpacity <= assembly[index - 1].dustOpacity))) &&
-        JSON.stringify(getExplanationAssemblyFrame(Number.NaN)) === JSON.stringify(initial),
-    'Dust gathers for three seconds before native text appears, then completes the reveal and settles at an opaque unit-scale zero-yaw pose before cleanup');
+    // 5.2. Общая шкала: сбор, проявление окна, угасание песка.
+    const timeline = Array.from({ length: Math.ceil((EXPLANATION_TRAIL_DURATION_MS + 200) / 20) + 1 },
+        (_, index) => getExplanationAssemblyFrame(index * 20));
+    const first = timeline[0], last = timeline[timeline.length - 1];
+    check(EXPLANATION_TEXT_DELAY_MS === EXPLANATION_REVEAL_START_MS + EXPLANATION_REVEAL_MS &&
+        EXPLANATION_REVEAL_START_MS < EXPLANATION_ASSEMBLY_MS && EXPLANATION_TEXT_DELAY_MS < EXPLANATION_TRAIL_DURATION_MS &&
+        EXPLANATION_TRAIL_DURATION_MS <= 3000 &&
+        first.gather === 0 && first.nativeOpacity === 0 && first.dustOpacity === 1 &&
+        last.gather === 1 && last.nativeOpacity === 1 && last.dustOpacity === 0 && last.yaw === 0 && last.scale === 1 &&
+        timeline.every((frame, index) => Object.values(frame).every(Number.isFinite) &&
+            (index * 20 > EXPLANATION_REVEAL_START_MS || frame.nativeOpacity === 0) &&
+            (index * 20 < EXPLANATION_TEXT_DELAY_MS || frame.nativeOpacity === 1) &&
+            (!index || (frame.gather >= timeline[index - 1].gather && frame.nativeOpacity >= timeline[index - 1].nativeOpacity &&
+                frame.dustOpacity <= timeline[index - 1].dustOpacity))) &&
+        JSON.stringify(getExplanationAssemblyFrame(Number.NaN)) === JSON.stringify(first),
+    'Sand gathers for two seconds, the panel appears in place by 2.25 s and the grains are gone by 2.6 s; the timeline is monotonic and NaN-safe');
 
+    // 5.3. Детерминированное поле песчинок.
+    const sources = Array.from({ length: 820 }, (_, index) => ({ x: 200 + (index * 37) % 1500, y: 120 + (index * 53) % 700 }));
     const scenarios = [
-        { from: { left: 1750, top: 24, width: 140, height: 36 },
-            to: { left: 16, top: 122, width: 422, height: 800 }, viewport: { width: 1920, height: 1080 } },
-        { from: { left: 340, top: 18, width: 36, height: 28 },
-            to: { left: 12, top: 58, width: 366, height: 680 }, viewport: { width: 390, height: 844 } },
-        { from: { left: 270, top: 12, width: 36, height: 28 },
-            to: { left: 12, top: 58, width: 296, height: 482 }, viewport: { width: 320, height: 568 } },
-        { from: { left: 42, top: 2, width: 12, height: 8 },
-            to: { left: 4, top: 16, width: 20, height: 12 }, viewport: { width: 64, height: 48 } },
-    ].map(scenario => ({ from: Object.freeze(scenario.from), to: Object.freeze(scenario.to), viewport: Object.freeze(scenario.viewport) }));
+        { from: { left: 870, top: 840, width: 180, height: 40 }, to: { left: 20, top: 130, width: 384, height: 690 },
+            viewport: { width: 1920, height: 900 }, count: EXPLANATION_DUST_COUNT, sources },
+        { from: { left: 340, top: 760, width: 36, height: 28 }, to: { left: 7, top: 120, width: 376, height: 600 },
+            viewport: { width: 390, height: 844 }, count: EXPLANATION_DUST_COUNT_COMPACT, sources: null },
+        { from: { left: 270, top: 500, width: 36, height: 28 }, to: { left: 12, top: 58, width: 296, height: 420 },
+            viewport: { width: 320, height: 568 }, count: EXPLANATION_DUST_COUNT_COMPACT, sources: [] },
+        { from: null, to: { left: 4, top: 16, width: 20, height: 12 }, viewport: { width: 64, height: 48 }, count: 5 },
+    ];
     const inputs = JSON.stringify(scenarios);
-    const fields = scenarios.map(scenario => buildExplanationDustParticles(scenario.from, scenario.to, scenario.viewport));
-    check(EXPLANATION_DUST_COUNT === 224 && inputs === JSON.stringify(scenarios) && fields.every((particles, index) => {
+    const digest = (field: ExplanationDustField): string => JSON.stringify([field.count, field.contourCount, field.path, field.trigger,
+        ...[field.originX, field.originY, field.targetX, field.targetY, field.rho0, field.phi0, field.rho1, field.turn,
+            field.delayMs, field.radius, field.kind].map(values => Array.from(values))]);
+    const fields = scenarios.map(scenario => buildExplanationDustField(scenario));
+    const sourceKeys = new Set(sources.map(point => `${point.x}:${point.y}`));
+    check(inputs === JSON.stringify(scenarios) && fields.every((field, index) => {
         const scenario = scenarios[index];
-        return particles.length === EXPLANATION_DUST_COUNT &&
-            JSON.stringify(particles) === JSON.stringify(buildExplanationDustParticles(scenario.from, scenario.to, scenario.viewport)) &&
-            particles.some(particle => particle.boundary) && particles.some(particle => !particle.boundary) &&
-            particles.some(particle => particle.fromTrigger) && particles.some(particle => !particle.fromTrigger) &&
-            particles.every(particle => particle.target.x >= scenario.to.left && particle.target.x <= scenario.to.left + scenario.to.width &&
-                particle.target.y >= scenario.to.top && particle.target.y <= scenario.to.top + scenario.to.height &&
-                particle.delayMs >= 0 && particle.delayMs < EXPLANATION_ASSEMBLY_MS && particle.radius > 0);
+        const expected = Math.max(24, Math.min(2000, scenario.count));
+        const bounds = scenario.to;
+        const contour = Array.from({ length: field.contourCount }, (_, k) => ({ x: field.targetX[k], y: field.targetY[k] }));
+        const minX = Math.min(...contour.map(p => p.x)), maxX = Math.max(...contour.map(p => p.x));
+        const minY = Math.min(...contour.map(p => p.y)), maxY = Math.max(...contour.map(p => p.y));
+        const triggers = Array.from(field.kind).filter(kind => (kind & DUST_KIND_TRIGGER) !== 0).length;
+        return field.count === expected && field.contourCount === Math.round(expected * 0.42) &&
+            digest(field) === digest(buildExplanationDustField(scenario)) &&
+            triggers === (scenario.from ? Math.round(expected * 0.12) : 0) &&
+            Array.from(field.kind).every((kind, k) => ((kind & DUST_KIND_CONTOUR) !== 0) === (k < field.contourCount)) &&
+            contour.every(p => Math.min(Math.abs(p.x - minX), Math.abs(p.x - maxX), Math.abs(p.y - minY), Math.abs(p.y - maxY)) < 1e-6) &&
+            Array.from({ length: field.count }, (_, k) => k).every(k =>
+                field.targetX[k] >= bounds.left && field.targetX[k] <= bounds.left + bounds.width &&
+                field.targetY[k] >= bounds.top && field.targetY[k] <= bounds.top + bounds.height &&
+                Number.isFinite(field.originX[k] + field.originY[k]) && field.radius[k] > 0 &&
+                field.delayMs[k] >= 0 && field.delayMs[k] <= EXPLANATION_ASSEMBLY_MS * 0.3) &&
+            (index !== 0 || Array.from({ length: field.count }, (_, k) => k)
+                .filter(k => (field.kind[k] & DUST_KIND_TRIGGER) === 0)
+                .every(k => sourceKeys.has(`${field.originX[k]}:${field.originY[k]}`)));
     }),
-    'Desktop, phone and small dust fields deterministically contain 224 trigger and field particles with contour and interior targets inside the final panel, without changing input bounds');
+    'Desktop, phone, small and degenerate panels get deterministic grain fields: an exact contour outline, interior targets, button grains and real scene particles as origins');
 
+    // 5.4. Траектории: точный старт и финиш, плавные (C2) отрыв и посадка.
+    const grain = { x: 0, y: 0, progress: 0 };
+    const at = (field: ExplanationDustField, index: number, time: number): { x: number; y: number; progress: number } =>
+        ({ ...sampleExplanationDustGrain(field, index, time, grain) });
     const distance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
-    check(fields.every((particles, index) => {
-        const bounds = scenarios[index].to, center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
-        return particles.every(particle => {
-            const start = sampleExplanationDustParticle(particle, center, particle.delayMs);
-            const end = sampleExplanationDustParticle(particle, center, EXPLANATION_TRAIL_DURATION_MS);
-            const relativeArrivalError = (beforeMs: number): number => {
-                const time = EXPLANATION_ASSEMBLY_MS - beforeMs;
-                return distance(sampleExplanationDustParticle(particle, center, time),
-                    projectExplanationWindowPoint(particle.target, center, getExplanationAssemblyFrame(time)));
-            };
-            return start.progress === 0 && distance(start, particle.origin) < 1e-9 && end.progress === 1 && distance(end, particle.target) < 1e-9 &&
-                distance(sampleExplanationDustParticle(particle, center, particle.delayMs + 4), particle.origin) <=
-                    distance(sampleExplanationDustParticle(particle, center, particle.delayMs + 8), particle.origin) * 0.2 + 1e-9 &&
-                relativeArrivalError(4) <= relativeArrivalError(8) * 0.2 + 1e-9 &&
-                Array.from({ length: 43 }, (_, step) => sampleExplanationDustParticle(particle, center, step * 100)).every(point =>
-                    Number.isFinite(point.x) && Number.isFinite(point.y) && point.progress >= 0 && point.progress <= 1);
-        });
-    }),
-    'Every dust trajectory stays finite at desktop and phone sizes, starts at its delayed origin with C2 easing, joins the moving plane with C2 easing and ends at its exact panel target');
+    check(fields.every(field => Array.from({ length: field.count }, (_, index) => index).every(index => {
+        const origin = { x: field.originX[index], y: field.originY[index] };
+        const target = { x: field.targetX[index], y: field.targetY[index] };
+        const delay = field.delayMs[index];
+        const startPoint = at(field, index, delay), endPoint = at(field, index, EXPLANATION_ASSEMBLY_MS);
+        const nearStart = (ms: number): number => distance(at(field, index, delay + ms), origin);
+        const nearEnd = (ms: number): number => distance(at(field, index, EXPLANATION_ASSEMBLY_MS - ms), target);
+        return startPoint.progress === 0 && startPoint.x === origin.x && startPoint.y === origin.y &&
+            endPoint.progress === 1 && endPoint.x === target.x && endPoint.y === target.y &&
+            nearStart(4) <= nearStart(8) * 0.2 + 1e-9 && nearEnd(4) <= nearEnd(8) * 0.2 + 1e-9 &&
+            Array.from({ length: 31 }, (_, step) => at(field, index, step * 100)).every(point =>
+                Number.isFinite(point.x) && Number.isFinite(point.y) && point.progress >= 0 && point.progress <= 1);
+    })),
+    'Every grain leaves its origin and lands on its exact panel point with C2 easing and stays finite on every screen size');
 
+    // 5.5. Вихрь: одно направление вращения, центр плывёт влево, рой сжимается в середине пути.
+    const desktop = fields[0];
+    const spread = (time: number): number => {
+        const points = Array.from({ length: desktop.count }, (_, index) => at(desktop, index, time));
+        const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+        const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+        return points.reduce((sum, p) => sum + Math.hypot(p.x - cx, p.y - cy), 0) / points.length;
+    };
+    const midSpread = spread(EXPLANATION_ASSEMBLY_MS * 0.55);
+    check(Array.from(desktop.turn).every(turn => turn < 0 && turn >= -3 * Math.PI - 1e-9 && turn <= -Math.PI + 1e-9) &&
+        desktop.path.end.x < desktop.path.start.x && midSpread < spread(0) * 0.8 && midSpread < spread(EXPLANATION_ASSEMBLY_MS),
+    'All grains turn the same way by half to one and a half revolutions while the whirl drifts left and contracts mid-flight before opening into the panel');
+
+    // 5.6. Проход основного Canvas: без сборки — ни одного вызова; во время — пакеты без shadowBlur.
+    const calls = { save: 0, restore: 0, fill: 0, stroke: 0, drawImage: 0 };
+    let shadowTouched = false, finiteDrawing = true;
+    const track = (x: number, y: number): void => { finiteDrawing &&= Number.isFinite(x) && Number.isFinite(y); };
+    const context = {
+        canvas: undefined, globalAlpha: 1, globalCompositeOperation: 'source-over', lineCap: 'butt', lineWidth: 1,
+        strokeStyle: '', fillStyle: '',
+        set shadowBlur(_value: number) { shadowTouched = true; }, get shadowBlur() { return 0; },
+        save: (): void => { calls.save++; }, restore: (): void => { calls.restore++; },
+        beginPath: (): void => {}, closePath: (): void => {}, moveTo: track, lineTo: track,
+        arc: (x: number, y: number, radius: number): void => { track(x, y); finiteDrawing &&= radius > 0; },
+        rect: (x: number, y: number): void => { track(x, y); },
+        fill: (): void => { calls.fill++; }, stroke: (): void => { calls.stroke++; },
+        fillRect: (x: number, y: number): void => { track(x, y); calls.fill++; },
+        drawImage: (): void => { calls.drawImage++; },
+    } as unknown as CanvasRenderingContext2D;
+    const state = new ExplanationAssemblyState();
+    const ledger = { ...resourceLedger.getCounters() };
+    const total = (): number => Object.values(calls).reduce((sum, value) => sum + value, 0);
+    const idle = renderExplanationAssemblyPass(context, sources, 1000, state);
+    const idleCalls = total();
+    const token = state.begin({ ...scenarios[0], startMs: 1000 });
+    const perFrame: { fill: number; stroke: number }[] = [];
+    let drew = true;
+    for (const time of [0, 300, 900, 1500, 1900, 2300]) {
+        const before = { ...calls };
+        drew &&= renderExplanationAssemblyPass(context, sources, 1000 + time, state);
+        perFrame.push({ fill: calls.fill - before.fill, stroke: calls.stroke - before.stroke });
+    }
+    const buffersDuring = resourceLedger.getCounters().buffers;
+    const after = renderExplanationAssemblyPass(context, sources, 1000 + EXPLANATION_TRAIL_DURATION_MS, state);
+    state.end(token); state.end(token);
+    check(!idle && idleCalls === 0 && drew && !after && !shadowTouched && finiteDrawing && calls.save === calls.restore &&
+        perFrame.every(frame => frame.fill <= 3 && frame.stroke <= 4) && buffersDuring === ledger.buffers + 1 &&
+        resourceLedger.getCounters().buffers === ledger.buffers &&
+        resourceLedger.getCounters().underflowCount === ledger.underflowCount && !state.isActive(),
+    'The main-canvas pass costs nothing while idle, batches hundreds of grains into a few fills and strokes without shadowBlur and releases its buffer');
+
+    // 5.7. Окно: проявление на месте, полное освобождение, прерывания, навигация и reduced motion.
     const savedGlobals = ['window', 'document', 'HTMLElement', 'Element'].map(name =>
         ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
+    const savedSignals = getVisualSignals();
+    // Снимок сигналов восстанавливается полностью, как в разделе 4: последующие проверки видят прежний кадр.
+    const publishSignals = (reduced: boolean): void => {
+        const state = universeStore.getState(), audio = audioSync.getSnapshot(0), stress = stressStore.getState();
+        publishVisualSignals({ ...state, currentPhase: savedSignals.phase, isPaused: savedSignals.isPaused, isTabHidden: false,
+            reducedMotion: reduced, seed: savedSignals.seed, telemetry: { ...state.telemetry, tick: savedSignals.tick,
+                simulationTimeSec: savedSignals.simTimeSec, frameTimeMs: savedSignals.frameDtSec * 1000,
+                phaseProgress: savedSignals.phaseProgress, kuramotoOrderR: savedSignals.kuramotoR } },
+        { ...audio, isPlaying: true, low: savedSignals.low, mid: savedSignals.mid, high: savedSignals.high,
+            pulse: savedSignals.pulse, heartbeat: savedSignals.heartbeat }, { ...stress, globalStress: savedSignals.globalStress });
+    };
     const baseline = { ...resourceLedger.getCounters() };
     const document = new DialogDocument();
     const pending = new Map<number, FrameRequestCallback>();
-    let nextFrame = 0, reducedMotion = false, contextAvailable = true, drawCount = 0;
-    let finiteDrawing = true;
-    let transform: number[] = [];
-    const context = {
-        setTransform: (...values: number[]): void => { transform = values; },
-        clearRect: (): void => { drawCount++; }, beginPath: (): void => {}, fill: (): void => {}, stroke: (): void => {},
-        moveTo: (x: number, y: number): void => { finiteDrawing &&= Number.isFinite(x) && Number.isFinite(y); },
-        lineTo: (x: number, y: number): void => { finiteDrawing &&= Number.isFinite(x) && Number.isFinite(y); },
-        arc: (x: number, y: number, radius: number): void => { finiteDrawing &&= [x, y, radius].every(Number.isFinite) && radius > 0; },
-    };
-    type TrailCanvas = DialogNode & { width: number; height: number };
-    const createElement = document.createElement.bind(document);
-    document.createElement = (tag: string): DialogNode => {
-        const node = createElement(tag);
-        if (tag === 'canvas') Object.assign(node, { width: 0, height: 0, getContext: () => contextAvailable ? context : null });
-        return node;
-    };
+    let nextFrame = 0, reducedMotion = false, nowMs = 0;
     const window = Object.assign(new ListenerTarget(), {
-        innerWidth: 960, innerHeight: 600, devicePixelRatio: 3,
+        innerWidth: 1920, innerHeight: 900, devicePixelRatio: 1,
         getComputedStyle: () => ({ visibility: 'visible', display: 'block' }),
         matchMedia: () => ({ matches: reducedMotion }),
         requestAnimationFrame: (callback: FrameRequestCallback): number => { pending.set(++nextFrame, callback); return nextFrame; },
@@ -548,16 +613,20 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
     });
     const trigger = document.createElement('button'), dialog = document.createElement('dialog');
     dialog.open = true; document.body.append(trigger, dialog);
+    const trailState = new ExplanationAssemblyState();
     let dispose: (() => void) | undefined;
     let binding: ExplanationDialogBinding | undefined;
-    const play = (): (() => void) => playExplanationTrail(trigger as unknown as HTMLElement, dialog as unknown as HTMLDialogElement);
-    const pump = (timestamp: number): void => {
+    const play = (): (() => void) => playExplanationTrail(trigger as unknown as HTMLElement, dialog as unknown as HTMLDialogElement,
+        { state: trailState, clock: () => nowMs });
+    const pump = (): void => {
         const frame = pending.entries().next().value;
-        if (!frame) throw new Error('The active explanation trail has no pending frame');
-        pending.delete(frame[0]); frame[1](timestamp);
+        if (!frame) throw new Error('The active explanation assembly has no pending frame');
+        pending.delete(frame[0]); frame[1](nowMs);
     };
     const released = (): boolean => pending.size === 0 && document.body.querySelectorAll('canvas').length === 0 &&
         window.listenerCount === 0 && document.listenerCount === 0 && dialog.dataset.entryAnimation === undefined &&
+        dialog.dataset.entryStage === undefined && dialog.style.getPropertyValue('opacity') === '' &&
+        dialog.style.getPropertyValue('transform') === '' && !trailState.isActive() && !explanationAssembly.isActive() &&
         resourceLedger.getCounters().buffers === baseline.buffers && resourceLedger.getCounters().listeners === baseline.listeners &&
         resourceLedger.getCounters().underflowCount === baseline.underflowCount;
 
@@ -566,34 +635,36 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
             document: { configurable: true, value: document }, window: { configurable: true, value: window },
             HTMLElement: { configurable: true, value: DialogNode }, Element: { configurable: true, value: DialogNode },
         });
+        nowMs = 5000;
         dispose = play();
-        const canvas = document.body.querySelector('canvas') as TrailCanvas;
-        check(pending.size === 1 && canvas.isConnected && canvas.width === 1440 && canvas.height === 900 &&
-            canvas.getAttribute('aria-hidden') === 'true' && canvas.getAttribute('inert') === '' &&
-            canvas.style.getPropertyValue('pointer-events') === 'none' && dialog.dataset.entryAnimation === 'true' &&
-            transform.join(',') === '1.5,0,0,1.5,0,0',
-        'Opening a trail creates one noninteractive decorative canvas with a bounded DPR and one temporary frame');
-        [5000, 5100, 5350, 5750, 7800, 8300, 9000].forEach(pump);
-        const animated = pending.size === 1 && drawCount >= 5 && finiteDrawing;
-        pump(5000 + EXPLANATION_TRAIL_DURATION_MS);
+        const opened = trailState.isActive() && trailState.getActive()!.spec.startMs === 5000 && pending.size === 1 &&
+            document.body.querySelectorAll('canvas').length === 0 && dialog.dataset.entryAnimation === 'true' &&
+            dialog.dataset.entryStage === 'gathering' && dialog.style.getPropertyValue('opacity') === '0.0000' &&
+            resourceLedger.getCounters().listeners === baseline.listeners + 2;
+        nowMs = 6000; pump();
+        const hiddenWhileGathering = dialog.style.getPropertyValue('opacity') === '0.0000' && dialog.dataset.entryStage === 'gathering';
+        nowMs = 5000 + EXPLANATION_TEXT_DELAY_MS + 50; pump();
+        const revealedInPlace = dialog.style.getPropertyValue('opacity') === '1.0000' && dialog.dataset.entryStage === 'revealing' &&
+            dialog.style.getPropertyValue('transform').includes('rotateY(0.000deg)');
+        nowMs = 5000 + EXPLANATION_TRAIL_DURATION_MS; pump();
         dispose(); dispose();
-        check(animated && released() && canvas.width === 0 && canvas.height === 0 && !canvas.isConnected,
-            'The trail advances using its own timestamps, draws finite stars and completely releases its canvas, frame and listeners after fading');
+        check(opened && hiddenWhileGathering && revealedInPlace && released(),
+            'The panel stays transparent while sand gathers, appears exactly in place, then releases its frame, listeners and inline pose without any extra canvas');
 
         const interrupted: boolean[] = [];
         for (const reason of ['resize', 'hidden', 'closed', 'removed', 'dispose']) {
-            dispose = play(); pump(0);
+            nowMs = 9000; dispose = play(); nowMs = 9100; pump();
             if (reason === 'resize') dispatch(window, 'resize');
             else if (reason === 'hidden') { document.hidden = true; dispatch(document, 'visibilitychange'); }
-            else if (reason === 'closed') { dialog.close(); pump(100); }
-            else if (reason === 'removed') { dialog.remove(); pump(100); }
+            else if (reason === 'closed') { dialog.close(); pump(); }
+            else if (reason === 'removed') { dialog.remove(); pump(); }
             else dispose();
             interrupted.push(released()); dispose();
             document.hidden = false; dialog.open = true;
             if (!dialog.isConnected) document.body.append(dialog);
         }
         check(interrupted.every(Boolean),
-            'Resize, hidden page, native close, detached dialog and explicit disposal each cancel the trail without leaving a frame, canvas or listener');
+            'Resize, hidden page, native close, detached dialog and explicit disposal each stop the assembly with a fully visible panel and no leftovers');
 
         trigger.dataset.explainTopic = 'prng';
         const nextTrigger = document.createElement('button'); nextTrigger.dataset.explainTopic = 'fbm';
@@ -601,23 +672,31 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
         binding = mountExplanationDialog();
         const panel = document.getElementById('explanation-dialog')!;
         dispatch(document, 'click', { target: trigger });
-        const firstCanvas = document.body.querySelector('canvas')!;
+        const firstToken = explanationAssembly.getActive()?.token;
         const firstFrame = [...pending.keys()][0];
         dispatch(document, 'click', { target: panel.querySelector('[data-explain-topic="kuramoto"]')! });
         dispatch(document, 'click', { target: panel.querySelector('[data-explanation-mode="expert"]')! });
-        const internalNavigationKeptTrail = document.body.querySelector('canvas') === firstCanvas && pending.has(firstFrame);
+        const internalNavigationKept = firstToken !== undefined && explanationAssembly.getActive()?.token === firstToken &&
+            pending.has(firstFrame);
         dispatch(document, 'click', { target: nextTrigger });
-        const externalNavigationReplayed = !firstCanvas.isConnected && !pending.has(firstFrame) && pending.size === 1 &&
-            document.body.querySelectorAll('canvas').length === 1 && panel.dataset.topic === 'fbm' && panel.showCount === 1;
-        panel.close(); binding.dispose();
-        check(internalNavigationKeptTrail && externalNavigationReplayed && document.activeElement === nextTrigger && released(),
-            'External term clicks retrace to the existing panel and restore the latest trigger; internal navigation and reading modes preserve the current trail');
+        const externalReplayed = explanationAssembly.getActive() !== null && explanationAssembly.getActive()!.token !== firstToken &&
+            !pending.has(firstFrame) && pending.size === 1 && panel.dataset.topic === 'fbm' && panel.showCount === 1;
+        panel.close(); binding.dispose(); binding = undefined;
+        check(internalNavigationKept && externalReplayed && document.activeElement === nextTrigger && released(),
+            'External term clicks reassemble the existing panel and restore the latest trigger; internal topics and reading modes keep the current assembly');
 
         reducedMotion = true; play()();
-        const reduced = released();
-        reducedMotion = false; contextAvailable = false; play()();
-        check(reduced && released(),
-            'Reduced motion and unavailable Canvas skip the effect immediately while retaining no animation resources');
+        const systemReduced = released() && !trailState.isActive();
+        reducedMotion = false;
+        publishSignals(true);
+        play()();
+        const storeReduced = released();
+        publishSignals(false);
+        Object.defineProperty(dialog, 'getBoundingClientRect', { configurable: true,
+            value: () => ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 }) });
+        play()();
+        check(systemReduced && storeReduced && released(),
+            'System or in-app reduced motion and an unmeasurable panel skip the sand and show the window at once');
     } finally {
         binding?.dispose();
         dispose?.();
@@ -625,6 +704,7 @@ function runExplanationTrailChecks(check: (passed: boolean, description: string)
             if (descriptor) Object.defineProperty(globalThis, name, descriptor);
             else Reflect.deleteProperty(globalThis, name);
         }
+        publishSignals(savedSignals.reducedMotion);
     }
 }
 // КОНЕЦ РАЗДЕЛА 5

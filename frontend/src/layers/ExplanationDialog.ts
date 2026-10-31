@@ -21,7 +21,8 @@ import { getVisualSignals } from '../core/visualSignals';
 import { buildLivingBreachContourPath, waterfallAnimator } from './Layer2_Metrics';
 import { mountExplanationButtonMotion, type ExplanationButtonMotionBinding } from './explanationButtonMotion';
 import { startExplanationTextReveal } from './explanationTextReveal';
-import { EXPLANATION_ASSEMBLY_MS, playExplanationTrail } from './explanationTrail';
+import { playExplanationTrail } from './explanationTrail';
+import { explanationAssembly } from '../core/explanationAssembly';
 import { SOUNDTRACK_CREDIT } from '../utils/audioSync';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И DOM-УЗЛЫ
@@ -464,8 +465,9 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
         if (!buttonMotion) buttonMotion = mountExplanationButtonMotion([closeButton, ...modeButtons, ...topicButtons.values()]);
         dialog.scrollTop = panel.scrollTop = content.scrollTop = 0;
         revealTopicInNavigation();
-        revealIntroduction(externalTrigger ? EXPLANATION_ASSEMBLY_MS + 1000 : 0);
         if (externalTrigger) disposeTrail = playExplanationTrail(externalTrigger, dialog);
+        // Набор текста ждёт, пока песчаный вихрь соберёт и проявит окно; без сборки — сразу.
+        revealIntroduction(explanationAssembly.getRemainingTextDelayMs(performance.now()));
         title.focus({ preventScroll: true });
     }
     // --- КОНЕЦ ФУНКЦИИ open ---
@@ -552,7 +554,7 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     const unsubscribeLocale = subscribeLocale(() => {
         if (!disposed && dialog.open) {
             renderTopic(currentTopicId);
-            revealIntroduction(0);
+            revealIntroduction(explanationAssembly.getRemainingTextDelayMs(performance.now()));
         }
     });
     resourceLedger.trackPageLifetimeAllocation('listeners', 9);

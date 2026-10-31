@@ -23,6 +23,7 @@ import { getVisualSignals } from '../core/visualSignals';
 import { FrameDiagnostics, type FrameWorkBreakdown } from '../core/frameDiagnostics';
 import { sceneExplanationFocus } from '../core/sceneExplanationFocus';
 import { renderExplanationFocusPass } from './passes/explanationFocusPass';
+import { renderExplanationAssemblyPass } from './passes/explanationAssemblyPass';
 import { LensDispersionPass } from './passes/lensDispersionPass';
 import { prepareParticleGlowAtlas, disposeParticleGlowAtlas, getParticleGlowAtlasStats } from './rendering/particleGlowAtlas';
 import {
@@ -564,6 +565,8 @@ export class UniverseRenderer {
                 profileMarkMs = endMs;
             }
             this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
+            // Песчаный вихрь окна путеводителя рисуется в этом же кадре и Canvas, поверх всех фаз.
+            renderExplanationAssemblyPass(this.pipeline.getContext(), this.getSimParticles(), nowMs);
             if (profileWork) profileWork.renderMs = performance.now() - profileMarkMs;
             this.consecutiveFrameErrors = 0;
         } catch (err: unknown) {

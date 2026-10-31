@@ -70,12 +70,6 @@
 
 /* НАЧАЛО РАЗДЕЛА 3. ОБЩЕЕ ОКНО ДВУХ УРОВНЕЙ ЧТЕНИЯ */
 .explanation-dialog {
-    --explanation-flight-x: 0px;
-    --explanation-flight-y: 0px;
-    --explanation-flight-turn: 0deg;
-    --explanation-flight-yaw: 0deg;
-    --explanation-flight-scale: 1;
-    --explanation-flight-opacity: 1;
     --explanation-mode-ink: #ffe6a6;
     --explanation-field-height: min(82dvh, 900px, calc(100dvh - 2rem));
     position: fixed;
@@ -97,25 +91,22 @@
     overflow: hidden;
     scrollbar-color: #385c7c #0b1423;
 }
-.explanation-dialog[open][data-entry-animation="true"] {
-    transform-origin: center;
-    transform: perspective(1000px) rotateY(var(--explanation-flight-yaw, 0deg))
-        scale(var(--explanation-flight-scale, 1));
-    opacity: var(--explanation-flight-opacity, 1);
-}
+/* Прозрачность и малый поворот при сборке из песка пишет explanationTrail.ts прямо в style окна. */
 .explanation-dialog[open][data-entry-stage="gathering"] { pointer-events: none; }
-/* Одна область чтения остаётся внутри волн при любом положении прокрутки. */
+/* Одна область чтения остаётся внутри волн при любом положении прокрутки.
+   Резерв под полосу прокрутки с обеих сторон: текст стоит по центру стенок окна. */
 .explanation-panel {
     position: relative;
     z-index: 1;
     box-sizing: border-box;
-    height: calc(var(--explanation-field-height, min(82dvh, 900px)) - 56px);
-    margin: 28px 30px;
+    height: calc(var(--explanation-field-height, min(82dvh, 900px)) - 52px);
+    margin: 26px 24px;
     padding: 0 4px 4px;
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: stable both-edges;
+    scrollbar-width: thin;
 }
 .explanation-symbol-anchor { position: sticky; top: 0; height: 0; pointer-events: none; z-index: 0; }
 .explanation-symbol-anchor > .waterfall-contour-svg { height: var(--explanation-field-height, min(82dvh, 900px)); }
@@ -135,7 +126,9 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.7rem 0.65rem;
-    padding-block: 0.5rem;
+    /* Внутренний отступ: подпись «UNIVERSE / ПУТЕВОДИТЕЛЬ» и «Закрыть» не касаются краёв плашки. */
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
     background: #0b1728;
 }
 .explanation-heading { display: contents; min-width: 0; overflow-wrap: anywhere; }
@@ -190,7 +183,10 @@
 .explanation-mode-button { width: 100%; }
 .explanation-mode-button[aria-pressed="true"],
 .explanation-topic[aria-current="page"] { color: #e9f9ff; border-color: #75b5d5; background: #18324b; }
-.explanation-nav { display: flex; flex-wrap: wrap; gap: 0.65rem; overflow: visible; padding: 0.25rem 0.15rem 0.7rem; border-bottom: 1px solid #263b52; }
+/* Ровные ряды тем: каждая строка заполняется от края до края, обзорная тема — отдельной строкой сверху. */
+.explanation-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; overflow: visible; padding: 0.25rem 0.15rem 0.7rem; border-bottom: 1px solid #263b52; }
+.explanation-nav .explanation-topic { flex: 1 1 auto; }
+.explanation-nav .explanation-topic[data-explain-topic="overview"] { flex-basis: 100%; }
 
 /* Общие шесть граней; ограниченное покачивание и цвет публикует общий кадр окна. */
 :root .explanation-dialog :is(.explanation-close, .explanation-mode-button, .explanation-topic)[data-button-solid="1"] {
@@ -302,9 +298,10 @@
 .explanation-section p { margin: 0.45rem 0; }
 .explanation-technical { padding-inline-start: 1.15rem; padding-inline-end: 0; }
 .explanation-technical li { margin-block: 0.65rem; }
-.explanation-sources { display: flex; flex-wrap: wrap; gap: 0.65rem 1.2rem; margin-top: 0.7rem; }
+/* Ссылки на исходники — по центру и без маркеров списка (маркеры торчали слева от первой ссылки). */
+.explanation-sources { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.65rem 1.2rem; margin-top: 0.7rem; padding: 0; list-style: none; }
 .explanation-sources a { color: #8ed1f3; text-underline-offset: 0.22em; overflow-wrap: anywhere; }
-.explanation-pause-note { color: #94abc0; font-size: 0.76rem; margin: 1.25rem 0 0; border-top: 1px solid #263b52; padding-top: 0.75rem; }
+.explanation-pause-note { color: #94abc0; font-size: 0.76rem; margin: 1.25rem 0 0; border-top: 1px solid #263b52; padding-top: 0.75rem; text-align: center; }
 .explanation-soundtrack { margin-block: 1rem; border-block: 1px solid #263b52; }
 .explanation-soundtrack summary { min-height: 44px; padding-block: 0.5rem; cursor: pointer; color: #a9d9ed; }
 .explanation-soundtrack dl { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 0.45rem 0.75rem; font-size: 0.85rem; }
@@ -326,10 +323,12 @@
 /* НАЧАЛО РАЗДЕЛА 5. ТЕЛЕФОН И УМЕНЬШЕННОЕ ДВИЖЕНИЕ */
 @media (min-width: 921px) {
     .explanation-dock { position: absolute; left: 50%; bottom: 0; margin: 0; transform: translateX(-50%); }
+    /* Кнопки фаз стоят по центру своей шкалы, а не прижаты к левому краю. */
+    .phase-buttons-row { justify-content: center; }
     .explanation-dialog {
         inset: var(--hud-top-inset) auto var(--hud-bottom-inset) 1.25rem;
         margin: 0;
-        width: clamp(300px, calc(50vw - 452px), 720px);
+        width: var(--hud-left-column, clamp(300px, calc(50vw - 452px), 512px));
         height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
         max-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
         --explanation-field-height: calc(100dvh - var(--hud-top-inset) - var(--hud-bottom-inset));
@@ -340,6 +339,13 @@
     .explanation-topic { --solid-pad-x: 0.8rem; --solid-pad-y: 0.55rem; font-size: 0.83rem; }
     .explanation-content { font-size: 1.03rem; }
     .explanation-summary { font-size: 1.03rem; }
+}
+@media (min-width: 1840px) {
+    /* Большой экран: окно путеводителя и шкала фаз под ним образуют один левый столбец.
+       512px — ширина шкалы с подписями на любом из четырёх языков; окно не заходит на визитку финала. */
+    :root { --hud-left-column: min(512px, calc(50vw - 452px)); }
+    .phase-buttons-row { gap: 0.85rem; }
+    .phase-timeline-dock { min-width: calc(var(--hud-left-column) / var(--hud-compact-scale)); }
 }
 @media (min-width: 921px) and (max-width: 1839px) {
     /* На среднем экране отдельное место над доками сохраняет прежние размеры кнопок. */
@@ -377,7 +383,7 @@
     .explanation-title { font-size: 1.05rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .explanation-dialog[open][data-entry-animation="true"] { transform: none; opacity: 1; }
+    /* Сборка из песка в этом режиме не запускается: окно сразу непрозрачно. */
     .finale-term { transition: none; }
 }
 

@@ -143,15 +143,16 @@ function prepareParagraph(element: HTMLElement): RevealParagraph | null {
     const ranks = getExplanationPhysicalOrder(boxes);
     const cells: RevealCell[] = boxes.map((box) => {
         const node = span('explanation-text-cell');
+        // Без perspective и backface-visibility: ячейки не превращаются в сотни слоёв композитора.
         for (const [property, value] of Object.entries({
             position: 'absolute', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`,
-            height: `${box.height}px`, visibility: 'hidden', perspective: '400px',
+            height: `${box.height}px`, visibility: 'hidden',
         })) node.style.setProperty(property, value);
         const outgoing = span('explanation-text-face');
         const incoming = span('explanation-text-face');
         for (const face of [outgoing, incoming]) {
             for (const [property, value] of Object.entries({
-                position: 'absolute', inset: '0', 'backface-visibility': 'hidden', 'transform-origin': 'center',
+                position: 'absolute', inset: '0', 'transform-origin': 'center',
             })) face.style.setProperty(property, value);
         }
         const outgoingInk = span('glyph-reel-ink');
@@ -255,10 +256,13 @@ export function startExplanationTextReveal(
                 const p = state.state === 'locked' ? 1 : state.progress * state.progress * (3 - 2 * state.progress);
                 const turns = getExplanationRevealTurns(p);
                 cell.state = state.state;
+                // Плоская проекция того же поворота вокруг Y: scaleX(cos θ) рисуется без 3D-слоя.
+                const outgoingScale = Math.cos(turns.outgoing * Math.PI / 180);
+                const incomingScale = Math.cos(turns.incoming * Math.PI / 180);
                 writes.push(() => {
                     cell.node.style.setProperty('visibility', 'visible');
-                    cell.outgoing.style.setProperty('transform', `rotateY(${turns.outgoing.toFixed(3)}deg)`);
-                    cell.incoming.style.setProperty('transform', `rotateY(${turns.incoming.toFixed(3)}deg)`);
+                    cell.outgoing.style.setProperty('transform', `scaleX(${Math.max(0, outgoingScale).toFixed(4)})`);
+                    cell.incoming.style.setProperty('transform', `scaleX(${Math.max(0, incomingScale).toFixed(4)})`);
                     cell.outgoing.style.setProperty('visibility', p < 0.5 ? 'visible' : 'hidden');
                     cell.incoming.style.setProperty('visibility', p >= 0.5 ? 'visible' : 'hidden');
                 });

@@ -2,8 +2,8 @@
 // ФАЙЛ: frontend/src/core/buttonSolid.ts
 // НАЗНАЧЕНИЕ: CSS-кубоиды с двумя читаемыми гранями внутри семантических элементов HUD.
 // РАЗДЕЛЫ: 1. Контракты и исходный DOM; 2. Грани и размеры; 3. Пакетный жизненный цикл.
-// ФУНКЦИИ: cloneMeasuringNode, makeSpan, setSolidCaption, copySolidLabels, measureSolid, setSolidButtonLabel,
-//          setSolidButtonBackLabel;
+// ФУНКЦИИ: cloneMeasuringNode, makeSpan, setSolidCaption, copySolidLabels, applySolidSize, measureSolid,
+//          measureSolids, setSolidButtonLabel, setSolidButtonBackLabel;
 //          ButtonSolidManager: constructor, mount, dispose.
 // Размеры берутся из layout box; измеритель не зависит от вращения тела.
 // ============================================================================
@@ -108,11 +108,9 @@ function copySolidLabels(record: SolidRecord): void {
 }
 // КОНЕЦ ФУНКЦИИ copySolidLabels
 
-// НАЧАЛО ФУНКЦИИ measureSolid
-/** Только offset box: CSS-повороты потомков не меняют геометрию и область клика. */
-function measureSolid(record: SolidRecord): void {
-    const width = record.host.offsetWidth;
-    const height = record.host.offsetHeight;
+// НАЧАЛО ФУНКЦИИ applySolidSize
+/** Запись размеров тела; чтение layout выполняется отдельно, до всех записей пакета. */
+function applySolidSize(record: SolidRecord, width: number, height: number): void {
     if (width <= 0 || height <= 0) return;
     const depth = Number(Math.max(2, Math.min(record.kind === 'status' ? 16 : 18, width * 0.25, height * 0.5)).toFixed(2));
     const dimensions = `${width}:${height}:${depth}`;
@@ -122,7 +120,25 @@ function measureSolid(record: SolidRecord): void {
         record.host.style.setProperty(SOLID_PROPERTIES[index], `${value}px`);
     });
 }
+// КОНЕЦ ФУНКЦИИ applySolidSize
+
+// НАЧАЛО ФУНКЦИИ measureSolid
+/** Только offset box: CSS-повороты потомков не меняют геометрию и область клика. */
+function measureSolid(record: SolidRecord): void {
+    applySolidSize(record, record.host.offsetWidth, record.host.offsetHeight);
+}
 // КОНЕЦ ФУНКЦИИ measureSolid
+
+// НАЧАЛО ФУНКЦИИ measureSolids
+/**
+ * Пакет: сначала все чтения offset box, затем все записи. Чередование «прочитал — записал»
+ * заставляло браузер пересчитывать layout для каждой кнопки (десятки раз за кадр).
+ */
+function measureSolids(records: readonly SolidRecord[]): void {
+    const sizes = records.map((record) => [record.host.offsetWidth, record.host.offsetHeight] as const);
+    records.forEach((record, index) => applySolidSize(record, sizes[index][0], sizes[index][1]));
+}
+// КОНЕЦ ФУНКЦИИ measureSolids
 
 // НАЧАЛО ФУНКЦИИ setSolidButtonLabel
 /** Сохраняет тело и шесть граней при обновлении канонического текста хранилищем. */
@@ -230,10 +246,11 @@ export class ButtonSolidManager {
             host.dataset.buttonSolidKind = kind;
             mountedSolids.set(host, record);
             this.records.push(record);
-            record.measure();
         }
+        // Все DOM-записи монтирования уже сделаны: один layout на весь пакет кнопок.
+        measureSolids(this.records);
         if (this.records.length) {
-            this.observer = this.createObserver(() => this.records.forEach(measureSolid));
+            this.observer = this.createObserver(() => measureSolids(this.records));
             this.records.forEach(({ host }) => this.observer?.observe(host, { box: 'border-box' }));
         }
         return { dispose: () => { if (this.generation === generation) this.dispose(); } };

@@ -35,6 +35,8 @@ export interface RenderCapabilities {
 
 // ============================================================================
 // РАЗДЕЛ 2. КЛАСС ГРАФИЧЕСКОГО КОНВЕЙЕРА (RenderPipeline)
+// Кэш строк rgba(): префикс цвета и 1001 значение прозрачности на каждый HEX.
+const RGBA_STRING_CACHE = new Map<string, { readonly prefix: string; readonly values: (string | undefined)[] }>();
 // ============================================================================
 
 export class RenderPipeline {
@@ -224,15 +226,20 @@ export class RenderPipeline {
      */
     public static hexToRgba(hex: string, alpha: number): string {
         const clampedAlpha = Math.max(0, Math.min(1, alpha));
-        const clean = hex.replace('#', '');
-        if (clean.length !== 6) {
-            return `rgba(125, 211, 252, ${clampedAlpha.toFixed(3)})`;
+        // Кадр вызывает функцию тысячи раз: готовые строки по шагу 0.001 убирают мусор для GC.
+        let table = RGBA_STRING_CACHE.get(hex);
+        if (!table) {
+            const clean = hex.replace('#', '');
+            const num = clean.length === 6 ? parseInt(clean, 16) : Number.NaN;
+            const prefix = Number.isFinite(num)
+                ? `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, `
+                : 'rgba(125, 211, 252, ';
+            table = { prefix, values: new Array<string | undefined>(1001) };
+            RGBA_STRING_CACHE.set(hex, table);
         }
-        const num = parseInt(clean, 16);
-        const r = (num >> 16) & 255;
-        const g = (num >> 8) & 255;
-        const b = num & 255;
-        return `rgba(${r}, ${g}, ${b}, ${clampedAlpha.toFixed(3)})`;
+        if (!Number.isFinite(clampedAlpha)) return `${table.prefix}${clampedAlpha.toFixed(3)})`;
+        const step = Math.round(clampedAlpha * 1000);
+        return table.values[step] ??= `${table.prefix}${(step / 1000).toFixed(3)})`;
     }
     // --- КОНЕЦ ФУНКЦИИ hexToRgba ---
 }

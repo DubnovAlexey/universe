@@ -217,7 +217,7 @@ let cipherFontEpoch = -1;
 /** Полное начертание остаётся в своей ячейке и viewport, включая движущиеся ghost-знаки. */
 export function drawFittedCipherGlyph(ctx: CanvasRenderingContext2D, glyph: string,
     cell: Pick<OdometerGlyphCellState, 'currentX' | 'currentY' | 'rollAxis' | 'rollScale' | 'fontSizePx' | 'stepWidthPx'>,
-    width: number, height: number, offsetX = 0, offsetY = 0): void {
+    width: number, height: number, offsetX = 0, offsetY = 0, fontKey?: string): void {
     if (/^\s*$/u.test(glyph)) return;
     ctx.save();
     ctx.textAlign = 'left';
@@ -227,7 +227,8 @@ export function drawFittedCipherGlyph(ctx: CanvasRenderingContext2D, glyph: stri
         cipherInkFits.clear();
         cipherFontEpoch = epoch;
     }
-    const key = `${ctx.font}:${cell.stepWidthPx.toFixed(3)}:${glyph}`;
+    // Чтение ctx.font с веб-шрифтом дорого: вызывающий передаёт уже известную строку шрифта.
+    const key = `${fontKey ?? ctx.font}:${cell.stepWidthPx.toFixed(3)}:${glyph}`;
     let fit = cipherInkFits.get(key);
     if (!fit) {
         const fontPx = Math.max(0.1, Number(cell.fontSizePx.toFixed(1)));
@@ -301,17 +302,24 @@ export function renderCipherOdometerStage(
 
     const ghostTonePool = ['#64748b', '#475569', '#38bdf8', '#94a3b8'];
 
+    // Назначение ctx.font с веб-шрифтом стоит до ~0.5 мс: шрифт ставится до save() ячейки
+    // и только при смене начертания, а restore() возвращает уже установленный шрифт.
+    let activeFont = '';
     for (let i = 0; i < cells.length; i++) {
         const c = cells[i];
         if (c.primaryChar === ' ') continue;
 
+        const font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px ${GLYPH_FONT_STACK}`;
+        if (font !== activeFont) {
+            ctx.font = font;
+            activeFont = font;
+        }
         ctx.save();
         ctx.translate(c.currentX, c.currentY);
         // Наборные строки прокручивают знак по X слева направо, как и фронт сборки.
         const horizontalRoll = c.rollAxis === 'x';
         ctx.scale(horizontalRoll ? c.rollScale : 1.0, horizontalRoll ? 1.0 : c.rollScale);
 
-        ctx.font = `${c.fontWeight} ${c.fontSizePx.toFixed(1)}px ${GLYPH_FONT_STACK}`;
         const breathAlpha = (c.glyphBreathAlpha ?? 0.92) * canvasParticlesFade;
 
         if (!c.isLocked) {
@@ -327,7 +335,8 @@ export function renderCipherOdometerStage(
                 c.upperChar,
                 c, w, h,
                 horizontalRoll ? ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
-                horizontalRoll ? 0 : -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
+                horizontalRoll ? 0 : -ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48,
+                font
             );
 
             ctx.globalAlpha = 0.22 * breathAlpha;
@@ -337,7 +346,8 @@ export function renderCipherOdometerStage(
                 c.lowerChar,
                 c, w, h,
                 horizontalRoll ? -ghostOffset + c.wheelPhaseFrac * c.fontSizePx * 0.48 : 0,
-                horizontalRoll ? 0 : ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48
+                horizontalRoll ? 0 : ghostOffset - c.wheelPhaseFrac * c.fontSizePx * 0.48,
+                font
             );
         }
 
@@ -358,7 +368,8 @@ export function renderCipherOdometerStage(
             c.primaryChar,
             c, w, h,
             horizontalRoll && !c.isLocked ? c.wheelPhaseFrac * c.fontSizePx * 0.44 : 0,
-            horizontalRoll || c.isLocked ? 0 : -c.wheelPhaseFrac * c.fontSizePx * 0.44
+            horizontalRoll || c.isLocked ? 0 : -c.wheelPhaseFrac * c.fontSizePx * 0.44,
+            font
         );
 
         ctx.restore();

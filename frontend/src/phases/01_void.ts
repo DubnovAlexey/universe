@@ -7,7 +7,7 @@
 //   1. Зависимости, константы и контракты данных.
 //   2. VoidPhaseSimulation: constructor, resize, respawnParticles, createSingleParticle,
 //      computePhaseArchetypePoint, computeVoidChirpTarget, update, updateTopologyAndEdgeCurves,
-//      updateSynapticPulsesByArcLut, spawnPulseOnEdge, triggerCascadeFromNode, samplePulsePoint, getParticles,
+//      applyComputedGraph, updateSynapticPulsesByArcLut, spawnPulseOnEdge, triggerCascadeFromNode, samplePulsePoint, getParticles,
 //      getEdges, getPulses.
 // ============================================================================
 
@@ -19,7 +19,12 @@ import {
     NexusGraphEngine,
     nexusGraphEngine,
     type ComputedEdgeClass,
+    type GraphNodeInput,
 } from '../bridge/simulationWorker';
+import { nexusGraphWorkerClient } from '../bridge/nexusGraphWorkerClient';
+import {
+    NEXUS_EDGE_STRIDE, packComputedGraph, readPackedEdgeClass, readPackedEdgeLut, type PackedNexusGraph,
+} from '../bridge/nexusGraphPacking';
 import {
     smootherstep,
     UNIVERSE_PHASES,
@@ -155,6 +160,10 @@ export class VoidPhaseSimulation {
     private tickCounter = 0;
     private simulationSeed = 104729;
     private lastTopologyBuildSimSec = -10;
+    /** Поколение набора частиц: ответ фонового потока по старым индексам отбрасывается. */
+    private topologyGeneration = 0;
+    /** Строки id рёбер переиспользуются между пересборками: меньше мусора для GC (создаётся лениво). */
+    private edgeIdCache: Map<number, string> | undefined;
     private prng: DeterministicPRNG;
 
     // --- НАЧАЛО ФУНКЦИИ constructor (VoidPhaseSimulation) ---
@@ -206,6 +215,8 @@ export class VoidPhaseSimulation {
         this.afterglowMap.clear();
         this.tickCounter = 0;
         this.lastTopologyBuildSimSec = -10;
+        this.topologyGeneration++;
+        this.edgeIdCache?.clear();
         this.activePhase = uState.currentPhase;
         this.activeSingularityAct = uState.singularityAct;
         this.phaseMorphFactor = 1.0;
@@ -610,98 +621,133 @@ export class VoidPhaseSimulation {
             this.afterglowMap.delete(keysToDelete[k]);
         }
 
+        // Готовый результат фонового потока применяется в первом кадре после прихода,
+        // затем ниже концы рёбер подтягиваются к текущим координатам частиц.
+        const workerResult = nexusGraphWorkerClient.takeResult(this.topologyGeneration);
+        if (workerResult) this.applyComputedGraph(workerResult.packed, workerResult.maxConnectDist);
+
         const shouldRebuildTopology =
             this.edges.length === 0 ||
             Math.abs(simTimeSec - this.lastTopologyBuildSimSec) >= 0.12;
 
-        if (!shouldRebuildTopology) {
-            for (let i = 0; i < this.edges.length; i++) {
-                const e = this.edges[i];
-                const a = this.particles[e.fromIndex];
-                const b = this.particles[e.toIndex];
-                if (!a || !b) continue;
+        if (shouldRebuildTopology) {
+            const screenScale = Math.max(1.0, Math.min(this.width, this.height) / 920);
+            const maxConnectDist =
+                (phase === '03_EVOLUTION' || phase === '04_COLLAPSE' ? 225 : 185) * screenScale;
 
-                e.x1 = a.x;
-                e.y1 = a.y;
-                e.x2 = b.x;
-                e.y2 = b.y;
-
-                const midX = (a.x + b.x) * 0.5;
-                const midY = (a.y + b.y) * 0.5;
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const bendSeed = e.edgeClass === 'AXON_TRUNK' ? seed : 0;
-                const bendSign = (a.id + b.id + bendSeed) % 2 === 0 ? 1 : -1;
-                const bendScale = e.edgeClass === 'AXON_TRUNK' ? 0.14 : 0.16;
-                const ctrlOffset =
-                    Math.sin(simTimeSec * 0.65 + (a.id + b.id) * 0.1) * 0.5 + 0.5;
-                const factor = bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
-
-                e.ctrlX = midX - dy * factor;
-                e.ctrlY = midY + dx * factor;
-                e.truthVisibility = stressStore.getTruthRevealFactorAt(midX, midY);
-                e.afterglow = this.afterglowMap.get(e.id) ?? 0;
+            const graphInputs: GraphNodeInput[] = [];
+            for (let i = 0; i < this.particles.length; i++) {
+                const p = this.particles[i];
+                if (p.depthTier === 'FOREGROUND') continue;
+                graphInputs.push({
+                    index: i,
+                    id: p.id,
+                    x: p.x,
+                    y: p.y,
+                    clusterId: p.clusterId,
+                    energy: p.energy,
+                });
             }
-            return;
+
+            // Первая сборка после старта/рестарта — синхронная: граф виден с первого кадра.
+            // Дальше O(n²)-пересборка уходит в Web Worker; 'busy' — прошлый запрос ещё считается.
+            const status = this.edges.length === 0
+                ? 'unavailable'
+                : nexusGraphWorkerClient.request(this.topologyGeneration, graphInputs, maxConnectDist, seed, simTimeSec);
+            if (status !== 'busy') this.lastTopologyBuildSimSec = simTimeSec;
+            if (status === 'unavailable') {
+                const { edges: computedEdges, degreeByIndex } =
+                    nexusGraphEngine.buildDeterministicGraph(graphInputs, maxConnectDist, seed, simTimeSec);
+                this.applyComputedGraph(packComputedGraph(computedEdges, degreeByIndex), maxConnectDist);
+                return;
+            }
         }
 
-        this.lastTopologyBuildSimSec = simTimeSec;
-        const screenScale = Math.max(1.0, Math.min(this.width, this.height) / 920);
-        const maxConnectDist =
-            (phase === '03_EVOLUTION' || phase === '04_COLLAPSE' ? 225 : 185) * screenScale;
+        for (let i = 0; i < this.edges.length; i++) {
+            const e = this.edges[i];
+            const a = this.particles[e.fromIndex];
+            const b = this.particles[e.toIndex];
+            if (!a || !b) continue;
 
-        const graphInputs = [];
-        for (let i = 0; i < this.particles.length; i++) {
-            const p = this.particles[i];
-            p.degree = 0;
-            if (p.depthTier === 'FOREGROUND') continue;
-            graphInputs.push({
-                index: i,
-                id: p.id,
-                x: p.x,
-                y: p.y,
-                clusterId: p.clusterId,
-                energy: p.energy,
-            });
+            e.x1 = a.x;
+            e.y1 = a.y;
+            e.x2 = b.x;
+            e.y2 = b.y;
+
+            const midX = (a.x + b.x) * 0.5;
+            const midY = (a.y + b.y) * 0.5;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const bendSeed = e.edgeClass === 'AXON_TRUNK' ? seed : 0;
+            const bendSign = (a.id + b.id + bendSeed) % 2 === 0 ? 1 : -1;
+            const bendScale = e.edgeClass === 'AXON_TRUNK' ? 0.14 : 0.16;
+            const ctrlOffset =
+                Math.sin(simTimeSec * 0.65 + (a.id + b.id) * 0.1) * 0.5 + 0.5;
+            const factor = bendScale * bendSign * (0.65 + ctrlOffset * 0.35);
+
+            e.ctrlX = midX - dy * factor;
+            e.ctrlY = midY + dx * factor;
+            e.truthVisibility = stressStore.getTruthRevealFactorAt(midX, midY);
+            e.afterglow = this.afterglowMap.get(e.id) ?? 0;
         }
-
-        const { edges: computedEdges, degreeByIndex } =
-            nexusGraphEngine.buildDeterministicGraph(
-                graphInputs,
-                maxConnectDist,
-                seed,
-                simTimeSec
-            );
-
-        for (let i = 0; i < graphInputs.length; i++) {
-            const pIdx = graphInputs[i].index;
-            this.particles[pIdx].degree = degreeByIndex.get(pIdx) ?? 0;
-        }
-
-        this.edges = computedEdges.map((ce) => {
-            const midX = (ce.x1 + ce.x2) * 0.5;
-            const midY = (ce.y1 + ce.y2) * 0.5;
-            return {
-                id: ce.id,
-                fromIndex: ce.fromIndex,
-                toIndex: ce.toIndex,
-                edgeClass: ce.edgeClass,
-                x1: ce.x1,
-                y1: ce.y1,
-                x2: ce.x2,
-                y2: ce.y2,
-                ctrlX: ce.ctrlX,
-                ctrlY: ce.ctrlY,
-                arcLength: ce.arcLength,
-                lengthLUT: ce.lengthLUT,
-                murrayRadiusPx: ce.murrayRadiusPx,
-                strength: Math.max(0.15, 1.0 - ce.arcLength / (maxConnectDist * 1.25)),
-                truthVisibility: stressStore.getTruthRevealFactorAt(midX, midY),
-                afterglow: this.afterglowMap.get(ce.id) ?? 0,
-            };
-        });
     }
     // --- КОНЕЦ ФУНКЦИИ updateTopologyAndEdgeCurves (VoidPhaseSimulation) ---
+
+    // --- НАЧАЛО ФУНКЦИИ applyComputedGraph (VoidPhaseSimulation) ---
+    /**
+     * Один путь применения для синхронной и фоновой сборки: плоский буфер рёбер (тот же формат,
+     * что приходит из Web Worker) превращается в рёбра сцены за один проход, без промежуточных объектов.
+     */
+    private applyComputedGraph(packed: PackedNexusGraph, maxConnectDist: number): void {
+        for (let i = 0; i < this.particles.length; i++) this.particles[i].degree = 0;
+        for (let i = 0; i + 1 < packed.degrees.length; i += 2) {
+            const particle = this.particles[packed.degrees[i]];
+            if (particle) particle.degree = packed.degrees[i + 1];
+        }
+
+        const data = packed.edges;
+        const count = Math.floor(data.length / NEXUS_EDGE_STRIDE);
+        const idCache = this.edgeIdCache ??= new Map();
+        const edges: TopologyEdge[] = [];
+        for (let k = 0; k < count; k++) {
+            const base = k * NEXUS_EDGE_STRIDE;
+            const fromIndex = data[base];
+            const toIndex = data[base + 1];
+            const a = this.particles[fromIndex];
+            const b = this.particles[toIndex];
+            if (!a || !b) continue;
+            const idKey = fromIndex * 65536 + toIndex;
+            let id = idCache.get(idKey);
+            if (id === undefined) {
+                id = `${Math.min(a.id, b.id)}_${Math.max(a.id, b.id)}`;
+                idCache.set(idKey, id);
+            }
+            const x1 = data[base + 3], y1 = data[base + 4], x2 = data[base + 5], y2 = data[base + 6];
+            const arcLength = data[base + 9];
+            const midX = (x1 + x2) * 0.5;
+            const midY = (y1 + y2) * 0.5;
+            edges.push({
+                id,
+                fromIndex,
+                toIndex,
+                edgeClass: readPackedEdgeClass(data[base + 2]),
+                x1,
+                y1,
+                x2,
+                y2,
+                ctrlX: data[base + 7],
+                ctrlY: data[base + 8],
+                arcLength,
+                lengthLUT: readPackedEdgeLut(data, base),
+                murrayRadiusPx: data[base + 15],
+                strength: Math.max(0.15, 1.0 - arcLength / (maxConnectDist * 1.25)),
+                truthVisibility: stressStore.getTruthRevealFactorAt(midX, midY),
+                afterglow: this.afterglowMap.get(id) ?? 0,
+            });
+        }
+        this.edges = edges;
+    }
+    // --- КОНЕЦ ФУНКЦИИ applyComputedGraph (VoidPhaseSimulation) ---
 
     // --- НАЧАЛО ФУНКЦИИ updateSynapticPulsesByArcLut (VoidPhaseSimulation) ---
     private updateSynapticPulsesByArcLut(

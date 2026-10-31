@@ -16,6 +16,8 @@ import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } f
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И ОГРАНИЧЕННАЯ ПОЗА
 export interface ExplanationButtonMotionBinding { dispose(): void; }
 const SHADOW_INTERVAL_SEC = 1 / 12;
+/** Блик дрейфует с периодами в десятки секунд: 10 Гц неотличимы от 60 Гц, а перерисовок граней в 6 раз меньше. */
+const LIGHT_INTERVAL_SEC = 1 / 10;
 const AXIS_LENGTH = Math.hypot(0.86, 0.5, 0.05);
 const AXIS = [0.86 / AXIS_LENGTH, 0.5 / AXIS_LENGTH, 0.05 / AXIS_LENGTH] as const;
 const MAX_BUTTON_ANGLE = 10;
@@ -118,6 +120,7 @@ export function mountExplanationButtonMotion(
     try { if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') media = window.matchMedia('(prefers-reduced-motion: reduce)'); }
     catch { /* Режим общего кадра доступен и без MediaQueryList. */ }
     let shadowElapsed = 0;
+    let lightElapsed = 0;
     let colorTime = 0;
     let lightTime = 0;
     let unsubscribe = (): void => {};
@@ -192,6 +195,9 @@ export function mountExplanationButtonMotion(
         shadowElapsed += dt;
         const shadow = shadowElapsed >= SHADOW_INTERVAL_SEC;
         if (shadow) shadowElapsed %= SHADOW_INTERVAL_SEC;
+        lightElapsed += dt;
+        const light = lightElapsed >= LIGHT_INTERVAL_SEC;
+        if (light) lightElapsed %= LIGHT_INTERVAL_SEC;
         colorTime = (colorTime + dt) % 20;
         lightTime += dt;
         const ink = getExplanationModeInk(colorTime);
@@ -200,7 +206,7 @@ export function mountExplanationButtonMotion(
             const held = pose.hovered || pose.focused;
             pose.angle = advanceExplanationButtonAngle(pose.angle, signals.simTimeSec, pose.index, held, dt);
             publishPose(pose, shadow);
-            publishLight(pose);
+            if (light) publishLight(pose);
             if (pose.element.dataset.explanationMode) writeProperty(pose, '--explanation-mode-ink', ink);
         }
     }
