@@ -321,14 +321,16 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
     }), 'Height-constrained screens retain the entire card and actions below the HUD instead of clipping content to force ring clearance');
 
     const scaleTimes = [0, 3, 6, 6.001, 8, 10, 11.999, 12];
-    check([320, 390, 430, 600].every(width => {
+    const shrinksSmoothly = (width: number, settled: number): boolean => {
         const scales = scaleTimes.map(time => getFinaleCardScale(width, time));
-        return scales[0] === 1 && scales[2] === 1 && Math.abs(scales.at(-1)! - 0.82) < 1e-12 &&
-            scales.every((scale, index) => scale >= 0.82 && scale <= 1 && (index === 0 || scale <= scales[index - 1])) &&
+        return scales[0] === 1 && scales[2] === 1 && Math.abs(scales.at(-1)! - settled) < 1e-12 &&
+            scales.every((scale, index) => scale >= settled && scale <= 1 && (index === 0 || scale <= scales[index - 1])) &&
             Math.abs((1 - getFinaleCardScale(width, 6.001)) / 0.001) < 1e-6 &&
-            Math.abs((getFinaleCardScale(width, 11.999) - 0.82) / 0.001) < 1e-6;
-    }) && [601, 768, 920, 1920].every(width => scaleTimes.every(time => getFinaleCardScale(width, time) === 1)),
-    'Only phones shrink the card by18% during the last six rise seconds, monotonically with zero endpoint velocity; tablets and desktop keep their original scale');
+            Math.abs((getFinaleCardScale(width, 11.999) - settled) / 0.001) < 1e-6;
+    };
+    check([320, 390, 430, 600].every(width => shrinksSmoothly(width, 0.82)) &&
+        [601, 768, 920, 1920].every(width => shrinksSmoothly(width, 0.8)),
+    'Every screen shrinks the card during the last six rise seconds (phones to 0.82, wider screens to 0.8), monotonically with zero endpoint velocity — no separate jump at the act change');
 
     check([0, 6, 12].every(time => Math.abs(getFinaleCardScale(390, time, true) - 0.82) < 1e-12) &&
         getFinaleCardScale(390, NaN) === 1 && getFinaleCardScale(NaN, 12) === 1 &&
@@ -376,13 +378,13 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
                     bodyTop = Math.min(bodyTop, focal.centerY - bodyPoints[offset + 1] * focal.scale * perspective);
                 }
                 const topLimit = layout.viewportWidth <= 920 ? Math.max(48, layout.headerBottom + 4, layout.paddingTop - 8) : 8;
-                focalClearance &&= getFinaleCardScale(layout.viewportWidth, 12) === 1 &&
+                focalClearance &&= getFinaleCardScale(layout.viewportWidth, 12) === 0.8 &&
                     Math.abs(placement.settledTopPx - topLimit) < 1e-9 && placement.settledBottomPx + 2 < bodyTop;
             }
         }
     }
     check(focalClearance,
-        'Compact1280×720, full1920×1080 and tablet768×1024 cards keep their original scale and clear the actual centered3D body across sampled head orientations, seeds, cycles and worst upward camera drift');
+        'Compact1280×720, full1920×1080 and tablet768×1024 cards settle at the 0.8 rest scale and clear the actual centered3D body across sampled head orientations, seeds, cycles and worst upward camera drift');
 
     const target = getFinaleCardPlacement(makeLayout(1440, 900)).risePx;
     const samples = [0, 0.001, 1, 3, 6, 9, 11.999, 12].map((seconds) => target * smootherstep(0, 12, seconds));

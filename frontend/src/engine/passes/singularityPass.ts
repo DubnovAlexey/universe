@@ -8,7 +8,9 @@
 
 import { smootherstep, universeStore, type SingularityAct, type UniverseState } from '../../store/universeState';
 import { RenderPipeline } from '../pipeline';
-import { cipherOdometerEngine, type OdometerGlyphCellState } from '../../bridge/cipherOdometerEngine';
+import {
+    cipherOdometerEngine, FINALE_HANDOFF_END, FINALE_HANDOFF_START, type OdometerGlyphCellState,
+} from '../../bridge/cipherOdometerEngine';
 import type { AudioModulationSnapshot } from '../../utils/audioSync';
 import { getGlyphFontEpoch, GLYPH_FONT_STACK } from '../../core/glyphGrammar';
 import { fitGlyphInk, type GlyphInkFit } from '../../core/glyphHover';
@@ -285,9 +287,9 @@ export function renderCipherOdometerStage(
     ctx.fillStyle = backdropGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Когда видимая DOM-визитка развернулась (assemblyProgress >= 0.74),
-    // текст отображается чистым DOM-слоем Layer5_CipherFinale.tsx без дублирования на Canvas
-    const canvasParticlesFade = 1.0 - smootherstep(0.32, 0.74, assemblyProgress);
+    // Символы из Точки Нуля садятся в измеренные места букв DOM-визитки (setDomGlyphSlots), и в общем окне
+    // FINALE_HANDOFF_START..END Canvas гаснет, а визитка (Layer5_CipherFinale.tsx) проявляется на тех же местах.
+    const canvasParticlesFade = 1.0 - smootherstep(FINALE_HANDOFF_START, FINALE_HANDOFF_END, assemblyProgress);
     if (canvasParticlesFade <= 0.01) {
         ctx.restore();
         return;

@@ -6,7 +6,7 @@
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
 //   2. CipherOdometerEngine: notifyPointerHover, resetClockForTest, getAccumulatedSpinPhase,
-//      getLineTypography, advanceBoundedSpinPhase, evaluateCells, verifyFinalLockedText.
+//      getLineTypography, advanceBoundedSpinPhase, setDomGlyphSlots, evaluateCells, verifyFinalLockedText.
 // ============================================================================
 
 
@@ -40,6 +40,25 @@ export function getFinaleLines(locale: Locale = getLocale()): typeof CANONICAL_F
 // КОНЕЦ ФУНКЦИИ getFinaleLines
 
 const ENDLESS_SPIN_LINE_INDEX = 2;
+
+/**
+ * Место буквы видимой DOM-визитки в CSS-пикселях окна. Символ, вылетевший из Точки Нуля,
+ * садится ровно сюда, поэтому Canvas-надпись и визитка совпадают и не двоятся при передаче.
+ */
+export interface FinaleGlyphSlot {
+    readonly x: number;
+    readonly y: number;
+    readonly fontPx: number;
+    readonly widthPx: number;
+}
+export type FinaleGlyphSlotLines = ReadonlyArray<ReadonlyArray<FinaleGlyphSlot | null>>;
+
+/**
+ * Общее окно передачи Canvas → DOM по прогрессу 4.5-секундной сборки (≈1.7 с): символы гаснут, визитка
+ * проявляется на тех же местах. Обе стороны используют один порядок фиксации букв, поэтому совпадают и в процессе.
+ */
+export const FINALE_HANDOFF_START = 0.6;
+export const FINALE_HANDOFF_END = 0.98;
 
 // --- НАЧАЛО ФУНКЦИИ getFinaleLineAssemblyProgress ---
 /** Общие сроки статических строк для начального Canvas и семантического DOM. */
@@ -147,6 +166,15 @@ export class CipherOdometerEngine {
     private accumulatedSpinPhase = 0;
     private lfoClockSec = 0;
     private lastEvalTimeSec = -1;
+    /** Слоты букв DOM-визитки; null — собственная раскладка Canvas (тесты, визитка ещё не измерена). */
+    private domGlyphSlots: FinaleGlyphSlotLines | null = null;
+
+    // --- НАЧАЛО ФУНКЦИИ setDomGlyphSlots (CipherOdometerEngine) ---
+    /** Визитка публикует измеренные места своих букв; Canvas-символы приземляются ровно в них. */
+    public setDomGlyphSlots(slots: FinaleGlyphSlotLines | null): void {
+        this.domGlyphSlots = slots;
+    }
+    // --- КОНЕЦ ФУНКЦИИ setDomGlyphSlots (CipherOdometerEngine) ---
 
     // --- НАЧАЛО ФУНКЦИИ notifyPointerHover (CipherOdometerEngine) ---
     public notifyPointerHover(clientX: number, clientY: number): void {
@@ -297,8 +325,10 @@ export class CipherOdometerEngine {
             audioSnap.heartbeat
         );
 
+        // При слотах DOM-визитки дышит только сама визитка: Canvas-символы стоят точно в её буквах.
+        const domSlots = this.domGlyphSlots;
         const breathEnvelope =
-            reducedMotion || !isSimActive ? 0.0 : smootherstep(0.55, 0.92, p);
+            reducedMotion || !isSimActive || domSlots ? 0.0 : smootherstep(0.55, 0.92, p);
         const musicBreathBoost = 1.0 + audioSnap.heartbeat * 0.45;
         const cardHeartbeat =
             1.0 +
@@ -324,6 +354,7 @@ export class CipherOdometerEngine {
             const lineWidth = len * typo.stepWidthPx;
             const startX = cx - lineWidth * 0.5 + typo.stepWidthPx * 0.5;
             const baseTargetY = cy + lineOffsetsY[lineIdx];
+            const lineSlots = domSlots?.[lineIdx];
 
             for (let cIdx = 0; cIdx < len; cIdx++) {
                 const targetChar = lineCharacters[cIdx];
@@ -331,10 +362,13 @@ export class CipherOdometerEngine {
                 const ordered = getOrderedGlyphState(cIdx, len, getFinaleLineAssemblyProgress(p, lineIdx));
                 const isWaiting = !isEndlessLine && !reducedMotion && ordered.state === 'waiting';
                 const isCanonicalRolling = !isEndlessLine && !isMutableGlyph(targetChar);
-                const baseTargetX = startX + cIdx * typo.stepWidthPx;
+                // Слот DOM-визитки, если он измерен; иначе собственная центрированная раскладка Canvas.
+                const slot = lineSlots?.[cIdx] ?? null;
+                const baseTargetX = slot ? slot.x : startX + cIdx * typo.stepWidthPx;
+                const slotTargetY = slot ? slot.y : baseTargetY;
 
                 const targetX = cx + (baseTargetX - cx) * cardHeartbeat;
-                const targetY = cy + (baseTargetY - cy) * cardHeartbeat + cardFloatY;
+                const targetY = cy + (slotTargetY - cy) * cardHeartbeat + cardFloatY;
 
                 const r1 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 7);
                 const r2 = DeterministicPRNG.hashFloat(seed, globalIdx * 31 + 13);
@@ -396,7 +430,10 @@ export class CipherOdometerEngine {
                         : Math.max(0.54, Math.cos(wheelPhaseFrac * 1.05)) *
                         individualBreath) * emergeScale;
 
-                const primaryChar = isWaiting ? GLYPH_WAITING_SPACE : isLocked || isCanonicalRolling
+                // У пробелов квантовой строки нет окна в DOM-визитке: при её слотах там ничего не рисуется,
+                // иначе вращающиеся знаки пробелов садились бы в старую раскладку отдельным рядом.
+                const isSlotlessGap = isEndlessLine && domSlots !== null && slot === null && /\s/u.test(targetChar);
+                const primaryChar = isSlotlessGap ? ' ' : isWaiting ? GLYPH_WAITING_SPACE : isLocked || isCanonicalRolling
                     ? targetChar
                     : quantumGlyphs[(baseGlyphIdx + nGlyphs) % nGlyphs];
                 const upperChar = isWaiting || isCanonicalRolling ? GLYPH_WAITING_SPACE :
@@ -472,8 +509,8 @@ export class CipherOdometerEngine {
                     currentY,
                     targetX,
                     targetY,
-                    fontSizePx: typo.fontSizePx * cardHeartbeat * emergeScale,
-                    stepWidthPx: typo.stepWidthPx,
+                    fontSizePx: (slot ? slot.fontPx : typo.fontSizePx) * cardHeartbeat * emergeScale,
+                    stepWidthPx: slot ? slot.widthPx : typo.stepWidthPx,
                     colorHex: resolvedColor,
                     fontWeight: typo.fontWeight,
                     shadowColor,

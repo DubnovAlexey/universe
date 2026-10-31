@@ -35,13 +35,22 @@ export function getSingularityPhotonRadii(scale: number, volumeEnvelope = 1): Si
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. КОМПОЗИЦИЯ ВИЗИТКИ
+/** Масштаб поднятой визитки в покое: на телефоне 0.82, на остальных экранах 0.8 (крупная уже не нужна). */
+export const FINALE_AMBIENT_SCALE_PHONE = 0.82;
+export const FINALE_AMBIENT_SCALE_WIDE = 0.8;
+
 // НАЧАЛО ФУНКЦИИ getFinaleCardScale
-/** Только телефон: завершение подъёма плавно освобождает центр, не меняя настольную типографику. */
+/**
+ * Вторая половина 12-секундного подъёма плавно (C², нулевые скорости на концах) уменьшает визитку
+ * до размера покоя на любом экране. Уменьшение — часть самого подъёма, а не отдельный переход в конце:
+ * быстрый CSS-переход при смене акта давал заметный рывок после медленного подъёма.
+ */
 export function getFinaleCardScale(viewportWidth: number, riseElapsedSec: number, reducedMotion = false): number {
-    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || viewportWidth > 600) return 1;
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return 1;
+    const settled = viewportWidth > 600 ? FINALE_AMBIENT_SCALE_WIDE : FINALE_AMBIENT_SCALE_PHONE;
     const elapsed = Number.isFinite(riseElapsedSec) ? Math.max(0, Math.min(12, riseElapsedSec)) : 0;
     const t = reducedMotion ? 1 : Math.max(0, Math.min(1, (elapsed - 6) / 6));
-    return 1 - 0.18 * t * t * t * (t * (t * 6 - 15) + 10);
+    return 1 - (1 - settled) * t * t * t * (t * (t * 6 - 15) + 10);
 }
 // КОНЕЦ ФУНКЦИИ getFinaleCardScale
 

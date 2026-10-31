@@ -28,7 +28,10 @@
 
 import { React } from './Layer2_Metrics';
 import { getLocale, subscribeLocale, translateUi } from '../core/locale';
-import { getFinaleLines, formatFinaleStaticLine } from '../bridge/cipherOdometerEngine';
+import {
+    cipherOdometerEngine, FINALE_HANDOFF_END, FINALE_HANDOFF_START, formatFinaleStaticLine, getFinaleLines,
+    type FinaleGlyphSlot,
+} from '../bridge/cipherOdometerEngine';
 import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES,
     smootherstep, universeStore, type UniverseState,
@@ -185,6 +188,13 @@ class FinaleCardDomAnimator {
     private ambientLayoutKey = '';
     private ambientLayout: FinaleCardLayout | null = null;
     private breathHeartbeat = 0.35;
+    /** 0 — поднятая визитка в покое (меньше, дышит), 1 — под курсором (полный размер, неподвижна). */
+    private readFocus = 0;
+    private lastReadFocusMs: number | null = null;
+    /** Ключ раскладки, для которой места букв уже переданы одометру Canvas. */
+    private glyphSlotsKey = '';
+    /** Пока идёт передача Canvas → DOM, opacity визитки ведёт общий кадр (inline-стиль). */
+    private handoffActive = false;
 
     private cardBoxEl: HTMLElement | null = null;
     private headerEl: HTMLElement | null = null;
@@ -221,6 +231,9 @@ class FinaleCardDomAnimator {
         this.quantumFitKeys = [];
         this.lastLineTexts.clear();
         this.lastLineFontEpoch = -1;
+        this.glyphSlotsKey = '';
+        this.handoffActive = false;
+        cipherOdometerEngine.setDomGlyphSlots(null);
         this.line3El = root.querySelector<HTMLElement>('[data-bind="l5-line-3"]');
         this.line4El = root.querySelector<HTMLElement>('[data-bind="l5-line-4"]');
         const staticLines = [this.line0El, this.line1El, null, this.line3El, this.line4El];
@@ -297,6 +310,12 @@ class FinaleCardDomAnimator {
         this.unsubscribeSignals?.();
         this.unsubscribeSignals = null;
         this.resizeObserver?.disconnect();
+        // Прерванная передача не оставляет визитку невидимой inline-стилем.
+        if (this.handoffActive && this.cardBoxEl) {
+            this.cardBoxEl.style.removeProperty('opacity');
+            this.cardBoxEl.style.removeProperty('transition');
+        }
+        this.handoffActive = false;
     }
     // --- КОНЕЦ ФУНКЦИИ stop ---
 
@@ -362,8 +381,13 @@ class FinaleCardDomAnimator {
         }
 
         const isSimActive = !signals.isPaused && !state.isPaused && !state.isTabHidden;
+        // Наведение или фокус клавиатуры внутри поднятой визитки: она подрастает и замирает для чтения.
+        const readTarget = isPersistentCard && state.finaleRiseElapsedSec !== null &&
+            (state.isFinaleCardHovered || this.cardBoxEl?.matches(':focus-within') === true) ? 1 : 0;
         const staticStateKey = `${state.currentPhase}:${state.cycleCount}:${state.githubCardAssemblyProgress}:${state.singularityAct}:${state.reducedMotion}:${state.finaleRiseElapsedSec !== null}`;
-        if ((!isSimActive || state.reducedMotion) && !this.layoutDirty && staticStateKey === this.lastStaticStateKey) {
+        if ((!isSimActive || state.reducedMotion) && !this.layoutDirty && staticStateKey === this.lastStaticStateKey &&
+            this.readFocus === readTarget) {
+            this.lastReadFocusMs = null;
             return;
         }
         this.lastStaticStateKey = staticStateKey;
@@ -387,24 +411,32 @@ class FinaleCardDomAnimator {
             // пауза сохраняет положение, reduced motion сразу выбирает статичную позицию.
             const ambientRiseElapsedSec = state.reducedMotion ? 12 : Math.max(0, Math.min(12, state.finaleRiseElapsedSec ?? 0));
             const ambientTarget = hasLoopCard ? this.getAmbientRiseDistance() : 0;
-            const settledScale = hasLoopCard && this.ambientLayout
+            // Подрастание при наведении идёт по реальному времени (работает и на паузе), экспонента ~0.3 с.
+            const nowMs = performance.now();
+            const realDtSec = this.lastReadFocusMs === null ? 1 / 60 : Math.min(0.1, Math.max(0, (nowMs - this.lastReadFocusMs) / 1000));
+            this.lastReadFocusMs = nowMs;
+            this.readFocus = state.reducedMotion
+                ? readTarget
+                : this.readFocus + (readTarget - this.readFocus) * (1 - Math.exp(-realDtSec / 0.3));
+            if (Math.abs(readTarget - this.readFocus) < 0.002) this.readFocus = readTarget;
+            const restScale = hasLoopCard && this.ambientLayout
                 ? getFinaleCardScale(this.ambientLayout.viewportWidth, ambientRiseElapsedSec, state.reducedMotion) : 1;
+            // Размер покоя → полный размер под курсором; расчёт подъёма ниже держит верхний край на месте.
+            const settledScale = restScale + (1 - restScale) * smootherstep(0, 1, this.readFocus);
             // Финальная мера учитывает уменьшение; текущая не выпускает ещё крупную карточку за верхний HUD.
             const currentRiseLimit = this.ambientLayout
                 ? getFinaleCardPlacement(this.ambientLayout, settledScale).risePx : ambientTarget;
             const ambientRise = Math.min(ambientTarget * smootherstep(0, 12, ambientRiseElapsedSec), currentRiseLimit);
 
-            // Плавный C2-выход всей визитки из центральной Точки Нуля при первом появлении
-            const emergeScale =
-                state.reducedMotion || hasLoopCard
-                    ? 1.0
-                    : 0.04 + 0.96 * smootherstep(0.0, 0.46, p);
+            // Путь из Точки Нуля показывают Canvas-символы одометра: они садятся в места букв этой визитки,
+            // а визитка в полный размер проявляется поверх них (окно FINALE_HANDOFF_START..END), без второго роста.
+            const handoffOnCanvas = isActD && !hasLoopCard;
 
-            // Спокойное дыхание зафиксированной визитки в такт низкочастотной огибающей музыки
-            // Под курсором поднятая визитка замирает (без дыхания и дробных сдвигов), чтобы текст был резким.
-            const settledForReading = hasLoopCard && state.isFinaleCardHovered;
+            // Спокойное дыхание зафиксированной визитки в такт низкочастотной огибающей музыки.
+            // Под курсором дыхание плавно затухает, и неподвижная визитка встаёт на целый пиксель — текст резкий.
+            const settledForReading = this.readFocus === 1;
             const breathEnv =
-                state.reducedMotion || settledForReading ? 0 : smootherstep(0.48, 0.88, p);
+                state.reducedMotion ? 0 : smootherstep(0.48, 0.88, p) * (1 - smootherstep(0, 1, this.readFocus));
             const musicPulse = 1.0 + this.breathHeartbeat * 0.42;
             const heartbeatScale =
                 1.0 +
@@ -413,7 +445,7 @@ class FinaleCardDomAnimator {
                     0.003 * Math.cos(this.lfoClockSec * 2.5));
             const floatY = breathEnv * Math.cos(this.lfoClockSec * 1.05) * 2.0;
 
-            const finalScale = emergeScale * heartbeatScale * settledScale;
+            const finalScale = heartbeatScale * settledScale;
             const offsetY = floatY - ambientRise;
             const cardTransform = `translate3d(0, ${(settledForReading ? Math.round(offsetY) : offsetY).toFixed(
                 1
@@ -465,15 +497,104 @@ class FinaleCardDomAnimator {
                 this.lastQuantumFontEpoch = fontEpoch;
                 updateFinaleQuantumCells(this.quantumCells, glyphPool, qStep, state.reducedMotion, glyphWrites, this.quantumFitKeys);
             }
+            // Места букв для одометра Canvas измеряются до записей кадра и только при смене раскладки.
+            if (handoffOnCanvas) {
+                const slotsKey = `${fontEpoch}:${getLocale()}:${window.innerWidth}x${window.innerHeight}`;
+                if (this.layoutDirty || slotsKey !== this.glyphSlotsKey) {
+                    cipherOdometerEngine.setDomGlyphSlots(this.measureGlyphSlots());
+                    this.glyphSlotsKey = slotsKey;
+                }
+            }
             // Один пакет для всех строк: transform и текст не прерывают измерения следующей строки.
             glyphWrites.forEach(apply => apply());
             this.cardBoxEl.style.transform = cardTransform;
+            if (handoffOnCanvas) {
+                // На время передачи opacity ведёт общий кадр без CSS-перехода, синхронно с затуханием Canvas.
+                if (!this.handoffActive) {
+                    this.cardBoxEl.style.setProperty('transition', 'background 0.55s ease');
+                    this.handoffActive = true;
+                }
+                const handoff = state.reducedMotion ? 1 : smootherstep(FINALE_HANDOFF_START, FINALE_HANDOFF_END, p);
+                this.cardBoxEl.style.setProperty('opacity', handoff.toFixed(3));
+            } else if (this.handoffActive) {
+                this.cardBoxEl.style.removeProperty('opacity');
+                this.cardBoxEl.style.removeProperty('transition');
+                this.handoffActive = false;
+            }
         }
 
         this.layoutDirty = false;
     };
     // --- КОНЕЦ ФУНКЦИИ tick ---
+
+    // НАЧАЛО ФУНКЦИИ measureGlyphSlots
+    /**
+     * Центры букв визитки в CSS-пикселях окна для приземления Canvas-символов. Буквы строк и терминов берутся
+     * из канонических мер `.glyph-reel-measure`, квантовой строки — из её окон; разделители между терминами
+     * (без собственных ячеек) получают место интерполяцией между соседними буквами.
+     */
+    private measureGlyphSlots(): (FinaleGlyphSlot | null)[][] {
+        const lineEls = [this.line0El, this.line1El, this.quantumCells[0]?.node.parentElement ?? null, this.line3El, this.line4El];
+        return getFinaleLines().map((text, lineIndex) => {
+            const glyphs = splitGlyphText(text);
+            const slots: (FinaleGlyphSlot | null)[] = glyphs.map(() => null);
+            const lineEl = lineEls[lineIndex];
+            if (!lineEl) return slots;
+            const fontPx = Number.parseFloat(window.getComputedStyle(lineEl).fontSize) || 16;
+            if (lineIndex === 2) {
+                // Окна квантовой строки существуют только для непробельных знаков.
+                let cell = 0;
+                glyphs.forEach((glyph, index) => {
+                    if (/\s/u.test(glyph)) return;
+                    const node = this.quantumCells[cell++]?.node;
+                    if (node) slots[index] = toGlyphSlot(node.getBoundingClientRect(), fontPx);
+                });
+                return slots;
+            }
+            const groups = this.topicParts.get(lineEl)?.map((part) => ({ node: part.node, start: part.start })) ??
+                [{ node: lineEl, start: 0 }];
+            for (const group of groups) {
+                group.node.querySelectorAll<HTMLElement>('.glyph-reel-measure').forEach((measure, offset) => {
+                    const index = group.start + offset;
+                    if (index < slots.length) slots[index] = toGlyphSlot(measure.getBoundingClientRect(), fontPx);
+                });
+            }
+            return fillGlyphSlotGaps(slots);
+        });
+    }
+    // КОНЕЦ ФУНКЦИИ measureGlyphSlots
 }
+
+// НАЧАЛО ФУНКЦИИ toGlyphSlot
+function toGlyphSlot(rect: DOMRect, fontPx: number): FinaleGlyphSlot | null {
+    if (!(rect.width > 0) && !(rect.height > 0)) return null;
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, fontPx, widthPx: Math.max(1, rect.width) };
+}
+// КОНЕЦ ФУНКЦИИ toGlyphSlot
+
+// НАЧАЛО ФУНКЦИИ fillGlyphSlotGaps
+/** Разделители « · » между терминами не имеют ячеек: их место — линейная интерполяция между соседями. */
+function fillGlyphSlotGaps(slots: readonly (FinaleGlyphSlot | null)[]): (FinaleGlyphSlot | null)[] {
+    const known: number[] = [];
+    slots.forEach((slot, index) => { if (slot) known.push(index); });
+    if (known.length === 0) return [...slots];
+    return slots.map((slot, index) => {
+        if (slot) return slot;
+        let left = -1;
+        let right = -1;
+        for (const knownIndex of known) {
+            if (knownIndex < index) left = knownIndex;
+            else { right = knownIndex; break; }
+        }
+        if (left < 0) return slots[right];
+        if (right < 0) return slots[left];
+        const a = slots[left]!;
+        const b = slots[right]!;
+        const t = (index - left) / (right - left);
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, fontPx: a.fontPx, widthPx: a.widthPx };
+    });
+}
+// КОНЕЦ ФУНКЦИИ fillGlyphSlotGaps
 
 const finaleCardAnimator = new FinaleCardDomAnimator();
 
