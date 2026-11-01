@@ -196,6 +196,35 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
             resourceLedger.getCounters().underflowCount === 0,
             'Persistent dither survives repeated cycles without false leak warnings and releases exactly once on pipeline disposal');
         // КОНЕЦ РАЗДЕЛА 4
+
+        // НАЧАЛО РАЗДЕЛА 5. ЧАСЫ СЮЖЕТА ПРИ НИЗКОМ FPS (BUG-09, ?clock=story)
+        // НАЧАЛО ФУНКЦИИ storyAdvance
+        /** Сколько секунд сюжета проходит за 10 кадров по 100 мс (10 FPS) с данным адресом страницы. */
+        const storyAdvance = (search: string): number => {
+            (globalThis as unknown as { window: { location: { search: string } } }).window.location.search = search;
+            const probe = new UniverseRenderer(canvas as unknown as HTMLCanvasElement);
+            Object.defineProperty(probe, 'renderFrame', { configurable: true, value: (): void => {} });
+            universeStore.setPhase('02_GENESIS');
+            const startSec = universeStore.getState().telemetry.phaseElapsedSec;
+            probe.start();
+            for (let frame = 0; frame < 10; frame++) {
+                const next = pending.entries().next();
+                if (next.done) break;
+                pending.delete(next.value[0]);
+                nowMs += 100;
+                next.value[1](nowMs);
+            }
+            probe.stop();
+            (probe as unknown as { pipeline: RenderPipeline }).pipeline.dispose();
+            return universeStore.getState().telemetry.phaseElapsedSec - startSec;
+        };
+        // КОНЕЦ ФУНКЦИИ storyAdvance
+        const clampedStory = storyAdvance('?wasm=0');
+        const realStory = storyAdvance('?wasm=0&clock=story');
+        check(Math.abs(clampedStory - 0.5) < 1e-6 && Math.abs(realStory - 1.0) < 1e-6 &&
+            universeStore.getState().lastRendererError === null && pending.size === 0,
+            'At 10 FPS the default clock still clamps each frame to 50 ms, while ?clock=story keeps the story on real time with bounded physics substeps');
+        // КОНЕЦ РАЗДЕЛА 5
     } finally {
         renderer?.stop();
         pipeline?.dispose();

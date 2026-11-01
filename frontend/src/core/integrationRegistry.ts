@@ -7,6 +7,7 @@
 //   1. Зависимости, константы и контракты данных.
 //   2. IntegrationRegistryManager: constructor, initDefaultModules, updateModuleStatus, recordModuleStep,
 //      getModule, getAllModules.
+//   3. getModuleDisplayStatus — честная подпись статуса для LAYER_04 (BUG-08).
 // ============================================================================
 
 
@@ -30,8 +31,16 @@ export type ModuleRuntimeState =
     | 'error'
     | 'unsupported';
 
+/**
+ * Где модуль работает по замыслу: в браузере опубликованной сцены, только в CI (паритет Python)
+ * или только при локальном запуске (Python-сервер). Без этого посетитель видел FALLBACK/INACTIVE
+ * у модулей, которых в статической сборке нет, и решал, что «половина системы не работает» (BUG-08).
+ */
+export type ModuleAvailability = 'runtime' | 'ci-only' | 'local-only';
+
 export interface PolyglotModuleRecord {
     readonly id: PolyglotModuleId;
+    readonly availability: ModuleAvailability;
     readonly language:
         | 'TypeScript'
         | 'Rust/WASM'
@@ -72,6 +81,7 @@ class IntegrationRegistryManager {
         const defaults: PolyglotModuleRecord[] = [
             {
                 id: 'ts-core',
+                availability: 'runtime',
                 language: 'TypeScript',
                 sourceTag: 'TS_CORE',
                 ownerFile: 'frontend/src/store/universeState.ts',
@@ -86,6 +96,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'wasm-physics',
+                availability: 'runtime',
                 language: 'Rust/WASM',
                 sourceTag: 'WASM',
                 ownerFile: 'physics_engine/src/gravity.rs',
@@ -100,6 +111,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'webgpu-render',
+                availability: 'runtime',
                 language: 'WGSL/WebGPU',
                 sourceTag: 'RENDERER',
                 ownerFile: 'frontend/src/engine/webgpu/ouroboros.wgsl',
@@ -116,6 +128,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'canvas2d-render',
+                availability: 'runtime',
                 language: 'Canvas2D',
                 sourceTag: 'RENDERER',
                 ownerFile: 'frontend/src/engine/UniverseRenderer.ts',
@@ -130,6 +143,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'pyodide-graph',
+                availability: 'ci-only',
                 language: 'Python',
                 sourceTag: 'PYODIDE',
                 ownerFile: 'backend/core/graph_logic.py',
@@ -144,6 +158,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'server-ws',
+                availability: 'local-only',
                 language: 'Python',
                 sourceTag: 'SERVER',
                 ownerFile: 'backend/api/transport.py',
@@ -158,6 +173,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'web-audio',
+                availability: 'runtime',
                 language: 'WebAudio',
                 sourceTag: 'AUDIO',
                 ownerFile: 'frontend/src/utils/audioSync.ts',
@@ -172,6 +188,7 @@ class IntegrationRegistryManager {
             },
             {
                 id: 'worker-physics',
+                availability: 'runtime',
                 language: 'TypeScript',
                 sourceTag: 'WORKER',
                 ownerFile: 'frontend/src/bridge/simulationWorker.ts',
@@ -253,3 +270,19 @@ class IntegrationRegistryManager {
 }
 
 export const integrationRegistry = new IntegrationRegistryManager();
+
+// --- НАЧАЛО ФУНКЦИИ getModuleDisplayStatus ---
+/**
+ * Подпись статуса для таблицы LAYER_04. Состояние модуля не меняется — меняется только то, как его
+ * читает посетитель: паритет Python проверяется в CI («CI ✓»), Python-сервер есть только при локальном
+ * запуске («LOCAL»), а WebGPU до прогрева в фазе 05 ждёт своей очереди («STANDBY»), а не сломан.
+ */
+export function getModuleDisplayStatus(module: Readonly<PolyglotModuleRecord>): { label: string; tone: string } {
+    if (module.availability === 'ci-only') return { label: 'CI ✓', tone: 'ci' };
+    if (module.availability === 'local-only' && module.status !== 'ready' && module.status !== 'loading') {
+        return { label: 'LOCAL', tone: 'local' };
+    }
+    if (module.id === 'webgpu-render' && module.status === 'inactive') return { label: 'STANDBY', tone: 'standby' };
+    return { label: module.status.toUpperCase(), tone: module.status };
+}
+// --- КОНЕЦ ФУНКЦИИ getModuleDisplayStatus ---

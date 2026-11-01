@@ -113,6 +113,8 @@
     --hud-compact-scale: 0.75;
     --solid-rest-scale: 1;
     --solid-read-scale: 1.4625;
+    /* Постоянное выделение текущей фазы: заметно, но не заходит на подписи соседних кнопок. */
+    --solid-current-scale: 1.12;
     --solid-live-scale: var(--solid-rest-scale);
     --solid-shift-x: 0%;
     --solid-shift-y: 0%;

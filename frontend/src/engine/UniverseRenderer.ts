@@ -36,6 +36,12 @@ import {
     renderSingularityCoronaAndBlackHole, renderZeroSilenceActC, renderCipherOdometerStage,
 } from './passes/singularityPass';
 
+/** Наибольший шаг физики за один вызов: прежний предел кадра, на котором держится устойчивость интеграторов. */
+const PHYSICS_MAX_STEP_SEC = 0.05;
+/** ?clock=story: подшагов на кадр не больше четырёх (до 0,2 с физики), сюжет — до 0,25 с за кадр. */
+const PHYSICS_MAX_SUBSTEPS = 4;
+const STORY_MAX_DT_SEC = 0.25;
+
 export class UniverseRenderer {
     // НАЧАЛО РАЗДЕЛА 1. СОСТОЯНИЕ, ИНИЦИАЛИЗАЦИЯ И ВВОД
     private readonly pipeline: RenderPipeline;
@@ -58,6 +64,13 @@ export class UniverseRenderer {
     private lastSeed = 0;
     private lastCycleCount = 1;
     private consecutiveFrameErrors = 0;
+    /**
+     * ?clock=story (ADR-002, BUG-09): часы сюжета идут по реальному времени (до STORY_MAX_DT_SEC за кадр),
+     * а физика делит такой кадр на равные подшаги не длиннее прежних 50 мс. Без флага при FPS < 20 шаг
+     * обрезался до 50 мс и 108 секунд сюжета растягивались (на 10–12 FPS — до ≈190 с).
+     */
+    private readonly storyClock = typeof window !== 'undefined' &&
+        new URLSearchParams(window.location?.search ?? '').get('clock') === 'story';
 
     // --- НАЧАЛО ФУНКЦИИ constructor (UniverseRenderer) ---
     constructor(private readonly canvas: HTMLCanvasElement) {
@@ -459,7 +472,7 @@ export class UniverseRenderer {
         try {
             const rawDtMs = Math.max(1.0, nowMs - this.lastFrameTimeMs);
             this.lastFrameTimeMs = nowMs;
-            const clampedDtSec = Math.min(0.05, rawDtMs / 1000.0);
+            const clampedDtSec = Math.min(this.storyClock ? STORY_MAX_DT_SEC : PHYSICS_MAX_STEP_SEC, rawDtMs / 1000.0);
 
             const state = universeStore.getState();
 
@@ -502,15 +515,23 @@ export class UniverseRenderer {
             }
 
             if (isActiveSim && simDtSec > 0) {
-                stressStore.stepPhysics(simDtSec);
-                this.backgroundFields.step(simDtSec, nextSimSec, state.seed);
-                this.simulation.update(
-                    simDtSec,
-                    state.currentPhase,
-                    1.0,
-                    state.gravityMultiplier,
-                    nextSimSec
-                );
+                // Без флага кадр всегда даёт один шаг (simDtSec ≤ 50 мс). С ?clock=story длинный кадр медленного
+                // устройства делится на равные подшаги ≤ 50 мс; дальше 4 подшагов «проскальзывает» физика, а не сюжет.
+                const substeps = this.storyClock
+                    ? Math.min(PHYSICS_MAX_SUBSTEPS, Math.ceil(simDtSec / PHYSICS_MAX_STEP_SEC - 1e-9)) : 1;
+                const stepSec = this.storyClock ? Math.min(PHYSICS_MAX_STEP_SEC, simDtSec / substeps) : simDtSec;
+                for (let substep = 1; substep <= substeps; substep++) {
+                    const substepSimSec = substep === substeps ? nextSimSec : state.telemetry.simulationTimeSec + stepSec * substep;
+                    stressStore.stepPhysics(stepSec);
+                    this.backgroundFields.step(stepSec, substepSimSec, state.seed);
+                    this.simulation.update(
+                        stepSec,
+                        state.currentPhase,
+                        1.0,
+                        state.gravityMultiplier,
+                        substepSimSec
+                    );
+                }
             }
 
             if (profileWork) {

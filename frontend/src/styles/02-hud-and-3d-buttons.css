@@ -295,6 +295,17 @@
     transform: rotate(var(--button-back-label-turn, 0deg));
 }
 
+/* Название фазы на гранях ужимается по ширине подписи (контейнерные единицы): самое длинное —
+   «СИНГУЛЯРНОСТЬ», 13 знаков моноширинного шрифта ≈ 7 em — встаёт в одну строку и на телефоне 320 px,
+   а не теряет последнюю букву на второй строке. Где места хватает, min() оставляет прежний кегль. */
+.phase-pill .solid-button-label {
+    container-type: inline-size;
+}
+
+.phase-pill .solid-button-label .phase-name {
+    font-size: min(1em, 13.8cqi);
+}
+
 /* Широкие информационные тела имеют собственный локальный центр вращения. */
 
 :root .brand-card [data-button-solid="1"] {
@@ -364,6 +375,25 @@
 :root .brand-card [data-button-solid="1"]:is(:hover, :focus-visible) {
     --solid-shift-x: 25%;
     --solid-shift-y: 25%;
+}
+
+/* Текущая фаза без курсора и фокуса выделена постоянно, поэтому крупный масштаб чтения (1,46) закрывал
+   подписи соседних кнопок. Постоянное выделение — 1,12 с подъёмом и сдвигом на те же 6%, что добавляет
+   масштаб: нижний и крайние края остаются на месте. Наведение и keyboard focus дают полный масштаб. */
+:root .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"]:not(:hover, :focus-visible) {
+    --solid-live-scale: var(--solid-current-scale);
+}
+
+:root .phase-timeline-dock .phase-pill[data-button-solid="1"][data-button-phase-emphasis="1"]:not(:hover, :focus-visible) {
+    --solid-shift-y: -6%;
+}
+
+:root .phase-buttons-row > .phase-pill:first-child[data-button-phase-emphasis="1"]:not(:hover, :focus-visible) {
+    --solid-shift-x: 6%;
+}
+
+:root .phase-buttons-row > .phase-pill:last-child[data-button-phase-emphasis="1"]:not(:hover, :focus-visible) {
+    --solid-shift-x: -6%;
 }
 
 :root .phase-pill.active[data-button-solid="1"] .solid-button-face,

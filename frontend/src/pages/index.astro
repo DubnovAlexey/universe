@@ -24,6 +24,10 @@ const glyphFontUrls = import.meta.glob<string>('../assets/fonts/*.ttf', {
 const initialPhase = UNIVERSE_PHASES['01_VOID'];
 const rawBaseUrl = import.meta.env.BASE_URL || '/';
 const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
+// Карточку ссылки в LinkedIn, Telegram и почте собирают по мета-тегам: эти сервисы не исполняют JS.
+const siteUrl = `https://dubnovalexey.github.io${baseUrl}`;
+const pageDescription = 'UNIVERSE — интерактивная аудиовизуальная инсталляция Алексея Дубнова: за 108 секунд световая точка ' +
+	'становится галактикой, нейронной структурой и чёрной дырой. TypeScript, Rust/WebAssembly, WebGPU, Web Workers, Python.';
 ---
 
 <!-- РАЗДЕЛ 2. ДОКУМЕНТ И МЕТАДАННЫЕ СТРАНИЦЫ -->
@@ -33,14 +37,38 @@ const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`;
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 	<title>Alexey Dubnov</title>
+	<meta name="description" content={pageDescription} />
+	<meta name="theme-color" content="#020308" />
+	<link rel="canonical" href={siteUrl} />
 	<link rel="icon" type="image/png" href={`${baseUrl}favicon.png`} />
-	<meta property="og:image" content={`https://dubnovalexey.github.io${baseUrl}favicon.png`} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={siteUrl} />
+	<meta property="og:title" content="UNIVERSE — Alexey Dubnov" />
+	<meta property="og:description" content={pageDescription} />
+	<meta property="og:locale" content="ru_RU" />
+	<meta property="og:locale:alternate" content="en_US" />
+	<!-- Квадратная иконка до выбора обложки 1200×630 (бланк V7): тогда og:image и twitter:card меняются на summary_large_image. -->
+	<meta property="og:image" content={`${siteUrl}favicon.png`} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content="UNIVERSE — Alexey Dubnov" />
+	<meta name="twitter:description" content={pageDescription} />
 	{glyphFonts.fonts.map((font) => (
 		<link rel="preload" href={glyphFontUrls[`../assets/${font.file}`]} as="font" type="font/ttf" crossorigin="anonymous" />
 	))}
 </head>
 
 <body>
+<!-- Без JavaScript сцена не запускается: посетитель всё равно видит автора, суть работы и ссылки. -->
+<noscript>
+	<div style="position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:1.5rem;background:#020308;color:#e2ecf6;font-family:system-ui,sans-serif;text-align:center;line-height:1.5;">
+		<div style="max-width:36rem;">
+			<p style="margin:0 0 0.5rem;font-size:1.6rem;font-weight:700;letter-spacing:0.12em;">ALEXEY DUBNOV</p>
+			<p style="margin:0 0 1rem;">{pageDescription}</p>
+			<p style="margin:0 0 1rem;">Для живой сцены включите JavaScript. To see the live scene, enable JavaScript.</p>
+			<p style="margin:0;"><a href="https://github.com/DubnovAlexey" style="color:#7dd3fc;">GitHub: DubnovAlexey</a> · <a href="https://github.com/DubnovAlexey/universe" style="color:#7dd3fc;">Исходный код UNIVERSE</a></p>
+		</div>
+	</div>
+</noscript>
 <!-- РАЗДЕЛ 3. CANVAS, ОПТИЧЕСКИЕ СЛОИ И ВКЛЮЧЕНИЕ ЗВУКА -->
 <main class="universe-viewport">
 	<canvas

@@ -242,6 +242,8 @@ class UniverseStore {
     private lastTelemetryUpdateMs = 0;
     private watchdogWarned = false;
     private isCompactMobileLayout = false;
+    /** Выбор панелей посетителя отдельно для узкого (true) и широкого (false) режима: пересечение 920 px его не сбрасывает. */
+    private readonly panelChoiceByLayout = new Map<boolean, { metrics: boolean; topology: boolean; terminal: boolean }>();
 
     // --- НАЧАЛО ФУНКЦИИ constructor (UniverseStore) ---
     constructor() {
@@ -342,9 +344,10 @@ class UniverseStore {
     // --- КОНЕЦ ФУНКЦИИ constructor (UniverseStore) ---
 
     /**
-     * При пересечении границы мобильного вьюпорта (<= 920px) во время ресайза окна
-     * или поворота устройства автоматически сворачивает перекрывающиеся панели телеметрии,
-     * а при возврате на широкий десктопный экран (> 920px) раскрывает правую колонку.
+     * При пересечении границы мобильного вьюпорта (<= 920px) во время ресайза окна или поворота
+     * устройства запоминает выбор панелей в покидаемом режиме и восстанавливает выбор нового режима.
+     * Значения по умолчанию (узкий — панели свёрнуты, широкий — правая колонка раскрыта) действуют
+     * только при первом входе в режим: поворот телефона туда и обратно не сбрасывает выбор посетителя.
      */
     // --- НАЧАЛО ФУНКЦИИ syncViewportLayoutMode (UniverseStore) ---
     public syncViewportLayoutMode(viewportWidth: number): void {
@@ -352,16 +355,17 @@ class UniverseStore {
         const shouldBeCompact = viewportWidth <= 920;
         if (shouldBeCompact === this.isCompactMobileLayout) return;
 
+        const layers = this.state.layers;
+        this.panelChoiceByLayout.set(this.isCompactMobileLayout, {
+            metrics: layers.layer2_metricsHud,
+            topology: layers.layer3_topologyGraph,
+            terminal: layers.layer4_architectTerminal,
+        });
         this.isCompactMobileLayout = shouldBeCompact;
-        if (shouldBeCompact) {
-            this.state.layers.layer2_metricsHud = false;
-            this.state.layers.layer3_topologyGraph = false;
-            this.state.layers.layer4_architectTerminal = false;
-        } else {
-            this.state.layers.layer2_metricsHud = true;
-            this.state.layers.layer3_topologyGraph = true;
-            this.state.layers.layer4_architectTerminal = true;
-        }
+        const remembered = this.panelChoiceByLayout.get(shouldBeCompact);
+        layers.layer2_metricsHud = remembered ? remembered.metrics : !shouldBeCompact;
+        layers.layer3_topologyGraph = remembered ? remembered.topology : !shouldBeCompact;
+        layers.layer4_architectTerminal = remembered ? remembered.terminal : !shouldBeCompact;
         this.notifyListeners(true);
     }
     // --- КОНЕЦ ФУНКЦИИ syncViewportLayoutMode (UniverseStore) ---

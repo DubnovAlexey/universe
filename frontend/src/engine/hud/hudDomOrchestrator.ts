@@ -1,7 +1,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/hud/hudDomOrchestrator.ts
 // НАЗНАЧЕНИЕ: Канонические подписи, безопасная область доков и синхронизация HUD.
-// РАЗДЕЛЫ: 1. Подписи; 2. Размеры доков; 3. Состояние интерфейса.
+// РАЗДЕЛЫ: 1. Подписи и состояние переключателей; 2. Размеры доков; 3. Состояние интерфейса.
+// ФУНКЦИИ: setCanonicalElementText, setToggleState, bindHudDockLayout, updateDockInset, syncHudDomWithState.
 // ============================================================================
 
 import { type PhaseId, type UniverseState } from '../../store/universeState';
@@ -24,6 +25,19 @@ function setCanonicalElementText(el: HTMLElement | null, nextText: string): void
     calmGlyphHover.setCanonical(el, translated);
 }
 // --- КОНЕЦ ФУНКЦИИ setCanonicalElementText ---
+
+// --- НАЧАЛО ФУНКЦИИ setToggleState ---
+/**
+ * Подсветка переключателя и его состояние для экранного диктора (aria-pressed) идут вместе.
+ * Атрибут пишется только при изменении: синхронизация HUD вызывается часто.
+ */
+function setToggleState(el: HTMLElement | null, active: boolean): void {
+    if (!el) return;
+    el.classList.toggle('active-toggle', active);
+    const pressed = active ? 'true' : 'false';
+    if (el.getAttribute('aria-pressed') !== pressed) el.setAttribute('aria-pressed', pressed);
+}
+// --- КОНЕЦ ФУНКЦИИ setToggleState ---
 // КОНЕЦ РАЗДЕЛА 1. КАНОНИЧЕСКИЕ ПОДПИСИ
 
 // НАЧАЛО РАЗДЕЛА 2. БЕЗОПАСНЫЕ РАЗМЕРЫ ДОКОВ
@@ -39,12 +53,21 @@ export function bindHudDockLayout(): void {
     let lastInset = '';
     let lastTopInset = '';
     // --- НАЧАЛО ФУНКЦИИ updateDockInset ---
+    /**
+     * Скрытый док или плашка (display: none — режимы КИНО и трейлер) не имеют рамки: getBoundingClientRect
+     * даёт нули, и отступ снизу стал бы высотой всего окна — визитка уехала бы за верхний край. Тогда
+     * резервируется только безопасная зона устройства.
+     */
     const updateDockInset = (): void => {
-        const inset = `${Math.ceil(window.innerHeight - dock.getBoundingClientRect().top + 12)}px`;
+        const dockRect = dock.getBoundingClientRect();
+        const inset = dockRect.width > 0 || dockRect.height > 0
+            ? `${Math.ceil(window.innerHeight - dockRect.top + 12)}px` : 'env(safe-area-inset-bottom, 0px)';
         if (inset !== lastInset) root.style.setProperty('--hud-bottom-inset', inset);
         lastInset = inset;
         if (header) {
-            const topInset = `${Math.ceil(header.getBoundingClientRect().bottom + 12)}px`;
+            const headerRect = header.getBoundingClientRect();
+            const topInset = headerRect.width > 0 || headerRect.height > 0
+                ? `${Math.ceil(headerRect.bottom + 12)}px` : 'env(safe-area-inset-top, 0px)';
             if (topInset !== lastTopInset) root.style.setProperty('--hud-top-inset', topInset);
             lastTopInset = topInset;
         }
@@ -98,13 +121,17 @@ export function syncHudDomWithState(state: Readonly<UniverseState>): void {
     );
     phaseButtons.forEach((btn) => {
         const phaseId = btn.getAttribute('data-phase-id') as PhaseId | null;
-        btn.classList.toggle('active', phaseId === state.currentPhase);
+        const current = phaseId === state.currentPhase;
+        btn.classList.toggle('active', current);
+        // Текущий шаг 108-секундного сюжета для экранного диктора.
+        if (current && btn.getAttribute('aria-current') !== 'step') btn.setAttribute('aria-current', 'step');
+        else if (!current && btn.hasAttribute('aria-current')) btn.removeAttribute('aria-current');
     });
 
     const btnPause = document.getElementById('btn-toggle-pause');
     if (btnPause) {
         setCanonicalElementText(btnPause, state.isPaused ? '▶ RESUME' : '⏸ PAUSE');
-        btnPause.classList.toggle('active-toggle', state.isPaused);
+        setToggleState(btnPause, state.isPaused);
     }
 
     const btnAuto = document.getElementById('btn-toggle-autocycle');
@@ -113,7 +140,7 @@ export function syncHudDomWithState(state: Readonly<UniverseState>): void {
             btnAuto,
             state.autoCyclePhases ? '🔄 AUTO: ON' : '🔄 AUTO: OFF'
         );
-        btnAuto.classList.toggle('active-toggle', state.autoCyclePhases);
+        setToggleState(btnAuto, state.autoCyclePhases);
     }
 
     const btnAudio = document.getElementById('btn-toggle-audio');
@@ -132,34 +159,13 @@ export function syncHudDomWithState(state: Readonly<UniverseState>): void {
                     ? '🔊 AUDIO: ON'
                     : '🔊 AUDIO: WAIT';
         setCanonicalElementText(btnAudio, audioLabel);
-        btnAudio.classList.toggle(
-            'active-toggle',
-            state.audioEnabled && aStatus !== 'MUTED'
-        );
+        setToggleState(btnAudio, state.audioEnabled && aStatus !== 'MUTED');
     }
 
-    const btnMetrics = document.getElementById('btn-toggle-metrics');
-    if (btnMetrics) {
-        btnMetrics.classList.toggle('active-toggle', state.layers.layer2_metricsHud);
-    }
-
-    const btnTopology = document.getElementById('btn-toggle-topology');
-    if (btnTopology) {
-        btnTopology.classList.toggle('active-toggle', state.layers.layer3_topologyGraph);
-    }
-
-    const btnTerminal = document.getElementById('btn-toggle-terminal');
-    if (btnTerminal) {
-        btnTerminal.classList.toggle(
-            'active-toggle',
-            state.layers.layer4_architectTerminal
-        );
-    }
-
-    const btnXRay = document.getElementById('btn-toggle-xray');
-    if (btnXRay) {
-        btnXRay.classList.toggle('active-toggle', state.layers.layer5_truthXRayMode);
-    }
+    setToggleState(document.getElementById('btn-toggle-metrics'), state.layers.layer2_metricsHud);
+    setToggleState(document.getElementById('btn-toggle-topology'), state.layers.layer3_topologyGraph);
+    setToggleState(document.getElementById('btn-toggle-terminal'), state.layers.layer4_architectTerminal);
+    setToggleState(document.getElementById('btn-toggle-xray'), state.layers.layer5_truthXRayMode);
 }
 // --- КОНЕЦ ФУНКЦИИ syncHudDomWithState ---
 // КОНЕЦ РАЗДЕЛА 3. СИНХРОНИЗАЦИЯ СОСТОЯНИЯ HUD

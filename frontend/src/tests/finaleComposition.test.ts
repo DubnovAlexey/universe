@@ -15,7 +15,9 @@ import {
 import { CANONICAL_FINALE_LINES, CipherOdometerEngine, formatFinaleStaticLine, getFinaleLineAssemblyProgress } from '../bridge/cipherOdometerEngine';
 import { GLYPH_WAITING_SPACE, getOrderedGlyphState, invalidateGlyphFontCache, splitGlyphText } from '../core/glyphGrammar';
 import { bindFinaleQuantumCells, updateFinaleQuantumCells } from '../layers/Layer5_CipherFinale';
-import { drawFittedCipherGlyph } from '../engine/passes/singularityPass';
+import { drawFittedCipherGlyph, renderCipherOdometerStage } from '../engine/passes/singularityPass';
+import { resourceLedger } from '../core/resourceLedger';
+import type { UniverseState } from '../store/universeState';
 import { getOuroborosLayout } from '../core/ouroborosEpisode';
 import { fillOuroborosPoints, OUROBOROS_CAPACITY, OUROBOROS_STRIDE } from '../core/ouroborosModel';
 
@@ -177,6 +179,55 @@ export function runFinaleCompositionChecks(check: (passed: boolean, description:
     check(endlessBefore.length > 0 && endlessBefore.every((cell, index) => !cell.isLocked && !endlessAfter[index].isLocked &&
         cell.primaryChar === endlessAfter[index].primaryChar && cell.wheelPhaseFrac === endlessAfter[index].wheelPhaseFrac),
         'The endless Canvas quantum row never joins the static locking front or changes its wheel phase with assembly progress');
+
+    // Тени одометра: одно размытие слоя на кадр вместо shadowBlur на каждом знаке; без фильтров — прежний путь.
+    const odometerFrame = (withFilter: boolean): { mainBlurs: number; mainGlyphs: number; layerGlyphs: number;
+        filteredImages: string[]; layers: number } => {
+        const record = { mainBlurs: 0, mainGlyphs: 0, layerGlyphs: 0, filteredImages: [] as string[], layers: 0 };
+        const makeContext = (main: boolean, canvas: object): CanvasRenderingContext2D => {
+            const context: Record<string, unknown> = {
+                canvas, font: '', textAlign: 'start', textBaseline: 'alphabetic', fillStyle: '', globalAlpha: 1,
+                shadowColor: '', shadowOffsetY: 0,
+                set shadowBlur(value: number) { if (main && value > 0) record.mainBlurs++; }, get shadowBlur() { return 0; },
+                save(): void {}, restore(): void {}, translate(): void {}, scale(): void {}, fillRect(): void {}, clearRect(): void {},
+                setTransform(): void {}, getTransform: () => ({ a: 1.25, b: 0, c: 0, d: 1.25, e: 0, f: 0 }),
+                createRadialGradient: () => ({ addColorStop(): void {} }),
+                measureText: (): Partial<TextMetrics> => ({ width: 10, actualBoundingBoxLeft: 0, actualBoundingBoxRight: 10,
+                    actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 3 }),
+                fillText: (): void => { if (main) record.mainGlyphs++; else record.layerGlyphs++; },
+                drawImage(): void { record.filteredImages.push(String(context.filter ?? 'none')); },
+            };
+            if (withFilter) context.filter = 'none';
+            return context as unknown as CanvasRenderingContext2D;
+        };
+        const ownerDocument = { createElement: () => {
+            record.layers++;
+            const layer = { width: 0, height: 0, getContext: () => makeContext(false, layer) };
+            return layer;
+        } };
+        const ctx = makeContext(true, { width: 2400, height: 1350, ownerDocument });
+        renderCipherOdometerStage(ctx, 1920, 1080, { githubCardAssemblyProgress: 0.3, reducedMotion: false } as UniverseState);
+        return record;
+    };
+    const texturesBefore = resourceLedger.getCounters().textures;
+    const layered = odometerFrame(true);
+    const firstLayerGlyphs = layered.layerGlyphs;
+    const texturesDuring = resourceLedger.getCounters().textures;
+    // Второй кадр рисует тени в тот же слой: его знаки попадают в запись первого кадра.
+    const layeredAgain = odometerFrame(true);
+    // Кадр после передачи текста визитке: символов на Canvas нет, слой теней освобождается.
+    renderCipherOdometerStage({
+        canvas: { width: 2400, height: 1350 }, save(): void {}, restore(): void {}, fillRect(): void {},
+        createRadialGradient: () => ({ addColorStop(): void {} }), fillStyle: '', textAlign: 'start', textBaseline: 'alphabetic',
+    } as unknown as CanvasRenderingContext2D, 1920, 1080, { githubCardAssemblyProgress: 1, reducedMotion: false } as UniverseState);
+    const glyphShadows = odometerFrame(false);
+    check(layered.mainBlurs === 0 && layered.mainGlyphs > 0 && firstLayerGlyphs === layered.mainGlyphs &&
+        layered.filteredImages.length === 1 && layered.filteredImages[0] === 'blur(6px)' && layered.layers === 1 &&
+        layeredAgain.layers === 0 && layeredAgain.mainBlurs === 0 && layeredAgain.filteredImages.length === 1 &&
+        layered.layerGlyphs === firstLayerGlyphs + layeredAgain.mainGlyphs &&
+        texturesDuring === texturesBefore + 1 && resourceLedger.getCounters().textures === texturesBefore &&
+        glyphShadows.mainBlurs >= glyphShadows.mainGlyphs && glyphShadows.filteredImages.length === 0 && glyphShadows.layerGlyphs === 0,
+    'Odometer glyph shadows are drawn unblurred into one reused layer and blurred once per frame; the layer is released after the card handoff and canvases without filters keep per-glyph shadowBlur');
 
     const quantum = makeQuantumLine();
     const cells = bindFinaleQuantumCells(quantum.line);

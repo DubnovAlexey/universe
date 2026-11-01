@@ -74,6 +74,7 @@ import { runLocaleResolutionChecks } from './localeResolution.test';
 import { runNodeCalloutChecks } from './nodeCallout.test';
 import { runNexusGraphWorkerChecks } from './nexusGraphWorker.test';
 import { runPointerControlChecks } from './pointerControls.test';
+import { runHudDomChecks } from './hudDom.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -1025,6 +1026,7 @@ function runUniverseVerificationChecks(): VerificationSuiteResult {
     runNodeCalloutChecks(check);
     runNexusGraphWorkerChecks(check);
     runPointerControlChecks(check);
+    runHudDomChecks(check);
     runAudioCommandChecks(check);
     runGlyphFontBudgetChecks(check);
     setLocale('ru');

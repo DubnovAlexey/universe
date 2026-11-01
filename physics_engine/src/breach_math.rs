@@ -10,6 +10,9 @@
 
 // --- НАЧАЛО РАЗДЕЛА 1: ПОЛЕ ЛИНЗЫ С НАПРЯЖЕНИЕМ ---
 // --- НАЧАЛО ФУНКЦИИ compute_refraction_offset_with_stress ---
+// Восемь скаляров один к одному повторяют контракт паритета с TS (stressState.ts) и Python
+// (stress_solver.py); структура спрятала бы этот контракт, поэтому предупреждение отключено точечно.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_refraction_offset_with_stress(
     px: f32,
     py: f32,

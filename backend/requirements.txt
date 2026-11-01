@@ -3,6 +3,6 @@
 # НАЗНАЧЕНИЕ: Манифест зависимостей Python-ядра UNIVERSE v2.5
 # ПРИМЕЧАНИЕ: Весь код backend/core/*, backend/api/*, backend/utils/*,
 # backend/main.py и backend/test_backend_parity.py работает на 100% чистой
-# стандартной библиотеке Python 3.10+ (math, struct, http.server, unittest)
+# стандартной библиотеке Python 3.11+ (как в README и CI; math, struct, http.server, unittest)
 # и не требует установки сторонних пакетов из PyPI.
 # ============================================================================

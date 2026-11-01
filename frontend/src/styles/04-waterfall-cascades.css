@@ -267,6 +267,17 @@
     color: var(--text-muted);
 }
 
+/* Паритет Python подтверждается в CI — это успех, а не отказ; LOCAL и STANDBY — спокойное ожидание. */
+.mod-status.status-ci {
+    color: var(--accent-ice);
+    font-weight: 600;
+}
+
+.mod-status.status-local,
+.mod-status.status-standby {
+    color: var(--text-secondary);
+}
+
 .mod-perf {
     text-align: right;
     color: var(--text-secondary);

@@ -16,6 +16,7 @@ import {
     waterfallAnimator,
 } from './Layer2_Metrics';
 import {
+    getModuleDisplayStatus,
     integrationRegistry,
     type PolyglotModuleRecord,
 } from '../core/integrationRegistry';
@@ -69,10 +70,10 @@ export function renderLayer4TerminalView(state: Readonly<UniverseState>): Elemen
                             <span className="mod-id">{m.id}</span>
                             <span className="mod-lang">[{m.language}]</span>
                             <span
-                                className={`mod-status status-${m.status}`}
+                                className={`mod-status status-${getModuleDisplayStatus(m).tone}`}
                                 data-bind={`l4-status-${idx}`}
                             >
-                                {m.status.toUpperCase()}
+                                {getModuleDisplayStatus(m).label}
                             </span>
                             <span
                                 className="mod-perf"
@@ -187,9 +188,10 @@ export function mountLayer4Terminal(container: HTMLElement | null): () => void {
             const m = modules[i];
             const sEl = statusEls[i];
             if (sEl) {
-                const statusClass = `mod-status status-${m.status}`;
+                const display = getModuleDisplayStatus(m);
+                const statusClass = `mod-status status-${display.tone}`;
                 if (sEl.className !== statusClass) sEl.className = statusClass;
-                setHudText(sEl, m.status.toUpperCase());
+                setHudText(sEl, display.label);
             }
             const pEl = perfEls[i];
             if (pEl) {

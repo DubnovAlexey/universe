@@ -336,8 +336,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [1_068_174_224, 3_214_661_640, 1_067_112_895, 3_216_595_903]
         );
-        assert_eq!(scene.kuramoto_phase[1023], 2.828134775161743_f32);
-        assert_eq!(scene.natural_omega[1023], -1.000696063041687_f32);
+        assert_eq!(scene.kuramoto_phase[1023], 2.828_134_8_f32);
+        assert_eq!(scene.natural_omega[1023], -1.000_696_1_f32);
         let expected_pos = [
             64.99212646484375,
             1.0115394592285156,

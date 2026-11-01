@@ -337,10 +337,15 @@
         align-items: center;
     }
 
+    /* Перенос по слогам по языку <html lang>, не меньше трёх букв по краям переноса. overflow-wrap: anywhere
+       позволял браузеру отрезать последнюю букву («СИНГУЛЯРНОСТ / Ь»); break-word разрывает слово только
+       в крайнем случае, когда оно не помещается и с переносом. */
     .phase-name {
         max-width: 100%;
         white-space: normal;
-        overflow-wrap: anywhere;
+        overflow-wrap: break-word;
+        hyphens: auto;
+        hyphenate-limit-chars: 6 3 3;
         text-wrap: balance;
     }
 
@@ -370,7 +375,9 @@
         padding: 0.3rem 0.18rem;
         font-size: clamp(0.80rem, 2.1vw, 0.90rem);
         white-space: normal;
-        overflow-wrap: anywhere;
+        overflow-wrap: break-word;
+        hyphens: auto;
+        hyphenate-limit-chars: 6 3 3;
     }
 
     .audio-unlock-banner {
