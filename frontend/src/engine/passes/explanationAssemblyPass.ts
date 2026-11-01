@@ -1,32 +1,34 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/engine/passes/explanationAssemblyPass.ts
-// НАЗНАЧЕНИЕ: Пыль сцены, собирающая окно путеводителя, прямо в основном Canvas сцены:
-//             полёт со всех сторон, светящийся контур и мерцание плоскости, пока окно открыто,
-//             и рассыпание обратно в поле после закрытия.
+// НАЗНАЧЕНИЕ: Пыль сцены, вихрем собирающая окно путеводителя, прямо в основном Canvas сцены:
+//             светящиеся песчинки с хвостами, вспышки посадки, впитывание пыли в проявляющееся окно
+//             и рассыпание обратно в облако после закрытия.
 // РАЗДЕЛЫ: 1. Бюджет и цвета; 2. Проход общего кадра; 3. Рассыпание.
-// ФУНКЦИИ: renderExplanationAssemblyPass, grainAlpha, warmAlpha, veilAlpha, traceLandedContour, getActiveBounds,
+// ФУНКЦИИ: renderExplanationAssemblyPass, getVisualScale, grainAlpha, veilAlpha, drawGrains, drawStreaks,
 //          drawWarmSparks, renderExplanationScatter.
-// Не создаёт второй полноэкранный Canvas, shadowBlur и RAF: песчинки рисуются спрайтами
-// общего атласа свечения, хвосты и контур — одним путём каждый.
+// Не создаёт второй полноэкранный Canvas, shadowBlur и RAF: песчинки рисуются спрайтами общего атласа
+// свечения, хвосты — одним путём на два прохода (свечение и ядро).
 // ============================================================================
 
 import {
-    DUST_KIND_CONTOUR, DUST_KIND_TRIGGER, DUST_KIND_WARM, EXPLANATION_ASSEMBLY_MS, EXPLANATION_SCATTER_MS,
-    EXPLANATION_TEXT_DELAY_MS, explanationAssembly, getExplanationAssemblyFrame, sampleExplanationDustGrain, sampleExplanationDustScatter, smootherstep,
+    DUST_KIND_TRIGGER, DUST_KIND_WARM, EXPLANATION_FLIGHT_MS, EXPLANATION_SCATTER_MS, EXPLANATION_TEXT_DELAY_MS,
+    explanationAssembly, getExplanationAssemblyFrame, sampleExplanationDustGrain, sampleExplanationDustScatter, smootherstep,
     type ExplanationAssemblyState, type ExplanationDustField, type ExplanationGrainSample,
 } from '../../core/explanationAssembly';
 import { drawParticleGlow } from '../rendering/particleGlowAtlas';
 
 // НАЧАЛО РАЗДЕЛА 1. БЮДЖЕТ И ЦВЕТА
-/** Хвост рисуется у каждой третьей песчинки: длина — путь за последние 70 мс. */
-const STREAK_EVERY = 3;
-const STREAK_LAG_MS = 70;
-const IGNITION_MS = 600;
-/** Яркость севшей песчинки: контур светится, плоскость едва мерцает. */
-const REST_ALPHA_CONTOUR = 0.82;
-const REST_ALPHA_PLANE = 0.42;
-/** Рамка и вуаль гаснут за это время после закрытия, пока контурная пыль ещё на месте. */
-const FRAME_FADE_MS = 450;
+/** Хвост — путь песчинки за последние 110 мс: у окна он изогнут и показывает вращение вихря. */
+const STREAK_LAG_MS = 110;
+/** Хвост появляется, когда песчинка прошла эту долю пути: далёкое облако осыпается тихо, без штрихов. */
+const STREAK_FROM_PROGRESS = 0.3;
+const IGNITION_MS = 700;
+/** Вспышка посадки: длительность, размер и сила относительно песчинки. */
+const LANDING_FLASH_MS = 420;
+const LANDING_FLASH_SCALE = 3.6;
+const LANDING_FLASH_ALPHA = 0.75;
+/** Яркость севшей песчинки до впитывания в окно. */
+const REST_ALPHA = 0.7;
 const grain: ExplanationGrainSample = { x: 0, y: 0, progress: 0 };
 const previous: ExplanationGrainSample = { x: 0, y: 0, progress: 0 };
 // КОНЕЦ РАЗДЕЛА 1
@@ -35,7 +37,8 @@ const previous: ExplanationGrainSample = { x: 0, y: 0, progress: 0 };
 // НАЧАЛО ФУНКЦИИ renderExplanationAssemblyPass
 /**
  * Рисует текущий кадр сборки поверх сцены и возвращает true, если что-то нарисовано.
- * Без активной сборки стоит одной проверки: ни выделений памяти, ни вызовов Canvas.
+ * Без активной сборки стоит одной проверки: ни выделений памяти, ни вызовов Canvas. После проявления
+ * окна пыль уже впиталась в него: сборка ждёт закрытия, ничего не рисуя.
  */
 export function renderExplanationAssemblyPass(
     ctx: CanvasRenderingContext2D,
@@ -47,17 +50,14 @@ export function renderExplanationAssemblyPass(
     if (!active) return false;
     const field = state.ensureField(sources);
     if (!field) return false;
+    const scale = getVisualScale(ctx, active.spec.viewport);
     if (active.scatterStartMs !== null) {
-        return renderExplanationScatter(ctx, state, active.token, field, nowMs - active.scatterStartMs, active.closedAtMs);
+        return renderExplanationScatter(ctx, state, active.token, field, nowMs - active.scatterStartMs, active.closedAtMs, scale);
     }
     const elapsed = nowMs - active.spec.startMs;
-    if (!Number.isFinite(elapsed)) return false;
+    if (!Number.isFinite(elapsed) || elapsed >= EXPLANATION_TEXT_DELAY_MS) return false;
     const time = Math.max(0, elapsed);
-    const resting = time >= EXPLANATION_ASSEMBLY_MS;
-    // Плоскость из пыли гаснет, пока на её месте проявляется панель (непрозрачность фона 0,94): пока
-    // окно открыто, рисуется только рамка (песчинки 0..contourCount-1), плоскость снова видна при рассыпании.
-    const planeAlpha = 1 - getExplanationAssemblyFrame(time).nativeOpacity;
-    const visibleCount = time >= EXPLANATION_TEXT_DELAY_MS ? field.contourCount : field.count;
+    const dust = getExplanationAssemblyFrame(time).dustOpacity;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -66,62 +66,22 @@ export function renderExplanationAssemblyPass(
     // 1. Вспышка у нажатой кнопки — мгновенный отклик на нажатие.
     if (field.trigger && time < IGNITION_MS) {
         const k = smootherstep(time / IGNITION_MS);
-        ctx.globalAlpha = (1 - k) * 0.7;
+        ctx.globalAlpha = (1 - k) * 0.9;
         ctx.strokeStyle = '#8fe0ff';
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1.8 * scale;
         ctx.beginPath();
-        ctx.arc(field.trigger.x, field.trigger.y, 10 + k * 36, 0, Math.PI * 2);
+        ctx.arc(field.trigger.x, field.trigger.y, (14 + k * 64) * scale, 0, Math.PI * 2);
         ctx.stroke();
     }
 
-    // 2. Хвосты летящих песчинок: один путь, один stroke; севшая пыль хвостов не имеет.
-    if (!resting) {
-        ctx.globalAlpha = 0.34;
-        ctx.strokeStyle = '#9edcff';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        let streaks = 0;
-        for (let index = 0; index < field.count; index += STREAK_EVERY) {
-            sampleExplanationDustGrain(field, index, time, grain);
-            if (grain.progress <= 0.04 || grain.progress >= 0.97) continue;
-            sampleExplanationDustGrain(field, index, time - STREAK_LAG_MS, previous);
-            ctx.moveTo(previous.x, previous.y);
-            ctx.lineTo(grain.x, grain.y);
-            streaks++;
-        }
-        if (streaks) ctx.stroke();
-    }
-
-    // 3. Песчинки: спрайты атласа; в полёте ярче, севшие плавно переходят в спокойное мерцание.
-    let fallback = false;
-    for (let index = 0; index < visibleCount; index++) {
-        const kind = field.kind[index];
-        const contour = (kind & DUST_KIND_CONTOUR) !== 0;
-        sampleExplanationDustGrain(field, index, time, grain);
-        const alpha = grainAlpha(field, index, time, grain.progress) * (contour ? 1 : planeAlpha);
-        if (alpha <= 0.004) continue;
-        const radius = field.radius[index] * (contour ? 2.7 : 2.4);
-        const sprite = (kind & (DUST_KIND_TRIGGER | DUST_KIND_CONTOUR)) !== 0 ? 'halo-ice' : 'halo-blue';
-        if (!fallback && !drawParticleGlow(ctx, sprite, grain.x, grain.y, Math.max(1, radius), alpha)) fallback = true;
-        if (contour && !fallback) drawParticleGlow(ctx, 'halo-ice', grain.x, grain.y, Math.max(1, field.radius[index]), alpha);
-    }
-    if (fallback) {
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = '#bfe9ff';
-        ctx.beginPath();
-        for (let index = 0; index < visibleCount; index++) {
-            sampleExplanationDustGrain(field, index, time, grain);
-            const size = field.radius[index] * 1.4;
-            ctx.rect(grain.x - size / 2, grain.y - size / 2, size, size);
-        }
-        ctx.fill();
-    }
-
-    // 4. Тёплые искры: те же координаты, отдельный цвет, один fill; севшие тоже мерцают.
-    drawWarmSparks(ctx, field, visibleCount, (index) => sampleExplanationDustGrain(field, index, time, grain), warmAlpha(time));
+    // 2. Хвосты летящих песчинок; 3. сами песчинки и вспышки посадки; 4. тёплые искры.
+    drawStreaks(ctx, field, (index, ms, out) => sampleExplanationDustGrain(field, index, ms, out), time, dust, scale);
+    drawGrains(ctx, field, (index, out) => sampleExplanationDustGrain(field, index, time, out),
+        (index, progress) => grainAlpha(field, index, time, progress) * dust, scale, time);
+    drawWarmSparks(ctx, field, (index) => sampleExplanationDustGrain(field, index, time, grain), 0.9 * dust, scale);
 
     // 5. Плоскость окна «конденсируется» под садящейся пылью, пока DOM-окно ещё не проявилось.
-    const bounds = getActiveBounds(state);
+    const bounds = state.getActive()?.spec.to;
     const veil = veilAlpha(time);
     if (bounds && veil > 0.004) {
         ctx.globalAlpha = veil;
@@ -129,85 +89,126 @@ export function renderExplanationAssemblyPass(
         ctx.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
     }
 
-    // 6. Контур «дорастает» по мере посадки и остаётся тонкой светящейся рамкой окна.
-    if (traceLandedContour(ctx, field, time)) {
-        ctx.strokeStyle = '#74d8ff';
-        ctx.globalAlpha = resting ? 0.12 : 0.16;
-        ctx.lineWidth = 3.2;
-        ctx.stroke();
-        ctx.globalAlpha = resting ? 0.4 : 0.55;
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-    }
-
     ctx.restore();
     return true;
 }
 // КОНЕЦ ФУНКЦИИ renderExplanationAssemblyPass
 
+// НАЧАЛО ФУНКЦИИ getVisualScale
+/**
+ * Размер песчинок и хвостов растёт с экраном и не тает при масштабе страницы меньше 100%:
+ * при DPR 0,83 (масштаб 67% на ноутбуке) CSS-пиксель меньше физического, и пыль иначе мельчает.
+ */
+function getVisualScale(ctx: CanvasRenderingContext2D, viewport: { readonly width: number; readonly height: number }): number {
+    const screen = Math.max(0.9, Math.min(1.6, Math.min(viewport.width, viewport.height) / 900));
+    const pixelRatio = typeof ctx.getTransform === 'function' ? ctx.getTransform().a : 1;
+    const zoom = Number.isFinite(pixelRatio) && pixelRatio > 0 ? Math.max(1, Math.min(1.35, 1 / pixelRatio)) : 1;
+    return screen * zoom;
+}
+// КОНЕЦ ФУНКЦИИ getVisualScale
+
 // НАЧАЛО ФУНКЦИИ grainAlpha
-/** Яркость песчинки в момент сборки time: проявление перед стартом, полёт и спокойное мерцание севшей. */
+/**
+ * Яркость песчинки в момент сборки time: бледная у облака, разгорается по мере подлёта к окну,
+ * спокойно мерцает севшей. Внимание собирается у окна, а не по всему экрану.
+ */
 function grainAlpha(field: ExplanationDustField, index: number, time: number, progress: number): number {
-    const contour = (field.kind[index] & DUST_KIND_CONTOUR) !== 0;
-    const appear = smootherstep((time - field.delayMs[index] + 150) / 300);
-    const flightAlpha = (contour ? 1 : 0.72) * appear * (0.7 + 0.3 * Math.sin(Math.PI * progress));
-    const twinkle = 0.72 + 0.28 * Math.sin(time * 0.0021 + index * 2.39);
-    const restAlpha = (contour ? REST_ALPHA_CONTOUR : REST_ALPHA_PLANE) * twinkle;
-    return flightAlpha + (restAlpha - flightAlpha) * smootherstep((progress - 0.9) / 0.1);
+    const appear = smootherstep((time - field.delayMs[index] + 200) / 400);
+    const flight = 0.3 + 0.65 * smootherstep(progress / 0.85);
+    const twinkle = 0.75 + 0.25 * Math.sin(time * 0.0021 + index * 2.39);
+    const settle = smootherstep((progress - 0.92) / 0.08);
+    return appear * (flight + (REST_ALPHA * twinkle - flight) * settle);
 }
 // КОНЕЦ ФУНКЦИИ grainAlpha
 
-// НАЧАЛО ФУНКЦИИ warmAlpha
-function warmAlpha(time: number): number {
-    return time >= EXPLANATION_ASSEMBLY_MS ? 0.55 + 0.25 * Math.sin(time * 0.0017) : 0.85;
-}
-// КОНЕЦ ФУНКЦИИ warmAlpha
-
 // НАЧАЛО ФУНКЦИИ veilAlpha
 function veilAlpha(time: number): number {
-    return smootherstep((time - 2300) / 700) * (1 - getExplanationAssemblyFrame(time).nativeOpacity) * 0.07;
+    return smootherstep((time - 2300) / 700) * (1 - getExplanationAssemblyFrame(time).nativeOpacity) * 0.08;
 }
 // КОНЕЦ ФУНКЦИИ veilAlpha
 
-// НАЧАЛО ФУНКЦИИ traceLandedContour
-/**
- * Строит путь рамки: отрезок есть только между двумя соседями по периметру, уже севшими к
- * моменту time. Возвращает число отрезков; stroke делает вызывающий.
- */
-function traceLandedContour(ctx: CanvasRenderingContext2D, field: ExplanationDustField, time: number): number {
-    if (field.contourCount <= 2) return 0;
+// НАЧАЛО ФУНКЦИИ drawStreaks
+/** Хвосты песчинок, подлетающих к окну, одним путём: мягкое свечение и тонкое ядро. */
+function drawStreaks(ctx: CanvasRenderingContext2D, field: ExplanationDustField,
+    sample: (index: number, ms: number, out: ExplanationGrainSample) => ExplanationGrainSample,
+    time: number, alpha: number, scale: number, minProgress = STREAK_FROM_PROGRESS, maxProgress = 0.995): void {
+    if (alpha <= 0.004) return;
     ctx.beginPath();
-    let segments = 0;
-    let previousLanded = false;
-    for (let step = 0; step <= field.contourCount; step++) {
-        const index = step % field.contourCount;
-        const landed = sampleExplanationDustGrain(field, index, time, grain).progress >= 0.985;
-        if (landed && previousLanded) { ctx.lineTo(field.targetX[index], field.targetY[index]); segments++; }
-        else if (landed) ctx.moveTo(field.targetX[index], field.targetY[index]);
-        previousLanded = landed;
+    let streaks = 0;
+    for (let index = 0; index < field.count; index++) {
+        sample(index, time, grain);
+        if (grain.progress <= minProgress || grain.progress >= maxProgress) continue;
+        sample(index, time - STREAK_LAG_MS, previous);
+        ctx.moveTo(previous.x, previous.y);
+        ctx.lineTo(grain.x, grain.y);
+        streaks++;
     }
-    return segments;
+    if (!streaks) return;
+    ctx.strokeStyle = '#9edcff';
+    ctx.globalAlpha = 0.07 * alpha;
+    ctx.lineWidth = 2.4 * scale;
+    ctx.stroke();
+    ctx.globalAlpha = 0.3 * alpha;
+    ctx.lineWidth = 0.9 * scale;
+    ctx.stroke();
 }
-// КОНЕЦ ФУНКЦИИ traceLandedContour
+// КОНЕЦ ФУНКЦИИ drawStreaks
 
-// НАЧАЛО ФУНКЦИИ getActiveBounds
-function getActiveBounds(state: ExplanationAssemblyState): { left: number; top: number; width: number; height: number } | null {
-    return state.getActive()?.spec.to ?? null;
+// НАЧАЛО ФУНКЦИИ drawGrains
+/**
+ * Песчинки: ореол у каждой и яркое ядро у каждой второй; в момент посадки — короткая вспышка.
+ * Без атласа свечения — запасной путь: квадратики одним fill.
+ */
+function drawGrains(ctx: CanvasRenderingContext2D, field: ExplanationDustField,
+    sample: (index: number, out: ExplanationGrainSample) => ExplanationGrainSample,
+    alphaOf: (index: number, progress: number) => number, scale: number, time: number | null): void {
+    let fallback = false;
+    for (let index = 0; index < field.count; index++) {
+        sample(index, grain);
+        const alpha = alphaOf(index, grain.progress);
+        if (alpha <= 0.004) continue;
+        const size = field.radius[index] * scale;
+        const frame = index < field.frameCount;
+        const sprite = frame || (field.kind[index] & DUST_KIND_TRIGGER) !== 0 ? 'halo-ice' : 'halo-blue';
+        if (!fallback && !drawParticleGlow(ctx, sprite, grain.x, grain.y, Math.max(1, size * 3), alpha)) fallback = true;
+        if (fallback) continue;
+        // Ядро у каждой песчинки рамки (рамка окна читается при сборке) и у каждой третьей на поверхности.
+        if (frame || index % 3 === 0) drawParticleGlow(ctx, 'halo-ice', grain.x, grain.y, Math.max(1, size * 1.1), alpha);
+        if (time === null) continue;
+        // Посадка: песчинка коротко вспыхивает в своей точке окна — рамка и поверхность зажигаются искрами.
+        const sinceLanding = time - (field.delayMs[index] + EXPLANATION_FLIGHT_MS);
+        if (sinceLanding > -120 && sinceLanding < LANDING_FLASH_MS) {
+            const flash = Math.sin(Math.PI * (sinceLanding + 120) / (LANDING_FLASH_MS + 120));
+            drawParticleGlow(ctx, 'halo-ice', field.targetX[index], field.targetY[index],
+                Math.max(1, size * LANDING_FLASH_SCALE), alpha * flash * LANDING_FLASH_ALPHA);
+        }
+    }
+    if (!fallback) return;
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#bfe9ff';
+    ctx.beginPath();
+    for (let index = 0; index < field.count; index++) {
+        sample(index, grain);
+        if (alphaOf(index, grain.progress) <= 0.004) continue;
+        const size = field.radius[index] * 1.6 * scale;
+        ctx.rect(grain.x - size / 2, grain.y - size / 2, size, size);
+    }
+    ctx.fill();
 }
-// КОНЕЦ ФУНКЦИИ getActiveBounds
+// КОНЕЦ ФУНКЦИИ drawGrains
 
 // НАЧАЛО ФУНКЦИИ drawWarmSparks
-/** Тёплые искры среди первых visibleCount песчинок одним fill. */
-function drawWarmSparks(ctx: CanvasRenderingContext2D, field: ExplanationDustField, visibleCount: number,
-    sample: (index: number) => ExplanationGrainSample, alpha: number): void {
+/** Тёплые искры (каждая седьмая песчинка) одним fill: золото среди холодной пыли. */
+function drawWarmSparks(ctx: CanvasRenderingContext2D, field: ExplanationDustField,
+    sample: (index: number) => ExplanationGrainSample, alpha: number, scale: number): void {
     if (alpha <= 0.004) return;
     ctx.globalAlpha = alpha;
     ctx.fillStyle = '#ffdca1';
     ctx.beginPath();
-    for (let index = 4; index < visibleCount; index += 9) {
+    for (let index = 3; index < field.count; index += 7) {
         if ((field.kind[index] & DUST_KIND_WARM) === 0) continue;
         const point = sample(index);
-        const size = field.radius[index] * 1.15;
+        const size = field.radius[index] * 1.5 * scale;
         ctx.rect(point.x - size / 2, point.y - size / 2, size, size);
     }
     ctx.fill();
@@ -218,85 +219,40 @@ function drawWarmSparks(ctx: CanvasRenderingContext2D, field: ExplanationDustFie
 // НАЧАЛО РАЗДЕЛА 3. РАССЫПАНИЕ ПОСЛЕ ЗАКРЫТИЯ
 // НАЧАЛО ФУНКЦИИ renderExplanationScatter
 /**
- * Окно закрыто: песчинки возвращаются туда, откуда пришли, и растворяются в поле пыли.
- * Первый кадр рассыпания совпадает с последним кадром сборки (closedAtMs) — даже если окно
- * закрыли посреди полёта. По окончании сборка освобождает свой буфер; пыль сцены никуда не исчезала.
+ * Окно закрыто: панель рассыпается на пыль, и песчинки раскручиваются по своим спиралям обратно
+ * к частицам облака, гаснут к концу пути. Первый кадр рассыпания продолжает кадр сборки (closedAtMs),
+ * даже если окно закрыли посреди полёта. По окончании сборка освобождает свой буфер.
  */
 function renderExplanationScatter(ctx: CanvasRenderingContext2D, state: ExplanationAssemblyState, token: number,
-    field: ExplanationDustField, scatterElapsedMs: number, closedAtMs: number): boolean {
+    field: ExplanationDustField, scatterElapsedMs: number, closedAtMs: number, scale: number): boolean {
     if (!Number.isFinite(scatterElapsedMs) || scatterElapsedMs >= EXPLANATION_SCATTER_MS) {
         state.end(token);
         return false;
     }
     const time = Math.max(0, scatterElapsedMs);
     const fade = 1 - smootherstep(time / EXPLANATION_SCATTER_MS);
+    // Окно распадается вспышкой: первые 350 мс песчинки крупнее и ярче, затем раскручиваются в облако.
+    const burst = 1 - smootherstep(time / 350);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
-
-    // Хвосты разлетающейся пыли.
-    ctx.globalAlpha = 0.28;
-    ctx.strokeStyle = '#9edcff';
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    let streaks = 0;
-    for (let index = 0; index < field.count; index += STREAK_EVERY) {
-        sampleExplanationDustScatter(field, index, time, closedAtMs, grain);
-        if (grain.progress <= 0.04 || grain.progress >= 0.9) continue;
-        sampleExplanationDustScatter(field, index, time - STREAK_LAG_MS, closedAtMs, previous);
-        ctx.moveTo(previous.x, previous.y);
-        ctx.lineTo(grain.x, grain.y);
-        streaks++;
-    }
-    if (streaks) ctx.stroke();
-
-    // Песчинки начинают с той яркости, что была при закрытии, и гаснут к концу пути, сливаясь с полем.
-    let fallback = false;
-    for (let index = 0; index < field.count; index++) {
-        const closedAlpha = grainAlpha(field, index, closedAtMs, sampleExplanationDustGrain(field, index, closedAtMs, previous).progress);
-        sampleExplanationDustScatter(field, index, time, closedAtMs, grain);
-        const alpha = closedAlpha * (1 - smootherstep((grain.progress - 0.55) / 0.45));
-        if (alpha <= 0.004) continue;
-        const contour = index < field.contourCount;
-        const radius = field.radius[index] * (contour ? 2.7 : 2.4);
-        if (!fallback && !drawParticleGlow(ctx, contour ? 'halo-ice' : 'halo-blue', grain.x, grain.y, Math.max(1, radius), alpha)) {
-            fallback = true;
-        }
-    }
-    if (fallback) {
-        ctx.globalAlpha = 0.45 * fade;
-        ctx.fillStyle = '#bfe9ff';
-        ctx.beginPath();
-        for (let index = 0; index < field.count; index++) {
-            sampleExplanationDustScatter(field, index, time, closedAtMs, grain);
-            const size = field.radius[index] * 1.4;
-            ctx.rect(grain.x - size / 2, grain.y - size / 2, size, size);
-        }
-        ctx.fill();
-    }
-    drawWarmSparks(ctx, field, field.count, (index) => sampleExplanationDustScatter(field, index, time, closedAtMs, grain),
-        warmAlpha(closedAtMs) * fade);
-
-    // Рамка и вуаль гаснут первыми, пока контурная пыль ещё на месте.
-    const frameAlpha = 1 - smootherstep(time / FRAME_FADE_MS);
-    const bounds = getActiveBounds(state);
-    const veil = veilAlpha(closedAtMs) * frameAlpha;
+    drawStreaks(ctx, field, (index, ms, out) => sampleExplanationDustScatter(field, index, ms, closedAtMs, out),
+        time, fade, scale, 0.02, 0.9);
+    // Песчинка, которая уже стала окном, вспыхивает в полную силу полёта; не успевшая взлететь — со своей яркостью.
+    drawGrains(ctx, field, (index, out) => sampleExplanationDustScatter(field, index, time, closedAtMs, out),
+        (index, progress) => {
+            const closedProgress = sampleExplanationDustGrain(field, index, closedAtMs, previous).progress;
+            const start = closedProgress > 0 ? 0.95 : grainAlpha(field, index, closedAtMs, closedProgress);
+            return Math.min(1, start * (1 + 0.4 * burst)) * (1 - smootherstep((progress - 0.55) / 0.45));
+        }, scale * (1 + 0.6 * burst), null);
+    drawWarmSparks(ctx, field, (index) => sampleExplanationDustScatter(field, index, time, closedAtMs, grain), 0.7 * fade, scale);
+    const bounds = state.getActive()?.spec.to;
+    const veil = veilAlpha(closedAtMs) * (1 - smootherstep(time / 450));
     if (bounds && veil > 0.004) {
         ctx.globalAlpha = veil;
         ctx.fillStyle = '#4a97c1';
         ctx.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
     }
-    if (frameAlpha > 0.004 && traceLandedContour(ctx, field, closedAtMs)) {
-        const settled = closedAtMs >= EXPLANATION_ASSEMBLY_MS;
-        ctx.strokeStyle = '#74d8ff';
-        ctx.globalAlpha = (settled ? 0.12 : 0.16) * frameAlpha;
-        ctx.lineWidth = 3.2;
-        ctx.stroke();
-        ctx.globalAlpha = (settled ? 0.4 : 0.55) * frameAlpha;
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-    }
-
     ctx.restore();
     return true;
 }

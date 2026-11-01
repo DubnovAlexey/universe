@@ -3,8 +3,8 @@
 // НАЗНАЧЕНИЕ: Проявление окна путеводителя на месте, где его собирает пыль сцены, и судьба
 //             этой пыли: она остаётся частью открытого окна и рассыпается при закрытии.
 // РАЗДЕЛЫ: 1. Проверка среды и геометрии; 2. Поза окна на общей шкале; 3. Освобождение.
-// ФУНКЦИИ: playExplanationTrail, applyPose, finishPose, release, handleResize, handleVisibilityChange,
-//          handleClose, frame.
+// ФУНКЦИИ: sampleDialogOutline, playExplanationTrail, applyPose, finishPose, release, handleResize,
+//          handleVisibilityChange, handleClose, frame.
 // Песчинки рисует основной renderer (engine/passes/explanationAssemblyPass.ts) по общему
 // состоянию core/explanationAssembly.ts. Здесь только окно: прозрачность и малый поворот,
 // записанные прямо в style (не через наследуемые CSS-переменные всего поддерева).
@@ -12,7 +12,7 @@
 
 import {
     EXPLANATION_DUST_COUNT, EXPLANATION_DUST_COUNT_COMPACT, EXPLANATION_TRAIL_DURATION_MS,
-    explanationAssembly, getExplanationAssemblyFrame, type ExplanationAssemblyState,
+    explanationAssembly, getExplanationAssemblyFrame, type ExplanationAssemblyState, type ExplanationPoint,
 } from '../core/explanationAssembly';
 import { resourceLedger } from '../core/resourceLedger';
 import { getVisualSignals } from '../core/visualSignals';
@@ -22,6 +22,32 @@ export interface ExplanationTrailOptions {
     readonly clock?: () => number;
 }
 const POSE_PROPERTIES = ['opacity', 'transform', 'transform-origin'] as const;
+/** Сколько точек снимается с волнистой рамки панели. */
+const OUTLINE_SAMPLES = 160;
+
+// НАЧАЛО ФУНКЦИИ sampleDialogOutline
+/**
+ * Точки видимой волнистой рамки панели (SVG-контур) в координатах окна браузера: на них садится
+ * пыльная рамка, и при проявлении окна она совпадает с настоящей. null — контура ещё нет.
+ */
+function sampleDialogOutline(dialog: HTMLDialogElement): ExplanationPoint[] | null {
+    const path = dialog.querySelector?.('.waterfall-contour-svg path') as SVGPathElement | null;
+    if (!path || typeof path.getTotalLength !== 'function' || typeof path.getScreenCTM !== 'function') return null;
+    try {
+        const length = path.getTotalLength();
+        const matrix = path.getScreenCTM();
+        if (!matrix || !Number.isFinite(length) || length <= 0) return null;
+        const points: ExplanationPoint[] = [];
+        for (let index = 0; index < OUTLINE_SAMPLES; index++) {
+            const point = path.getPointAtLength(length * index / OUTLINE_SAMPLES);
+            points.push({ x: matrix.a * point.x + matrix.c * point.y + matrix.e, y: matrix.b * point.x + matrix.d * point.y + matrix.f });
+        }
+        return points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) ? points : null;
+    } catch {
+        return null;
+    }
+}
+// КОНЕЦ ФУНКЦИИ sampleDialogOutline
 
 // НАЧАЛО ФУНКЦИИ playExplanationTrail
 /**
@@ -57,6 +83,7 @@ export function playExplanationTrail(trigger: HTMLElement | null, dialog: HTMLDi
         to: { left: to.left, top: to.top, width: to.width, height: to.height },
         viewport: { width, height }, startMs,
         count: width <= 920 ? EXPLANATION_DUST_COUNT_COMPACT : EXPLANATION_DUST_COUNT,
+        outline: sampleDialogOutline(dialog),
     });
     // КОНЕЦ РАЗДЕЛА 1
 
