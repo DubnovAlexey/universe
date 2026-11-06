@@ -9,6 +9,8 @@
 //      computePhaseArchetypePoint, computeVoidChirpTarget, update, updateTopologyAndEdgeCurves,
 //      applyComputedGraph, updateSynapticPulsesByArcLut, spawnPulseOnEdge, triggerCascadeFromNode, samplePulsePoint, getParticles,
 //      getEdges, getPulses.
+// Граф со старта/после respawn строится в Worker; до ответа физика и частицы продолжают шаг.
+// При недоступном Worker тот же граф вычисляется синхронно без изменения алгоритма.
 // ============================================================================
 
 
@@ -212,6 +214,9 @@ export class VoidPhaseSimulation {
         this.particles = [];
         this.edges = [];
         this.pulses = [];
+        // Новое поколение пока не имеет графа: метрики прошлого набора частиц ему не принадлежат.
+        nexusGraphEngine.adoptTelemetry({ trunkCount: 0, bridgeCount: 0, dendriteCount: 0, avgDegree: 0,
+            clusteringCoeff: 0, diameterHops: 0, avgPathLength: 0, computeTimeMs: 0, computeSource: '[ts/graph_engine]' });
         this.afterglowMap.clear();
         this.tickCounter = 0;
         this.lastTopologyBuildSimSec = -10;
@@ -649,11 +654,9 @@ export class VoidPhaseSimulation {
                 });
             }
 
-            // Первая сборка после старта/рестарта — синхронная: граф виден с первого кадра.
-            // Дальше O(n²)-пересборка уходит в Web Worker; 'busy' — прошлый запрос ещё считается.
-            const status = this.edges.length === 0
-                ? 'unavailable'
-                : nexusGraphWorkerClient.request(this.topologyGeneration, graphInputs, maxConnectDist, seed, simTimeSec);
+            // Включая старт/рестарт, O(n²)-сборка уходит в Worker; до ответа частицы видны без рёбер.
+            // 'busy' — прошлый запрос ещё считается; только 'unavailable' выбирает синхронный путь.
+            const status = nexusGraphWorkerClient.request(this.topologyGeneration, graphInputs, maxConnectDist, seed, simTimeSec);
             if (status !== 'busy') this.lastTopologyBuildSimSec = simTimeSec;
             if (status === 'unavailable') {
                 const { edges: computedEdges, degreeByIndex } =

@@ -1,13 +1,14 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/glyphFontBudget.test.ts
 // НАЗНАЧЕНИЕ: Ограничить проверки шрифта и повторную сегментацию неизменного канона.
-// РАЗДЕЛЫ: 1. Растровая модель шрифта; 2. Бюджет, кеш и смена поколения; 3. Графемы канона.
+// РАЗДЕЛЫ: 1. Растровая модель шрифта; 2. Бюджет, кеш, смена поколения и bounded prewarm;
+//          3. Графемы канона.
 // ФУНКЦИИ: runGlyphFontBudgetChecks.
 // ============================================================================
 import {
     CANONICAL_GLYPH_CACHE_LIMIT, CANONICAL_GLYPH_CACHE_MAX_LENGTH,
     GLYPH_FAMILIES, getCanonicalGlyphText, getGlyphFontEpoch, getGlyphProfile, getRenderableGlyphPool,
-    invalidateGlyphFontCache, splitGlyphText,
+    invalidateGlyphFontCache, prewarmGlyphPool, splitGlyphText,
 } from '../core/glyphGrammar';
 import { publishVisualSignals } from '../core/visualSignals';
 import { universeStore } from '../store/universeState';
@@ -101,6 +102,83 @@ export function runGlyphFontBudgetChecks(check: (passed: boolean, description: s
         maximumReads = Math.max(maximumReads, reads.length - frameStart);
         check(maximumReads <= 4 && phases.every(phase => JSON.stringify(getRenderableGlyphPool(phase)) === JSON.stringify(getGlyphProfile(phase).pool)),
         'New font generations recheck formerly missing glyphs and converge to full pools without any frame exceeding4 readbacks');
+
+        // Прогрев использует настоящий rasterize/getImageData, а не счётчик вызовов экспортируемого wrapper.
+        reads.length = 0; frameStart = 0; maximumReads = 0;
+        invalidateGlyphFontCache(); nextFrame();
+        let warmupLimit = true;
+        for (let frame = 0; frame < 3; frame++) {
+            if (frame) nextFrame();
+            const before = reads.length;
+            for (let repeat = 0; repeat < 20; repeat++) prewarmGlyphPool('05_SINGULARITY');
+            warmupLimit &&= reads.length - before === 1;
+        }
+        check(warmupLimit && reads.length === 3 && reads.every(glyph => references.has(glyph)),
+        'Cold prewarm spends exactly one shared readback per frame, completes its three references over three frames and never classifies a glyph before all references exist');
+
+        const firstGlyphRead = reads.length;
+        for (let frame = 0; frame < getGlyphProfile('05_SINGULARITY').pool.length + 2; frame++) {
+            nextFrame();
+            const before = reads.length;
+            for (let repeat = 0; repeat < 20; repeat++) prewarmGlyphPool('05_SINGULARITY');
+            warmupLimit &&= reads.length - before <= 1;
+        }
+        const beforeCompleted = reads.length;
+        const prewarmed = getRenderableGlyphPool('05_SINGULARITY');
+        check(warmupLimit && reads[firstGlyphRead] === getGlyphProfile('05_SINGULARITY').pool[0] &&
+            reads.length === beforeCompleted && Object.isFrozen(prewarmed) &&
+            JSON.stringify(prewarmed) === JSON.stringify(getGlyphProfile('05_SINGULARITY').pool),
+        'One-read prewarm eventually completes every supported singularity glyph in the original order without starving the scan or leaving cold work for its first consumer');
+
+        nextFrame();
+        const beforeReuse = reads.length;
+        for (let repeat = 0; repeat < 20; repeat++) prewarmGlyphPool('05_SINGULARITY');
+        const completeCostsNothing = reads.length === beforeReuse && getRenderableGlyphPool('05_SINGULARITY') === prewarmed;
+        // GENESIS содержит ещё не проверенные alchemical glyphs: им доступны все4 неиспользованных чтения.
+        getRenderableGlyphPool('02_GENESIS');
+        check(completeCostsNothing && reads.length - beforeReuse === 4 && getRenderableGlyphPool('05_SINGULARITY') === prewarmed,
+        'A complete prewarmed pool reuses its immutable snapshot with zero reads and returns unused allowance to a different active consumer');
+
+        invalidateGlyphFontCache(); nextFrame();
+        const combinedStart = reads.length;
+        for (let repeat = 0; repeat < 20; repeat++) prewarmGlyphPool('05_SINGULARITY');
+        const warmupReads = reads.length - combinedStart;
+        getRenderableGlyphPool('02_GENESIS');
+        for (let repeat = 0; repeat < 20; repeat++) {
+            prewarmGlyphPool('05_SINGULARITY'); getRenderableGlyphPool('05_SINGULARITY');
+        }
+        check(warmupReads === 1 && reads.length - combinedStart === 4,
+        'Prewarm and ordinary consumers share one four-read frame quota: warming uses one, the consumer can finish reference bootstrap and use the remaining three');
+
+        const invalidatedAt = reads.length;
+        invalidateGlyphFontCache();
+        for (let repeat = 0; repeat < 20; repeat++) prewarmGlyphPool('05_SINGULARITY');
+        const invalidationDoesNotRefill = reads.length === invalidatedAt;
+        for (let frame = 0; frame < 3; frame++) {
+            nextFrame(); prewarmGlyphPool('05_SINGULARITY');
+        }
+        check(invalidationDoesNotRefill && reads.length - invalidatedAt === 3 &&
+            reads.slice(invalidatedAt).every(glyph => references.has(glyph)),
+        'Font invalidation discards partial references without refilling either same-frame budget, then prewarm rebuilds fresh references over the following three frames');
+
+        let unavailableFallback = true;
+        for (const throws of [false, true]) {
+            let unavailableContexts = 0;
+            Object.defineProperty(globalThis, 'document', { configurable: true, value: { createElement: () => {
+                unavailableContexts++;
+                if (throws) throw new Error('Canvas unavailable');
+                return { getContext: () => null };
+            } } });
+            invalidateGlyphFontCache(); nextFrame();
+            const unavailableStart = reads.length;
+            prewarmGlyphPool('05_SINGULARITY');
+            const fallback = getRenderableGlyphPool('05_SINGULARITY');
+            prewarmGlyphPool('05_SINGULARITY');
+            unavailableFallback &&= fallback === GLYPH_FAMILIES.basic && Object.isFrozen(fallback) &&
+                reads.length === unavailableStart && unavailableContexts === 1;
+        }
+        check(unavailableFallback,
+        'Prewarm without a working Canvas keeps the existing frozen ASCII fallback, performs no readbacks and does not retry context creation in a completed pool');
     } finally {
         if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
         else Reflect.deleteProperty(globalThis, 'document');

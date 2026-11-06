@@ -35,10 +35,12 @@ export function getUniverseRenderer(): UniverseRenderer | null {
 // --- КОНЕЦ ФУНКЦИИ getUniverseRenderer ---
 
 // --- НАЧАЛО ФУНКЦИИ createUniverseResizeHandler ---
-/** Завершает перебор до пересчёта viewport: старые ink-метрики не попадают в новые ячейки. */
-export function createUniverseResizeHandler(renderer: Pick<UniverseRenderer, 'handleResize'>): () => void {
+/** При реальном изменении завершает перебор до геометрии; повторный resize не обрывает живые барабаны. */
+export function createUniverseResizeHandler(renderer: Pick<UniverseRenderer, 'handleResize'> &
+    Partial<Pick<UniverseRenderer, 'needsViewportResize'>>): () => void {
     // --- НАЧАЛО ФУНКЦИИ handleUniverseResize ---
     return function handleUniverseResize(): void {
+        if (renderer.needsViewportResize?.() === false) return;
         calmGlyphHover.stopAll();
         renderer.handleResize();
     };

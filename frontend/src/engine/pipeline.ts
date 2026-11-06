@@ -13,6 +13,8 @@
 //                      не подменяя состояние отдельного GPU-прохода Уробороса.
 //     - Подраздел 2.3. Генератор тайла дизеринга 64x64 (buildBlueNoiseDitherPattern)
 //                      и утилиты управления размером, качеством (syncQualityProfile) и цветами.
+//     - getTargetViewport / hasViewportChange / needsViewportResize отделяют реальный resize
+//       от повторного события с той же геометрией, не стирая существующий кадр.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
@@ -32,6 +34,10 @@ export interface RenderCapabilities {
     webgpuAvailable: boolean;
     activeBackend: 'WebGPU' | 'Canvas2D-HighDPI';
 }
+interface TargetViewport {
+    readonly width: number; readonly height: number; readonly dpr: number;
+    readonly pixelWidth: number; readonly pixelHeight: number;
+}
 
 // ============================================================================
 // РАЗДЕЛ 2. КЛАСС ГРАФИЧЕСКОГО КОНВЕЙЕРА (RenderPipeline)
@@ -50,6 +56,7 @@ export class RenderPipeline {
     private capabilities: RenderCapabilities;
     private ditherPattern: CanvasPattern | null = null;
     private isDisposed = false;
+    private viewportInitialized = false;
     private readonly diagnosticDpr: number | null;
 
     // ------------------------------------------------------------------------
@@ -162,8 +169,9 @@ export class RenderPipeline {
     }
     // --- КОНЕЦ ФУНКЦИИ buildBlueNoiseDitherPattern ---
 
-    // --- НАЧАЛО ФУНКЦИИ updateViewportSize ---
-    public updateViewportSize(): { width: number; height: number; dpr: number } {
+    // НАЧАЛО ФУНКЦИИ getTargetViewport
+    /** Одна мера logical/backing размеров для предварительного запроса и применения. */
+    private getTargetViewport(): TargetViewport {
         const maxDpr = qualityGovernor.getProfile().maxDpr;
         const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
         const dpr = Math.min(maxDpr, Math.max(MIN_CANVAS_DPR, rawDpr));
@@ -171,18 +179,47 @@ export class RenderPipeline {
             typeof window !== 'undefined' ? Math.max(320, window.innerWidth) : 1920;
         const height =
             typeof window !== 'undefined' ? Math.max(320, window.innerHeight) : 1080;
+        return { width, height, dpr, pixelWidth: Math.floor(width * dpr), pixelHeight: Math.floor(height * dpr) };
+    }
+    // КОНЕЦ ФУНКЦИИ getTargetViewport
+
+    // НАЧАЛО ФУНКЦИИ hasViewportChange
+    private hasViewportChange(target: TargetViewport): boolean {
+        return !this.isDisposed && (!this.viewportInitialized ||
+            target.width !== this.capabilities.viewportWidth || target.height !== this.capabilities.viewportHeight ||
+            target.dpr !== this.capabilities.dpr || target.pixelWidth !== this.canvas.width || target.pixelHeight !== this.canvas.height);
+    }
+    // КОНЕЦ ФУНКЦИИ hasViewportChange
+
+    // НАЧАЛО ФУНКЦИИ needsViewportResize
+    /** Чтение до очистки hover/DOM: начальная настройка обязательна, disposed-конвейер не трогается. */
+    public needsViewportResize(): boolean { return this.hasViewportChange(this.getTargetViewport()); }
+    // КОНЕЦ ФУНКЦИИ needsViewportResize
+
+    // --- НАЧАЛО ФУНКЦИИ updateViewportSize ---
+    public updateViewportSize(): { width: number; height: number; dpr: number; changed: boolean } {
+        const target = this.getTargetViewport();
+        if (!this.hasViewportChange(target)) {
+            return { width: this.capabilities.viewportWidth, height: this.capabilities.viewportHeight,
+                dpr: this.capabilities.dpr, changed: false };
+        }
+        const { width, height, dpr, pixelWidth, pixelHeight } = target;
 
         this.capabilities.viewportWidth = width;
         this.capabilities.viewportHeight = height;
         this.capabilities.dpr = dpr;
 
-        this.canvas.width = Math.floor(width * dpr);
-        this.canvas.height = Math.floor(height * dpr);
-        this.canvas.style.width = `${width}px`;
-        this.canvas.style.height = `${height}px`;
+        // Каждый backing-атрибут очищает Canvas: при height-only resize ширину не переназначаем.
+        // Первый вызов по-прежнему полностью настраивает элемент и состояние контекста.
+        if (!this.viewportInitialized || this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth;
+        if (!this.viewportInitialized || this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight;
+        const cssWidth = `${width}px`, cssHeight = `${height}px`;
+        if (!this.viewportInitialized || this.canvas.style.width !== cssWidth) this.canvas.style.width = cssWidth;
+        if (!this.viewportInitialized || this.canvas.style.height !== cssHeight) this.canvas.style.height = cssHeight;
 
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        return { width, height, dpr };
+        this.viewportInitialized = true;
+        return { width, height, dpr, changed: true };
     }
     // --- КОНЕЦ ФУНКЦИИ updateViewportSize ---
 

@@ -96,43 +96,72 @@ function assertCondition(
 // --- КОНЕЦ ФУНКЦИИ assertCondition ---
 
 // --- НАЧАЛО ФУНКЦИИ runPipelineQualityChecks ---
-function runPipelineQualityChecks(check: (passed: boolean, description: string) => void): void {
+export function runPipelineQualityChecks(check: (passed: boolean, description: string) => void): void {
     const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const savedGetProfile = Object.getOwnPropertyDescriptor(qualityGovernor, 'getProfile');
     const originalProfile = qualityGovernor.getProfile();
     let maxDpr = 2;
     let resizeWrites = 0;
+    let transformWrites = 0;
+    const backingWrites: string[] = [];
+    const cssWrites: string[] = [];
     let lastTransform: readonly number[] = [];
     let pipeline: RenderPipeline | undefined;
+    let firstViewportNeeded = false;
+    let frameInk = '';
+    const viewport = { innerWidth: 960, innerHeight: 540, devicePixelRatio: 2 };
+    class InitialViewportProbe extends RenderPipeline {
+        // НАЧАЛО ФУНКЦИИ updateViewportSize (InitialViewportProbe)
+        public override updateViewportSize(): ReturnType<RenderPipeline['updateViewportSize']> {
+            if (!pipeline) firstViewportNeeded = this.needsViewportResize();
+            return super.updateViewportSize();
+        }
+        // КОНЕЦ ФУНКЦИИ updateViewportSize (InitialViewportProbe)
+    }
     const context = {
         // --- НАЧАЛО ФУНКЦИИ setTransform (runPipelineQualityChecks) ---
-        setTransform(...matrix: number[]): void { lastTransform = matrix; resizeWrites++; },
+        setTransform(...matrix: number[]): void { lastTransform = matrix; resizeWrites++; transformWrites++; },
         // --- КОНЕЦ ФУНКЦИИ setTransform (runPipelineQualityChecks) ---
     };
     const style = new Proxy({ width: '', height: '' }, {
         // --- НАЧАЛО ФУНКЦИИ set (runPipelineQualityChecks: style) ---
-        set(target, key, value): boolean { resizeWrites++; return Reflect.set(target, key, value); },
+        set(target, key, value): boolean { resizeWrites++; cssWrites.push(String(key)); return Reflect.set(target, key, value); },
         // --- КОНЕЦ ФУНКЦИИ set (runPipelineQualityChecks: style) ---
     });
     const canvas = new Proxy({
-        width: 0, height: 0, style,
+        // Начальный HTML backing уже совпадает: первый transform всё равно обязателен.
+        width: 1920, height: 1080, style,
         // --- НАЧАЛО ФУНКЦИИ getContext (runPipelineQualityChecks) ---
         getContext(): typeof context { return context; },
         // --- КОНЕЦ ФУНКЦИИ getContext (runPipelineQualityChecks) ---
     }, {
         // --- НАЧАЛО ФУНКЦИИ set (runPipelineQualityChecks: canvas) ---
-        set(target, key, value): boolean { resizeWrites++; return Reflect.set(target, key, value); },
+        set(target, key, value): boolean {
+            resizeWrites++;
+            if (key === 'width' || key === 'height') { frameInk = ''; backingWrites.push(String(key)); }
+            return Reflect.set(target, key, value);
+        },
         // --- КОНЕЦ ФУНКЦИИ set (runPipelineQualityChecks: canvas) ---
     });
     try {
         Object.defineProperty(globalThis, 'window', {
-            configurable: true, value: { innerWidth: 960, innerHeight: 540, devicePixelRatio: 2 },
+            configurable: true, value: viewport,
         });
         // --- НАЧАЛО ФУНКЦИИ getProfile (runPipelineQualityChecks) ---
         qualityGovernor.getProfile = () => ({ ...originalProfile, tier: maxDpr === 2 ? 'HIGH' : 'LOW', maxDpr });
         // --- КОНЕЦ ФУНКЦИИ getProfile (runPipelineQualityChecks) ---
-        pipeline = new RenderPipeline(canvas as unknown as HTMLCanvasElement);
+        pipeline = new InitialViewportProbe(canvas as unknown as HTMLCanvasElement);
         const highInitialized = pipeline.getCapabilities().dpr === 2 && canvas.width === 1920 && canvas.height === 1080;
+        check(firstViewportNeeded && highInitialized && style.width === '960px' && style.height === '540px' &&
+            lastTransform.join(',') === '2,0,0,2,0,0' && !pipeline.needsViewportResize() &&
+            backingWrites.join(',') === 'width,height' && cssWrites.join(',') === 'width,height' && transformWrites === 1,
+            'The first viewport initializes CSS and context transform even when HTML backing dimensions already match, then reports no outstanding resize');
+        frameInk = 'retained frame';
+        const beforeRepeatedResize = resizeWrites;
+        let repeatedResizeStayedIdle = true;
+        for (let event = 0; event < 20; event++) repeatedResizeStayedIdle &&= !pipeline.updateViewportSize().changed;
+        check(repeatedResizeStayedIdle && resizeWrites === beforeRepeatedResize && frameInk === 'retained frame',
+            'Repeated identical viewport events preserve painted pixels and perform zero backing, CSS or transform writes');
         maxDpr = 1.25;
         const noImplicitResize = pipeline.getCapabilities().dpr === 2 && canvas.width === 1920;
         pipeline.syncQualityProfile();
@@ -155,12 +184,63 @@ function runPipelineQualityChecks(check: (passed: boolean, description: string) 
             style.width === '960px' && style.height === '540px' && lastTransform.join(',') === '2,0,0,2,0,0',
             'Quality recovery restores the HIGH DPR backing resolution and transform while preserving CSS geometry'
         );
+        let backingStart = backingWrites.length, cssStart = cssWrites.length, transformStart = transformWrites;
+        viewport.innerHeight = 541;
+        pipeline.updateViewportSize();
+        check(backingWrites.slice(backingStart).join(',') === 'height' && cssWrites.slice(cssStart).join(',') === 'height' &&
+            transformWrites === transformStart + 1 && canvas.width === 1920 && canvas.height === 1082 &&
+            style.width === '960px' && style.height === '541px',
+            'A height-only viewport change resets only backing height, writes only CSS height and restores the context transform once');
+        backingStart = backingWrites.length; cssStart = cssWrites.length; transformStart = transformWrites;
+        viewport.innerWidth = 961;
+        pipeline.updateViewportSize();
+        check(backingWrites.slice(backingStart).join(',') === 'width' && cssWrites.slice(cssStart).join(',') === 'width' &&
+            transformWrites === transformStart + 1 && canvas.width === 1922 && canvas.height === 1082 &&
+            style.width === '961px' && style.height === '541px',
+            'A width-only viewport change resets only backing width, writes only CSS width and restores the context transform once');
+        viewport.innerWidth = 960; viewport.innerHeight = 540;
+        pipeline.updateViewportSize();
+        viewport.innerWidth = 1000; viewport.innerHeight = 600;
+        const wantedLogicalResize = pipeline.needsViewportResize();
+        const logicalResize = pipeline.updateViewportSize();
+        check(wantedLogicalResize && logicalResize.changed && logicalResize.width === 1000 && logicalResize.height === 600 &&
+            canvas.width === 2000 && canvas.height === 1200 && style.width === '1000px' && style.height === '600px' &&
+            !pipeline.needsViewportResize(),
+            'A real logical viewport change still updates CSS and backing dimensions and clears its pending resize state');
+        viewport.devicePixelRatio = 1.5;
+        const wantedDprResize = pipeline.needsViewportResize();
+        const dprResize = pipeline.updateViewportSize();
+        check(wantedDprResize && dprResize.changed && dprResize.dpr === 1.5 && canvas.width === 1500 && canvas.height === 900 &&
+            style.width === '1000px' && style.height === '600px' && lastTransform.join(',') === '1.5,0,0,1.5,0,0',
+            'A real device DPR change updates backing resolution and transform while preserving logical CSS geometry');
+        backingStart = backingWrites.length; cssStart = cssWrites.length; transformStart = transformWrites;
+        viewport.devicePixelRatio = 1.50001;
+        const fractionalDpr = pipeline.updateViewportSize();
+        check(fractionalDpr.changed && backingWrites.length === backingStart && cssWrites.length === cssStart &&
+            transformWrites === transformStart + 1 && canvas.width === 1500 && canvas.height === 900 &&
+            lastTransform.join(',') === '1.50001,0,0,1.50001,0,0',
+            'A changed DPR with the same rounded backing pixels updates only the context transform without clearing the frame');
+        viewport.devicePixelRatio = 3;
+        pipeline.updateViewportSize();
+        const cappedWrites = resizeWrites;
+        viewport.devicePixelRatio = 4;
+        check(!pipeline.needsViewportResize() && !pipeline.updateViewportSize().changed && resizeWrites === cappedWrites &&
+            pipeline.getCapabilities().dpr === 2,
+            'Raw DPR changes above the same quality cap do not erase the canvas or repeat an identical effective transform');
+        canvas.width = 17;
+        check(pipeline.needsViewportResize() && pipeline.updateViewportSize().changed && canvas.width === 2000 &&
+            !pipeline.needsViewportResize(),
+            'A damaged backing dimension is repaired even when logical dimensions and effective DPR are unchanged');
+        viewport.innerWidth = 960; viewport.innerHeight = 540; viewport.devicePixelRatio = 2;
+        pipeline.updateViewportSize();
         pipeline.dispose();
         const disposedWrites = resizeWrites;
         maxDpr = 1.25;
         pipeline.syncQualityProfile();
+        const disposedViewport = pipeline.updateViewportSize();
         check(
-            resizeWrites === disposedWrites && pipeline.getCapabilities().dpr === 2,
+            resizeWrites === disposedWrites && pipeline.getCapabilities().dpr === 2 &&
+            !pipeline.needsViewportResize() && !disposedViewport.changed,
             'A disposed pipeline ignores subsequent quality changes without resizing its canvas'
         );
     } finally {

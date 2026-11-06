@@ -2,7 +2,8 @@
 // ФАЙЛ: frontend/src/core/glyphGrammar.ts
 // НАЗНАЧЕНИЕ: Фазовый словарь Unicode code points и точное восстановление текста.
 // РАЗДЕЛЫ: 1. Семейства/профили; 2. Проверка шрифтов; 3. Детерминированный выбор.
-// ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, getRenderableGlyphPool,
+// ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, ensureGlyphProbeFrameBudget,
+// getRenderableGlyphPool, prewarmGlyphPool,
 // pickGlyph, isMutableGlyph, scrambleCanonicalText, prepareGlyphFonts,
 // invalidateGlyphFontCache, getGlyphFontEpoch, splitGlyphText, getCanonicalGlyphText, getOrderedGlyphState,
 // formatOrderedGlyphText. Все пулы — полные code points; канон делится на графемы.
@@ -62,9 +63,11 @@ const glyphSupport = new Map<string, boolean>();
 // Общий кадр, а не отдельный pickGlyph: десятки ячеек не расходуют бюджет повторно.
 const MAX_RASTER_PROBES_PER_FRAME = 4;
 let probeFrame: ReturnType<typeof getVisualSignals> | undefined;
+let prewarmFrame: ReturnType<typeof getVisualSignals> | undefined;
 let remainingRasterProbes = 0;
 let probe: CanvasRenderingContext2D | null | undefined;
 let missingInk: Uint8ClampedArray[] = [];
+const MISSING_GLYPH_REFERENCES = ['\u{10FFFF}', '\uFFFF', '\uFFFD'] as const;
 let fontEpoch = 0;
 let fontLoadRequested = false;
 
@@ -110,19 +113,24 @@ function supportsGlyph(glyph: string): boolean | undefined {
     if ((glyph.codePointAt(0) ?? 0) < 128) return true;
     if (glyphSupport.has(glyph)) return glyphSupport.get(glyph)!;
     if (probe === undefined) {
-        // Три эталона отсутствующего знака также входят в бюджет синхронного readback.
-        if (remainingRasterProbes < 3) return undefined;
         try {
             probe = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
             if (probe) {
                 probe.canvas.width = 48; probe.canvas.height = 40;
                 probe.font = `22px ${GLYPH_FONT_STACK}`;
                 probe.fillStyle = '#fff';
-                missingInk = ['\u{10FFFF}', '\uFFFF', '\uFFFD'].map((ch) => rasterize(probe!, ch));
             }
         } catch { probe = null; }
     }
     if (!probe) return false;
+    // Эталоны подчиняются той же квоте: prewarm завершает их за три кадра по одному readback.
+    // Обычный потребитель с квотой4 по-прежнему получает3 эталона и один проверенный знак сразу.
+    try {
+        while (missingInk.length < MISSING_GLYPH_REFERENCES.length && remainingRasterProbes > 0) {
+            missingInk.push(rasterize(probe, MISSING_GLYPH_REFERENCES[missingInk.length]!));
+        }
+    } catch { probe = null; return false; }
+    if (missingInk.length < MISSING_GLYPH_REFERENCES.length) return undefined;
     if (remainingRasterProbes === 0) return undefined;
     let ink: Uint8ClampedArray;
     try { ink = rasterize(probe, glyph); } catch {
@@ -146,16 +154,24 @@ function supportsGlyph(glyph: string): boolean | undefined {
 }
 // КОНЕЦ ФУНКЦИИ supportsGlyph
 
-// НАЧАЛО ФУНКЦИИ getRenderableGlyphPool
-export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
-    prepareGlyphFonts();
-    const complete = renderablePools.get(phase);
-    if (complete) return complete;
+// НАЧАЛО ФУНКЦИИ ensureGlyphProbeFrameBudget
+/** Неизменяемый снимок — граница общей квоты; ни прогрев, ни invalidate не создают её заново. */
+function ensureGlyphProbeFrameBudget(): ReturnType<typeof getVisualSignals> {
     const frame = getVisualSignals();
     if (frame !== probeFrame) {
         probeFrame = frame;
         remainingRasterProbes = MAX_RASTER_PROBES_PER_FRAME;
     }
+    return frame;
+}
+// КОНЕЦ ФУНКЦИИ ensureGlyphProbeFrameBudget
+
+// НАЧАЛО ФУНКЦИИ getRenderableGlyphPool
+export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
+    prepareGlyphFonts();
+    const complete = renderablePools.get(phase);
+    if (complete) return complete;
+    ensureGlyphProbeFrameBudget();
     let scan = pendingPools.get(phase);
     if (!scan) {
         scan = { next: 0, accepted: [], snapshot: GLYPH_FAMILIES.basic };
@@ -178,6 +194,20 @@ export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
     return scan.snapshot;
 }
 // КОНЕЦ ФУНКЦИИ getRenderableGlyphPool
+
+// НАЧАЛО ФУНКЦИИ prewarmGlyphPool
+/** Один readback на общий кадр из оставшейся квоты4; доступный потребителю остаток не теряется. */
+export function prewarmGlyphPool(phase: PhaseId): void {
+    const frame = ensureGlyphProbeFrameBudget();
+    if (prewarmFrame === frame) return;
+    prewarmFrame = frame;
+    const sharedRemaining = remainingRasterProbes;
+    const allowance = Math.min(1, sharedRemaining);
+    remainingRasterProbes = allowance;
+    try { getRenderableGlyphPool(phase); }
+    finally { remainingRasterProbes = sharedRemaining - (allowance - remainingRasterProbes); }
+}
+// КОНЕЦ ФУНКЦИИ prewarmGlyphPool
 // КОНЕЦ РАЗДЕЛА 2
 
 // НАЧАЛО РАЗДЕЛА 3. ВЫБОР И ВОССТАНОВЛЕНИЕ

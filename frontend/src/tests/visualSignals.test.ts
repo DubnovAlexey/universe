@@ -517,6 +517,30 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     checks.push({ passed: rollingBeforeResize && viewportUpdates === 2 && canonicalBeforeGeometry,
         description: 'The actual resize handoff restores all rolling links/paragraphs and accessible Unicode canon before viewport geometry changes, without waiting for a frame or adding a scheduler' });
 
+    let resizeNeeded = false, guardedResizeCalls = 0, guardedCanonical = false;
+    const guardedResize = createUniverseResizeHandler({
+        needsViewportResize: () => resizeNeeded,
+        handleResize: () => {
+            guardedResizeCalls++;
+            guardedCanonical = !calmGlyphHover.isActive(linkElement) && !calmGlyphHover.isActive(paragraphDuringResize) &&
+                calmGlyphHover.getVisualText(linkElement) === resizeLabel &&
+                calmGlyphHover.getVisualText(paragraphDuringResize) === paragraphLabel;
+        },
+    });
+    calmGlyphHover.start(linkElement, resizeLabel);
+    calmGlyphHover.start(paragraphDuringResize, paragraphLabel);
+    guardedResize(); guardedResize();
+    checks.push({ passed: guardedResizeCalls === 0 && calmGlyphHover.isActive(linkElement) &&
+        calmGlyphHover.isActive(paragraphDuringResize),
+        description: 'Repeated same-viewport events preserve active Unicode reels and do not request geometry work' });
+    resizeNeeded = true;
+    guardedResize();
+    resizeNeeded = false;
+    guardedResize();
+    checks.push({ passed: guardedResizeCalls === 1 && guardedCanonical,
+        description: 'A genuine viewport change still restores complete accessible canon before geometry and subsequent duplicate events stay idle' });
+    calmGlyphHover.stopAll();
+
     const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
     const hoverAccess: string[] = [];

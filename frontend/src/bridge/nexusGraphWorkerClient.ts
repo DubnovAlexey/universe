@@ -5,13 +5,13 @@
 // РАЗДЕЛЫ: 1. Контракт; 2. Клиент; 3. Экземпляр страницы.
 // ФУНКЦИИ: NexusGraphWorkerClient: request, takeResult, isAvailable, dispose, ensureWorker,
 // handleMessage, handleFailure.
-// Пересборка графа (O(n²) пар узлов + BFS) больше не занимает кадр главного потока:
-// рёбра приходят через 1–2 кадра и применяются к текущим координатам частиц.
+// Пересборка графа (O(n²) пар узлов + BFS), включая старт/рестарт, уходит в Worker:
+// до ответа частицы видны без новых рёбер; результат применяется к текущим координатам.
 // ============================================================================
 
 import { integrationRegistry } from '../core/integrationRegistry';
 import { resourceLedger } from '../core/resourceLedger';
-import { nexusGraphEngine, type GraphNodeInput } from './simulationWorker';
+import { nexusGraphEngine, type GraphNodeInput, type NexusGraphTelemetry } from './simulationWorker';
 import type { NexusGraphRequest, NexusGraphResponse } from './nexusGraphWorker';
 import type { PackedNexusGraph } from './nexusGraphPacking';
 
@@ -33,7 +33,7 @@ export class NexusGraphWorkerClient {
     private failed = false;
     private nextId = 1;
     private pending: { id: number; generation: number; maxConnectDist: number; sentAt: number } | null = null;
-    private ready: NexusGraphResult | null = null;
+    private ready: { result: NexusGraphResult; telemetry: Readonly<NexusGraphTelemetry> } | null = null;
     private createdAt = 0;
     private answered = false;
     private readonly onMessage = (event: MessageEvent<NexusGraphResponse>): void => this.handleMessage(event.data);
@@ -100,17 +100,19 @@ export class NexusGraphWorkerClient {
     // КОНЕЦ ФУНКЦИИ request
 
     // НАЧАЛО ФУНКЦИИ takeResult
-    /** Отдаёт готовый результат один раз; результат прошлого поколения частиц отбрасывается. */
+    /** Отдаёт граф/метрики один раз только текущему поколению; устаревший ответ не меняет метрики. */
     public takeResult(generation: number): NexusGraphResult | null {
-        const result = this.ready;
+        const ready = this.ready;
         this.ready = null;
-        return result && result.generation === generation ? result : null;
+        if (!ready || ready.result.generation !== generation) return null;
+        nexusGraphEngine.adoptTelemetry(ready.telemetry);
+        return ready.result;
     }
     // КОНЕЦ ФУНКЦИИ takeResult
 
     // НАЧАЛО ФУНКЦИИ handleMessage
     private handleMessage(response: NexusGraphResponse): void {
-        if (!this.pending || response.id !== this.pending.id) return;
+        if (!this.pending || response.id !== this.pending.id || response.generation !== this.pending.generation) return;
         const { maxConnectDist } = this.pending;
         this.pending = null;
         if ('error' in response) {
@@ -122,8 +124,8 @@ export class NexusGraphWorkerClient {
             integrationRegistry.updateModuleStatus('worker-physics', 'ready', performance.now() - this.createdAt, '');
         }
         integrationRegistry.recordModuleStep('worker-physics', response.computeMs);
-        nexusGraphEngine.adoptTelemetry(response.telemetry);
-        this.ready = { generation: response.generation, packed: { edges: response.edges, degrees: response.degrees }, maxConnectDist };
+        this.ready = { result: { generation: response.generation,
+            packed: { edges: response.edges, degrees: response.degrees }, maxConnectDist }, telemetry: response.telemetry };
     }
     // КОНЕЦ ФУНКЦИИ handleMessage
 
@@ -140,13 +142,14 @@ export class NexusGraphWorkerClient {
 
     // НАЧАЛО ФУНКЦИИ dispose
     public dispose(): void {
+        this.pending = null;
+        this.ready = null;
         if (!this.worker) return;
         this.worker.removeEventListener('message', this.onMessage);
         this.worker.removeEventListener('error', this.onError);
         this.worker.removeEventListener('messageerror', this.onError);
         this.worker.terminate();
         this.worker = null;
-        this.pending = null;
         resourceLedger.trackPageLifetimeRelease('workers', 1);
         resourceLedger.trackPageLifetimeRelease('listeners', 3);
     }

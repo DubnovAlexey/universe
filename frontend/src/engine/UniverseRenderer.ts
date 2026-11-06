@@ -18,10 +18,10 @@ import { cipherOdometerEngine } from '../bridge/cipherOdometerEngine';
 import { audioSync, type AudioModulationSnapshot } from '../utils/audioSync';
 import { integrationRegistry } from '../core/integrationRegistry';
 import { resourceLedger } from '../core/resourceLedger';
-import { publishVisualSignals } from '../core/visualSignals';
+import { getVisualSignals, publishVisualSignals } from '../core/visualSignals';
+import { prewarmGlyphPool } from '../core/glyphGrammar';
 import { BackgroundFields } from './backgroundFields';
 import { OuroborosEffect } from './ouroboros/OuroborosEffect';
-import { getVisualSignals } from '../core/visualSignals';
 import { FrameDiagnostics, type FrameWorkBreakdown } from '../core/frameDiagnostics';
 import { sceneExplanationFocus } from '../core/sceneExplanationFocus';
 import { renderExplanationFocusPass } from './passes/explanationFocusPass';
@@ -159,16 +159,26 @@ export class UniverseRenderer {
     }
     // --- КОНЕЦ ФУНКЦИИ getSimPulses ---
 
+    // НАЧАЛО ФУНКЦИИ needsViewportResize
+    /** Позволяет пропустить повторный window resize ещё до остановки hover-барабанов. */
+    public needsViewportResize(): boolean { return this.pipeline.needsViewportResize(); }
+    // КОНЕЦ ФУНКЦИИ needsViewportResize
+
     // --- НАЧАЛО ФУНКЦИИ handleResize ---
     /**
      * Пересчитывает размеры холста и масштабирует координаты симуляции при изменении окна.
      */
     public handleResize = (): void => {
-        const { width, height } = this.pipeline.updateViewportSize();
+        const { width, height, changed } = this.pipeline.updateViewportSize();
+        if (!changed) return;
+        const logicalResize = width !== this.width || height !== this.height;
         this.width = width;
         this.height = height;
-        this.simulation.resize(width, height);
-        stressStore.syncViewportSize(width, height);
+        // Новый backing DPR не меняет координаты сцены и предыдущую позицию интерполяции.
+        if (logicalResize) {
+            this.simulation.resize(width, height);
+            stressStore.syncViewportSize(width, height);
+        }
     };
     // --- КОНЕЦ ФУНКЦИИ handleResize ---
 
@@ -615,9 +625,20 @@ export class UniverseRenderer {
                 });
             }
 
+            let glyphWarmupMs = 0;
             try {
                 const visualTimings = publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState(), !!profileWork, () => {
-                    sceneExplanationFocus.advance(getVisualSignals());
+                    const signals = getVisualSignals();
+                    const renderState = universeStore.getState();
+                    // Скрытые мобильные каскады не прогревают шрифты: готовим словарь по одному
+                    // readback в кадр в ранних актах 05, до первого появления Canvas/DOM-одометра.
+                    if (!signals.isPaused && !signals.reducedMotion && signals.phase === '05_SINGULARITY' &&
+                        (renderState.singularityAct === 'ACT_A_ACCRETION' || renderState.singularityAct === 'ACT_B_LOGIC')) {
+                        const warmupStartMs = profileWork ? performance.now() : 0;
+                        prewarmGlyphPool(signals.phase);
+                        if (profileWork) glyphWarmupMs = performance.now() - warmupStartMs;
+                    }
+                    sceneExplanationFocus.advance(signals);
                     const renderStartMs = profileWork ? performance.now() : 0;
                     if (profileWork) this.renderPassMarkMs = renderStartMs;
                     try {
@@ -629,7 +650,10 @@ export class UniverseRenderer {
                         if (profileWork) profileWork.renderMs = performance.now() - renderStartMs;
                     }
                 });
-                if (profileWork) profileWork.visualSignals = visualTimings;
+                if (profileWork) {
+                    if (visualTimings && glyphWarmupMs > 0) visualTimings['glyph-font-warmup'] = glyphWarmupMs;
+                    profileWork.visualSignals = visualTimings;
+                }
             } finally {
                 // UI включает store, расчёты и конечную запись DOM; Canvas учитывается отдельно.
                 if (profileWork) profileWork.uiMs = Math.max(0, performance.now() - profileMarkMs - (profileWork.renderMs ?? 0));

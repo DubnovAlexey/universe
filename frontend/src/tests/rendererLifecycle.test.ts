@@ -3,6 +3,7 @@
 // НАЗНАЧЕНИЕ: Проверить часы настоящего RAF-цикла и срок жизни текстуры дизеринга.
 // РАЗДЕЛЫ: 1. Изоляция объектов; 2. Управляемый RAF; 3. Restart/пауза/видимость;
 //          4. Страничная текстура; 5. Часы сюжета; 6. Ограниченные profile-only интервалы проходов.
+//          Реальный resize проверяется отдельно от повторного события: частицы и prevX/prevY не сбрасываются.
 // ФУНКЦИИ: restoreDescriptors, restartSnapshot, runRendererLifecycleChecks,
 //          setTransform, createPattern, createImageData, putImageData, pumpFrames.
 // ============================================================================
@@ -76,6 +77,7 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
     let clockReads = 0;
     let clockStep = 0;
     let drawCalls = 0;
+    let viewportTransforms = 0;
     let renderer: UniverseRenderer | undefined;
     let pipeline: RenderPipeline | undefined;
     let profiledRenderer: UniverseRenderer | undefined;
@@ -85,7 +87,7 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
     const pattern = {} as CanvasPattern;
     const context = {
         // НАЧАЛО ФУНКЦИИ setTransform
-        setTransform(): void {},
+        setTransform(): void { viewportTransforms++; },
         // КОНЕЦ ФУНКЦИИ setTransform
         // НАЧАЛО ФУНКЦИИ createPattern
         createPattern(): CanvasPattern { return pattern; },
@@ -147,6 +149,69 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
             if (tracingOrder) frameOrder.push('Canvas');
         } });
         pipeline = probe.pipeline;
+        const resizeSimulation = (renderer as unknown as { simulation: {
+            resize(width: number, height: number): void;
+            getParticles(): readonly { x: number; y: number; prevX: number; prevY: number; morphOriginX: number; morphOriginY: number }[];
+        } }).simulation;
+        const simulationResizeDescriptor = Object.getOwnPropertyDescriptor(resizeSimulation, 'resize');
+        const stressResizeDescriptor = Object.getOwnPropertyDescriptor(stressStore, 'syncViewportSize');
+        const originalSimulationResize = resizeSimulation.resize;
+        const originalStressResize = stressStore.syncViewportSize;
+        let simulationResizeCalls = 0, stressResizeCalls = 0;
+        Object.defineProperty(resizeSimulation, 'resize', { configurable: true, value: (width: number, height: number): void => {
+            simulationResizeCalls++; originalSimulationResize.call(resizeSimulation, width, height);
+        } });
+        Object.defineProperty(stressStore, 'syncViewportSize', { configurable: true, value: (width: number, height: number): void => {
+            stressResizeCalls++; originalStressResize.call(stressStore, width, height);
+        } });
+        const viewport = (globalThis as unknown as { window: {
+            innerWidth: number; innerHeight: number; devicePixelRatio: number;
+        } }).window;
+        try {
+            const particle = resizeSimulation.getParticles()[0]!;
+            particle.prevX = particle.x - 3;
+            particle.prevY = particle.y - 4;
+            const beforePositions = JSON.stringify(resizeSimulation.getParticles());
+            const beforeStress = JSON.stringify(stressStore.getState());
+            const beforeResources = JSON.stringify(resourceLedger.getCounters());
+            const beforeTransforms = viewportTransforms;
+            const beforeResizeClocks = clockReads;
+            const noPendingResize = !renderer.needsViewportResize();
+            for (let event = 0; event < 20; event++) renderer.handleResize();
+            check(noPendingResize && simulationResizeCalls === 0 && stressResizeCalls === 0 &&
+                viewportTransforms === beforeTransforms && clockReads === beforeResizeClocks &&
+                JSON.stringify(resizeSimulation.getParticles()) === beforePositions &&
+                JSON.stringify(stressStore.getState()) === beforeStress &&
+                JSON.stringify(resourceLedger.getCounters()) === beforeResources && pending.size === 0,
+                'Identical renderer resize events leave particle interpolation, lens state, Canvas transform and resources untouched without scheduling work');
+            viewport.devicePixelRatio = 1.5;
+            const dprResizeWasNeeded = renderer.needsViewportResize();
+            renderer.handleResize();
+            check(dprResizeWasNeeded && simulationResizeCalls === 0 && stressResizeCalls === 0 &&
+                canvas.width === 1440 && canvas.height === 810 && viewportTransforms === beforeTransforms + 1 &&
+                JSON.stringify(resizeSimulation.getParticles()) === beforePositions &&
+                JSON.stringify(stressStore.getState()) === beforeStress &&
+                !renderer.needsViewportResize() && pending.size === 0,
+                'A DPR-only renderer resize updates backing and context transform without changing particle positions, interpolation history or lens state');
+            viewport.devicePixelRatio = 1;
+            renderer.handleResize();
+            const oldX = particle.x, oldY = particle.y;
+            viewport.innerWidth = 1000; viewport.innerHeight = 600;
+            const resizeWasNeeded = renderer.needsViewportResize();
+            renderer.handleResize();
+            check(resizeWasNeeded && simulationResizeCalls === 1 && stressResizeCalls === 1 &&
+                canvas.width === 1000 && canvas.height === 600 &&
+                Math.abs(particle.x - oldX * 1000 / 960) < 1e-9 && Math.abs(particle.y - oldY * 600 / 540) < 1e-9 &&
+                !renderer.needsViewportResize() && pending.size === 0,
+                'A real viewport resize still rescales the same simulation particles and lens once, updates backing dimensions and clears its pending state');
+        } finally {
+            viewport.innerWidth = 960; viewport.innerHeight = 540; viewport.devicePixelRatio = 1;
+            renderer.handleResize();
+            if (simulationResizeDescriptor) Object.defineProperty(resizeSimulation, 'resize', simulationResizeDescriptor);
+            else Reflect.deleteProperty(resizeSimulation, 'resize');
+            if (stressResizeDescriptor) Object.defineProperty(stressStore, 'syncViewportSize', stressResizeDescriptor);
+            else Reflect.deleteProperty(stressStore, 'syncViewportSize');
+        }
         universeStore.toggleAutoCycle();
 
         // НАЧАЛО РАЗДЕЛА 3. RESTART, ПАУЗА И ВИДИМОСТЬ
