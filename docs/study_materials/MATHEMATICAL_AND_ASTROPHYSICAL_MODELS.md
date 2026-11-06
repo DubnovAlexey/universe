@@ -18,7 +18,7 @@ The in-scene guide offers all 15 topics, technical explanations and formula/sour
 
 ---
 
-# 🇷🇺 ЧАСТЬ I. РУССКОЕ НАУЧНО-ПОПУЛЯРНОЕ И МАТЕМАТИЧЕСКОЕ РУКОВОДСТВО
+# ЧАСТЬ I. РУССКОЕ НАУЧНО-ПОПУЛЯРНОЕ И МАТЕМАТИЧЕСКОЕ РУКОВОДСТВО
 
 ## 0. Философская концепция и идейное движение проекта: «Из Нуля в Ноль» за 108 секунд
 
@@ -377,7 +377,7 @@ WebGPU рисует billboard-ядра с depth buffer, освещением п�
 ---
 ---
 
-# 🇬🇧 PART II. ENGLISH MATHEMATICAL, BIOPHYSICAL & ASTROPHYSICAL SPECIFICATION
+# PART II. ENGLISH MATHEMATICAL, BIOPHYSICAL & ASTROPHYSICAL SPECIFICATION
 
 ## 0. Philosophical Axis & Dramatic Arc: "From Zero to Zero" in 108 Seconds
 

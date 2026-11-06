@@ -13,7 +13,7 @@
 //                      не подменяя состояние отдельного GPU-прохода Уробороса.
 //     - Подраздел 2.3. Генератор тайла дизеринга 64x64 (buildBlueNoiseDitherPattern)
 //                      и утилиты управления размером, качеством (syncQualityProfile) и цветами.
-//     - getTargetViewport / hasViewportChange / needsViewportResize отделяют реальный resize
+//     - getTargetViewport / hasViewportChange / needsViewportResize / applyViewportSize отделяют реальный resize
 //       от повторного события с той же геометрией, не стирая существующий кадр.
 // ============================================================================
 
@@ -198,7 +198,13 @@ export class RenderPipeline {
 
     // --- НАЧАЛО ФУНКЦИИ updateViewportSize ---
     public updateViewportSize(): { width: number; height: number; dpr: number; changed: boolean } {
-        const target = this.getTargetViewport();
+        return this.applyViewportSize(this.getTargetViewport());
+    }
+    // --- КОНЕЦ ФУНКЦИИ updateViewportSize ---
+
+    // НАЧАЛО ФУНКЦИИ applyViewportSize
+    /** Применяет геометрию вызывающей стороны: resize владеет logical size, качество — только DPR. */
+    private applyViewportSize(target: TargetViewport): { width: number; height: number; dpr: number; changed: boolean } {
         if (!this.hasViewportChange(target)) {
             return { width: this.capabilities.viewportWidth, height: this.capabilities.viewportHeight,
                 dpr: this.capabilities.dpr, changed: false };
@@ -221,7 +227,7 @@ export class RenderPipeline {
         this.viewportInitialized = true;
         return { width, height, dpr, changed: true };
     }
-    // --- КОНЕЦ ФУНКЦИИ updateViewportSize ---
+    // КОНЕЦ ФУНКЦИИ applyViewportSize
 
     // --- НАЧАЛО ФУНКЦИИ syncQualityProfile ---
     /** Применяет новый DPR-кэп на общем кадре без пересоздания частиц и ожидания resize. */
@@ -229,7 +235,13 @@ export class RenderPipeline {
         if (this.isDisposed) return;
         const rawDpr = this.diagnosticDpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
         const nextDpr = Math.min(qualityGovernor.getProfile().maxDpr, Math.max(MIN_CANVAS_DPR, rawDpr));
-        if (nextDpr !== this.capabilities.dpr) this.updateViewportSize();
+        if (nextDpr !== this.capabilities.dpr) {
+            // Resize может ещё ожидать доставки: quality не принимает его logical size
+            // раньше renderer, иначе последующий no-op оставит частицы в старых координатах.
+            const width = this.capabilities.viewportWidth, height = this.capabilities.viewportHeight;
+            this.applyViewportSize({ width, height, dpr: nextDpr,
+                pixelWidth: Math.floor(width * nextDpr), pixelHeight: Math.floor(height * nextDpr) });
+        }
     }
     // --- КОНЕЦ ФУНКЦИИ syncQualityProfile ---
 

@@ -233,6 +233,14 @@ export function runPipelineQualityChecks(check: (passed: boolean, description: s
             'A damaged backing dimension is repaired even when logical dimensions and effective DPR are unchanged');
         viewport.innerWidth = 960; viewport.innerHeight = 540; viewport.devicePixelRatio = 2;
         pipeline.updateViewportSize();
+        viewport.innerHeight = 600; viewport.devicePixelRatio = 1.5;
+        pipeline.syncQualityProfile();
+        check(pipeline.getCapabilities().viewportHeight === 540 && canvas.height === 810 &&
+            pipeline.getCapabilities().dpr === 1.5 && pipeline.needsViewportResize(),
+            'Quality DPR synchronization does not consume a pending logical viewport change before its resize handoff');
+        pipeline.updateViewportSize();
+        viewport.innerHeight = 540; viewport.devicePixelRatio = 2;
+        pipeline.updateViewportSize();
         pipeline.dispose();
         const disposedWrites = resizeWrites;
         maxDpr = 1.25;

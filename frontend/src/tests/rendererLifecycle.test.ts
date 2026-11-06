@@ -204,6 +204,16 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
                 Math.abs(particle.x - oldX * 1000 / 960) < 1e-9 && Math.abs(particle.y - oldY * 600 / 540) < 1e-9 &&
                 !renderer.needsViewportResize() && pending.size === 0,
                 'A real viewport resize still rescales the same simulation particles and lens once, updates backing dimensions and clears its pending state');
+            const beforePendingY = particle.y;
+            viewport.innerHeight = 620; viewport.devicePixelRatio = 1.25;
+            pipeline.syncQualityProfile();
+            const logicalResizeStillPending = renderer.needsViewportResize() && simulationResizeCalls === 1 &&
+                pipeline.getCapabilities().viewportHeight === 600 && canvas.height === 750 && particle.y === beforePendingY;
+            renderer.handleResize();
+            check(logicalResizeStillPending && simulationResizeCalls === 2 && stressResizeCalls === 2 &&
+                canvas.height === 775 && pipeline.getCapabilities().viewportHeight === 620 &&
+                Math.abs(particle.y - beforePendingY * 620 / 600) < 1e-9 && !renderer.needsViewportResize(),
+                'A quality DPR update before delivery of a simultaneous window resize leaves logical geometry pending and the renderer rescales particles exactly once');
         } finally {
             viewport.innerWidth = 960; viewport.innerHeight = 540; viewport.devicePixelRatio = 1;
             renderer.handleResize();
