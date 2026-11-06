@@ -2,12 +2,13 @@
 // ФАЙЛ: frontend/src/tests/waterfallLifecycle.test.ts
 // НАЗНАЧЕНИЕ: Проверить кеш DOM, равноправные каскады и неподвижный читаемый текст.
 // РАЗДЕЛЫ: 1. Минимальные DOM-привязки; 2. Общий кадр; 3. Каскад объяснений;
-//          4. Плавное свечение без движения текста; 5. Размер контура без чтений кадра.
+//          4. Плавное свечение без движения текста; 5. Размер контура без чтений кадра;
+//          6. Модель до общей записи DOM и снятие привязок между фазами кадра.
 // ФУНКЦИИ: makeCascade, runWaterfallLifecycleChecks, runExplanationWaterfallChecks,
-//          runStableTextChecks, runResizedContourChecks.
+//          runStableTextChecks, runResizedContourChecks, runStagedWaterfallChecks.
 // ============================================================================
 import { TelemetryWaterfallAnimator, buildLivingBreachContourPath, setHudText, type StarfallDroplet } from '../layers/Layer2_Metrics';
-import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
+import { getVisualSignals, type VisualSignalSnapshot, type VisualSignalFrame } from '../core/visualSignals';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ DOM-КОНТРАКТ
 interface DomCounters { queries: number; reads: number; writes: number; }
@@ -168,9 +169,11 @@ export function runWaterfallLifecycleChecks(check: (passed: boolean, description
     runExplanationWaterfallChecks(check);
     runStableTextChecks(check);
     runResizedContourChecks(check);
+    runStagedWaterfallChecks(check);
 }
 // КОНЕЦ ФУНКЦИИ runWaterfallLifecycleChecks
 // КОНЕЦ РАЗДЕЛА 2
+
 
 // НАЧАЛО РАЗДЕЛА 3. ОБЩИЙ ЗВЕЗДОПАД ОБЪЯСНЕНИЙ И ТЕЛЕМЕТРИИ
 // НАЧАЛО ФУНКЦИИ runExplanationWaterfallChecks
@@ -411,3 +414,35 @@ function runResizedContourChecks(check: (passed: boolean, description: string) =
     }
 }
 // КОНЕЦ РАЗДЕЛА 5
+
+// НАЧАЛО РАЗДЕЛА 6. ВЫЧИСЛЕНИЕ ДО ОБЩЕЙ ЗАПИСИ DOM
+// НАЧАЛО ФУНКЦИИ runStagedWaterfallChecks
+function runStagedWaterfallChecks(check: (passed: boolean, description: string) => void): void {
+    const shared: { tick?: (signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame) => void } = {};
+    const animator = new TelemetryWaterfallAnimator(listener => {
+        shared.tick = listener;
+        return () => { delete shared.tick; };
+    });
+    const first = makeCascade(), retained = makeCascade();
+    const snapshot = { ...getVisualSignals(), simTimeSec: 2, frameDtSec: 0.016, isPaused: false, reducedMotion: false };
+    const writes: (() => void)[] = [];
+    animator.bindCascade(2, first.root);
+    animator.bindCascade(3, retained.root);
+    const before = first.counters.writes;
+    shared.tick?.(snapshot, { write: commit => writes.push(commit) });
+    const modelReady = animator.getDropletsForCascade(2).length > 0 && first.counters.writes === before;
+    writes.forEach(commit => commit());
+    check(modelReady && first.counters.writes > before && writes.length === 1,
+        'A staged waterfall advances its real droplet model before other consumers read, then publishes the same frame DOM once after measurements');
+    writes.length = 0;
+    shared.tick?.({ ...snapshot, simTimeSec: 2.1 }, { write: commit => writes.push(commit) });
+    animator.releaseCascade(2, first.root);
+    const releasedWrites = first.counters.writes;
+    const retainedWrites = retained.counters.writes;
+    writes.forEach(commit => commit());
+    check(first.counters.writes === releasedWrites && retained.counters.writes > retainedWrites,
+        'Removing one waterfall binding between calculation and commit skips its stale DOM while the surviving cascade still publishes');
+    animator.releaseCascade(3, retained.root);
+}
+// КОНЕЦ ФУНКЦИИ runStagedWaterfallChecks
+// КОНЕЦ РАЗДЕЛА 6

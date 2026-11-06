@@ -1,11 +1,12 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/buttonMotion.test.ts
 // НАЗНАЧЕНИЕ: Проверить обороты 3D-тел, независимые тени, читаемую грань и освобождение.
-// РАЗДЕЛЫ: 1. Минимальный host/кадр; 2. Обороты; 3. Взаимодействие и lifecycle.
-// ФУНКЦИИ: makeHarness, spin, axis, isFront, styleSnapshot, shadowSnapshot, runButtonMotionChecks.
+// РАЗДЕЛЫ: 1. Минимальный host/кадр; 2. Обороты; 3. Взаимодействие и lifecycle;
+//          4. Отложенная покраска общего кадра, приоритет событий и восстановление ошибок.
+// ФУНКЦИИ: makeHarness, spin, axis, isFront, styleSnapshot, shadowSnapshot, motionSnapshot, runButtonMotionChecks.
 // ============================================================================
 import { ButtonMotionController } from '../core/buttonMotion';
-import { getVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
+import { getVisualSignals, type VisualSignalFrame, type VisualSignalSnapshot } from '../core/visualSignals';
 
 // НАЧАЛО РАЗДЕЛА 1. МИНИМАЛЬНЫЙ HOST И КАДР
 class MotionButton extends EventTarget {
@@ -17,6 +18,7 @@ class MotionButton extends EventTarget {
     public priorities = new Map<string, string>();
     public writes = 0;
     public shadowWrites = 0;
+    public failNextProperty: string | null = null;
     // НАЧАЛО ФУНКЦИИ matches
     public matches(selector: string): boolean { return selector === ':focus-visible' && this.focusVisible; }
     // КОНЕЦ ФУНКЦИИ matches
@@ -29,6 +31,10 @@ class MotionButton extends EventTarget {
         // КОНЕЦ ФУНКЦИИ getPropertyPriority
         // НАЧАЛО ФУНКЦИИ setProperty
         setProperty: (name: string, value: string, priority = ''): void => {
+            if (this.failNextProperty === name) {
+                this.failNextProperty = null;
+                throw new Error('Injected style write failure');
+            }
             this.writes++; this.values.set(name, value);
             if (name.startsWith('--button-shadow-')) this.shadowWrites++;
             if (priority) this.priorities.set(name, priority);
@@ -42,7 +48,8 @@ class MotionButton extends EventTarget {
 }
 // НАЧАЛО ФУНКЦИИ makeHarness
 function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds: readonly string[] = [], githubIndex = -1) {
-    const shared: { listener: ((frame: Readonly<VisualSignalSnapshot>) => void) | null; subscriptions: number; releases: number } = {
+    const shared: { listener: ((signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame) => void) | null;
+        subscriptions: number; releases: number } = {
         listener: null, subscriptions: 0, releases: 0,
     };
     const controller = new ButtonMotionController((listener) => {
@@ -80,7 +87,23 @@ function makeHarness(count = 4, statusIndices: readonly number[] = [], phaseIds:
         for (let index = 0; index < count; index++) shared.listener?.({ ...frame, ...changes });
     };
     // КОНЕЦ ФУНКЦИИ step
-    return { shared, controller, buttons, binding, step };
+    // НАЧАЛО ФУНКЦИИ deferStep
+    /** Один callback вычисляет модель; вызывающий читает DOM и затем завершает тот же кадр. */
+    const deferStep = (changes: Partial<VisualSignalSnapshot> = {}): (() => void) => {
+        const writes: (() => void)[] = [];
+        shared.listener?.({ ...frame, ...changes }, { write: commit => { writes.push(commit); } });
+        return (): void => {
+            let failed = false, firstError: unknown;
+            for (const commit of writes) {
+                try { commit(); }
+                catch (error) { if (!failed) { failed = true; firstError = error; } }
+            }
+            writes.length = 0;
+            if (failed) throw firstError;
+        };
+    };
+    // КОНЕЦ ФУНКЦИИ deferStep
+    return { shared, controller, buttons, binding, step, deferStep };
 }
 // КОНЕЦ ФУНКЦИИ makeHarness
 // НАЧАЛО ФУНКЦИИ spin
@@ -102,6 +125,12 @@ function shadowSnapshot(button: MotionButton): string {
     return JSON.stringify([...button.values].filter(([name]) => name.startsWith('--button-shadow-')));
 }
 // КОНЕЦ ФУНКЦИИ shadowSnapshot
+// НАЧАЛО ФУНКЦИИ motionSnapshot
+function motionSnapshot(buttons: readonly MotionButton[]): string {
+    return JSON.stringify(buttons.map(button => ({ styles: [...button.values].sort(([left], [right]) => left.localeCompare(right)),
+        marker: button.dataset.buttonPhaseEmphasis, text: button.textContent })));
+}
+// КОНЕЦ ФУНКЦИИ motionSnapshot
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО ФУНКЦИИ runButtonMotionChecks
@@ -458,5 +487,105 @@ export function runButtonMotionChecks(check: (passed: boolean, description: stri
         remounted.buttons[0].values.size === 0,
         'A stale binding cannot dispose the newer mount or leak duplicate frame subscriptions');
     // КОНЕЦ РАЗДЕЛА 3
+
+    // НАЧАЛО РАЗДЕЛА 4. ОТЛОЖЕННАЯ ПОКРАСКА ОБЩЕГО КАДРА
+    const phaseIds = ['01_VOID', '02_GENESIS', '03_EVOLUTION', '04_COLLAPSE', '05_SINGULARITY'] as const;
+    const immediate = makeHarness(6, [], phaseIds, 5);
+    const deferred = makeHarness(6, [], phaseIds, 5);
+    let samePose = true, readsStayClean = true, observedMotion = false;
+    for (let index = 0; index < 100; index++) {
+        const changes: Partial<VisualSignalSnapshot> = { phase: phaseIds[Math.floor(index / 20)],
+            low: (index % 7) / 7, mid: (index % 5) / 5, phaseProgress: (index % 20) / 20 };
+        const before = motionSnapshot(deferred.buttons);
+        immediate.step(1, changes);
+        const flush = deferred.deferStep(changes);
+        // Это место представляет следующего измеряющего подписчика того же publish.
+        readsStayClean &&= motionSnapshot(deferred.buttons) === before;
+        flush();
+        const after = motionSnapshot(deferred.buttons);
+        observedMotion ||= after !== before;
+        samePose &&= after === motionSnapshot(immediate.buttons);
+    }
+    check(readsStayClean && observedMotion && samePose,
+        'Frame calculations defer only DOM paint: later measurement sees the preceding pose, and the same-frame flush exactly matches immediate axes, angles, shadows, phase emphasis and GitHub color');
+
+    const pause: Partial<VisualSignalSnapshot> = { phase: '02_GENESIS', isPaused: true, frameDtSec: 0 };
+    immediate.step(1, pause);
+    const flushPause = deferred.deferStep(pause);
+    immediate.buttons[0].dispatchEvent(new Event('pointerenter'));
+    deferred.buttons[0].dispatchEvent(new Event('pointerenter'));
+    const hoverWasImmediate = isFront(deferred.buttons[0]) && deferred.buttons[0].dataset.buttonPhaseEmphasis === '1';
+    flushPause();
+    check(hoverWasImmediate && motionSnapshot(deferred.buttons) === motionSnapshot(immediate.buttons) &&
+        deferred.buttons[1].dataset.buttonPhaseEmphasis === undefined,
+        'Explicit hover in a paused frame remains immediate and overrides a queued phase marker without moving frozen peers');
+    immediate.buttons[0].dispatchEvent(new Event('pointerleave'));
+    deferred.buttons[0].dispatchEvent(new Event('pointerleave'));
+    immediate.step(50);
+    for (let index = 0; index < 50; index++) deferred.deferStep()();
+    immediate.step(1);
+    const flushClick = deferred.deferStep();
+    immediate.buttons[5].dispatchEvent(new Event('click'));
+    deferred.buttons[5].dispatchEvent(new Event('click'));
+    flushClick();
+    check(isFront(deferred.buttons[5]) && motionSnapshot(deferred.buttons) === motionSnapshot(immediate.buttons),
+        'A click between computation and flush keeps its readable immediate front instead of accepting an obsolete queued angle or shadow');
+    immediate.binding.dispose();
+    deferred.binding.dispose();
+
+    const interruptedPaint = makeHarness(3, [], phaseIds);
+    interruptedPaint.step(20);
+    const obsoleteFlush = interruptedPaint.deferStep({ phase: '04_COLLAPSE' });
+    interruptedPaint.binding.dispose();
+    const nextPaintBinding = interruptedPaint.controller.mount(interruptedPaint.buttons as unknown as HTMLElement[]);
+    const remountedPose = motionSnapshot(interruptedPaint.buttons);
+    const remountedWrites = interruptedPaint.buttons.map(button => button.writes);
+    obsoleteFlush();
+    check(motionSnapshot(interruptedPaint.buttons) === remountedPose &&
+        interruptedPaint.buttons.every((button, index) => button.writes === remountedWrites[index]),
+        'Dispose and remount invalidate prepared paint before it can overwrite restored styles or the new button binding');
+    nextPaintBinding.dispose();
+
+    for (const property of ['--button-spin-angle', '--button-shadow-x']) {
+        const retry = makeHarness(2);
+        const frontExpected = makeHarness(2);
+        retry.step(80);
+        frontExpected.step(80);
+        frontExpected.step(1, { reducedMotion: true });
+        retry.buttons[0].failNextProperty = property;
+        const flushFailed = retry.deferStep({ reducedMotion: true });
+        let reportedError = false;
+        try { flushFailed(); } catch { reportedError = true; }
+        retry.deferStep({ reducedMotion: true, isPaused: true, frameDtSec: 0 })();
+        const recovered = retry.buttons.every(isFront) && motionSnapshot(retry.buttons) === motionSnapshot(frontExpected.buttons);
+        const writesAfterRecovery = retry.buttons.map(button => button.writes);
+        retry.deferStep({ reducedMotion: true, isPaused: true, frameDtSec: 0 })();
+        check(reportedError && recovered && retry.buttons.every((button, index) => button.writes === writesAfterRecovery[index]),
+            'A failed ' + property + ' commit retains honest paint caches and retries a stationary reduced-motion pose even while paused, then returns to zero writes');
+        retry.binding.dispose();
+        frontExpected.binding.dispose();
+    }
+
+    const accentRetry = makeHarness(1, [], [], 0);
+    const accentExpected = makeHarness(1, [], [], 0);
+    accentRetry.step(100); accentExpected.step(100);
+    let accentChanged = false;
+    for (let index = 0; index < 30; index++) {
+        accentExpected.step(1);
+        if (accentExpected.buttons[0].values.get('--github-ink-color') !== accentRetry.buttons[0].values.get('--github-ink-color')) {
+            accentChanged = true;
+            break;
+        }
+        accentRetry.step(1);
+    }
+    accentRetry.buttons[0].failNextProperty = '--github-ink-color';
+    let accentError = false;
+    try { accentRetry.deferStep()(); } catch { accentError = true; }
+    accentRetry.deferStep({ isPaused: true, frameDtSec: 0 })();
+    check(accentChanged && accentError && motionSnapshot(accentRetry.buttons) === motionSnapshot(accentExpected.buttons),
+        'A failed GitHub accent write is not acknowledged early and retries the same calculated color during pause');
+    accentRetry.buttons[0].failNextProperty = null;
+    accentRetry.binding.dispose(); accentExpected.binding.dispose();
+    // КОНЕЦ РАЗДЕЛА 4
 }
 // КОНЕЦ ФУНКЦИИ runButtonMotionChecks

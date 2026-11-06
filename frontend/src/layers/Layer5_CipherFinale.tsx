@@ -36,7 +36,7 @@ import {
     CAMERA_DRIFT_Y_AMPLITUDE, CAMERA_ZOOM_SWAY, UNIVERSE_PHASES,
     smootherstep, universeStore, type UniverseState,
 } from '../store/universeState';
-import { subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
+import { subscribeVisualSignals, type VisualSignalSnapshot, type VisualSignalFrame } from '../core/visualSignals';
 import { getGlyphFontEpoch, getRenderableGlyphPool, GLYPH_WAITING_SPACE, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, prepareFittedGlyph, setFittedGlyph, type GlyphInkFit } from '../core/glyphHover';
 import { getFinaleCardPlacement, getFinaleCardScale, type FinaleCardLayout } from '../core/finaleComposition';
@@ -259,14 +259,14 @@ class FinaleCardDomAnimator {
 
     // НАЧАЛО ФУНКЦИИ setLineVisualText
     /** Общий фронт слева направо проходит через границы терминов, не заменяя их кнопки. */
-    private setLineVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[]): void {
+    private setLineVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[], layoutStale = true): void {
         if (!element) return;
         const parts = this.topicParts.get(element);
-        if (!parts) { calmGlyphHover.setVisualText(element, text, writes); return; }
+        if (!parts) { calmGlyphHover.setVisualText(element, text, writes, layoutStale); return; }
         const glyphs = splitGlyphText(text);
         for (const part of parts) {
             if (!calmGlyphHover.isActive(part.node)) {
-                calmGlyphHover.setVisualText(part.node, glyphs.slice(part.start, part.start + part.length).join(''), writes);
+                calmGlyphHover.setVisualText(part.node, glyphs.slice(part.start, part.start + part.length).join(''), writes, layoutStale);
             }
         }
     }
@@ -274,13 +274,13 @@ class FinaleCardDomAnimator {
 
     // НАЧАЛО ФУНКЦИИ updateLine
     /**
-     * Пишет строку только при смене текста, layout или шрифта. setVisualText читает offsetWidth, и после
-     * записей других подписчиков кадра каждый такой вызов стоил принудительного layout всей страницы.
+     * Пишет строку только при смене текста, layout или шрифта. Владелец ResizeObserver явно
+     * разрешает повторное использование размеров: новый знак не требует нового offsetWidth.
      */
     private updateLine(element: HTMLElement, text: string, writes: (() => void)[], layoutStale: boolean): void {
         if (calmGlyphHover.isActive(element)) { this.lastLineTexts.delete(element); return; }
         if (!layoutStale && this.lastLineTexts.get(element) === text) return;
-        this.setLineVisualText(element, text, writes);
+        this.setLineVisualText(element, text, writes, layoutStale);
         // Пока термин под курсором, строка обновляется каждый кадр, чтобы после наведения вернуть общий фронт.
         const partBusy = this.topicParts.get(element)?.some((part) => calmGlyphHover.isActive(part.node)) ?? false;
         if (partBusy) this.lastLineTexts.delete(element); else this.lastLineTexts.set(element, text);
@@ -368,7 +368,7 @@ class FinaleCardDomAnimator {
     // --- КОНЕЦ ФУНКЦИИ formatOdometerLineForProgress ---
 
     // --- НАЧАЛО ФУНКЦИИ tick ---
-    private tick = (signals: Readonly<VisualSignalSnapshot>): void => {
+    private tick = (signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame): void => {
         const state = universeStore.getState();
         const isActD = state.singularityAct === 'ACT_D_GITHUB_CARD';
         const isCollapsing = state.singularityAct === 'RESTART_COLLAPSE';
@@ -505,22 +505,28 @@ class FinaleCardDomAnimator {
                     this.glyphSlotsKey = slotsKey;
                 }
             }
-            // Один пакет для всех строк: transform и текст не прерывают измерения следующей строки.
-            glyphWrites.forEach(apply => apply());
-            this.cardBoxEl.style.transform = cardTransform;
-            if (handoffOnCanvas) {
-                // На время передачи opacity ведёт общий кадр без CSS-перехода, синхронно с затуханием Canvas.
-                if (!this.handoffActive) {
-                    this.cardBoxEl.style.setProperty('transition', 'background 0.55s ease');
-                    this.handoffActive = true;
+            // Общая фаза записи охватывает все строки, кнопки и каскады: чужой transform
+            // не заставляет следующую строку повторно пересчитывать layout. Canvas увидит
+            // измеренные слоты и готовый DOM до отрисовки этого же кадра.
+            const cardBox = this.cardBoxEl;
+            const commit = (): void => {
+                glyphWrites.forEach(apply => apply());
+                cardBox.style.transform = cardTransform;
+                if (handoffOnCanvas) {
+                    // На время передачи opacity ведёт общий кадр без CSS-перехода, синхронно с затуханием Canvas.
+                    if (!this.handoffActive) {
+                        cardBox.style.setProperty('transition', 'background 0.55s ease');
+                        this.handoffActive = true;
+                    }
+                    const handoff = state.reducedMotion ? 1 : smootherstep(FINALE_HANDOFF_START, FINALE_HANDOFF_END, p);
+                    cardBox.style.setProperty('opacity', handoff.toFixed(3));
+                } else if (this.handoffActive) {
+                    cardBox.style.removeProperty('opacity');
+                    cardBox.style.removeProperty('transition');
+                    this.handoffActive = false;
                 }
-                const handoff = state.reducedMotion ? 1 : smootherstep(FINALE_HANDOFF_START, FINALE_HANDOFF_END, p);
-                this.cardBoxEl.style.setProperty('opacity', handoff.toFixed(3));
-            } else if (this.handoffActive) {
-                this.cardBoxEl.style.removeProperty('opacity');
-                this.cardBoxEl.style.removeProperty('transition');
-                this.handoffActive = false;
-            }
+            };
+            if (frame) frame.write(commit); else commit();
         }
 
         this.layoutDirty = false;

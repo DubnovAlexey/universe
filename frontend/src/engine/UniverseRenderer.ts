@@ -2,6 +2,8 @@
 // ФАЙЛ: frontend/src/engine/UniverseRenderer.ts
 // НАЗНАЧЕНИЕ: Состояние симуляции, диспетчер Canvas-проходов и единственный цикл RAF.
 // РАЗДЕЛЫ: 1. Состояние и ввод; 2. Кадр; 3. Запуск, остановка и часы.
+// ДИАГНОСТИКА: markRenderPass записывает 10 последовательных интервалов только при ?profile=1;
+// один renderPasses переиспользуется, обычный просмотр не создаёт карту/дополнительные часы.
 // ============================================================================
 
 import {
@@ -41,6 +43,9 @@ const PHYSICS_MAX_STEP_SEC = 0.05;
 /** ?clock=story: подшагов на кадр не больше четырёх (до 0,2 с физики), сюжет — до 0,25 с за кадр. */
 const PHYSICS_MAX_SUBSTEPS = 4;
 const STORY_MAX_DT_SEC = 0.25;
+const RENDER_PASS_LABELS = ['base', 'dust-signals', 'phase-backdrop', 'breach', 'topology',
+    'lens-particles', 'focus', 'odometer', 'ouroboros', 'explanation-assembly'] as const;
+type RenderPassLabel = typeof RENDER_PASS_LABELS[number];
 
 export class UniverseRenderer {
     // НАЧАЛО РАЗДЕЛА 1. СОСТОЯНИЕ, ИНИЦИАЛИЗАЦИЯ И ВВОД
@@ -48,6 +53,9 @@ export class UniverseRenderer {
     private readonly simulation: VoidPhaseSimulation;
     private readonly ouroboros: OuroborosEffect;
     private readonly frameDiagnostics: FrameDiagnostics;
+    /** Только числовые поля: диагностика копирует карту при сохранении пика, не в каждом проходе. */
+    private readonly renderPasses: Record<RenderPassLabel, number> | null;
+    private renderPassMarkMs = 0;
     private readonly lensDispersion = new LensDispersionPass();
     private lastGlowDiagnosticsMs = -Infinity;
 
@@ -91,6 +99,10 @@ export class UniverseRenderer {
         this.initProceduralBackgroundFields(initialState.seed);
         this.ouroboros = new OuroborosEffect(canvas);
         this.frameDiagnostics = new FrameDiagnostics(canvas);
+        this.renderPasses = this.frameDiagnostics.enabled ? {
+            base: 0, 'dust-signals': 0, 'phase-backdrop': 0, breach: 0, topology: 0,
+            'lens-particles': 0, focus: 0, odometer: 0, ouroboros: 0, 'explanation-assembly': 0,
+        } : null;
         // Один bounded-атлас создаётся до первого RAF и переживает смену фаз/циклов.
         const context = this.pipeline.getContext();
         prepareParticleGlowAtlas(context);
@@ -196,6 +208,16 @@ export class UniverseRenderer {
 
     // НАЧАЛО РАЗДЕЛА 2. ПОРЯДОК ОТРИСОВКИ КАДРА
 
+    // НАЧАЛО ФУНКЦИИ markRenderPass
+    /** Граница последовательного участка; без профиля не читает часы и не выделяет объект. */
+    private markRenderPass(label: RenderPassLabel): void {
+        if (!this.renderPasses) return;
+        const nowMs = performance.now();
+        this.renderPasses[label] += Math.max(0, nowMs - this.renderPassMarkMs);
+        this.renderPassMarkMs = nowMs;
+    }
+    // КОНЕЦ ФУНКЦИИ markRenderPass
+
     // --- НАЧАЛО ФУНКЦИИ renderFrame ---
     /**
      * Выполняет полную послойную отрисовку текущего кадра симуляции:
@@ -247,10 +269,12 @@ export class UniverseRenderer {
 
         const phase = state.currentPhase;
         const act = state.singularityAct;
+        this.markRenderPass('base');
 
         // Эпизод очищает GPU-слой при входе в Точку Нуля даже до раннего return.
         if (phase === '05_SINGULARITY' && act === 'ACT_C_ZERO_SILENCE') {
             this.ouroboros.render(ctx, state, getVisualSignals(), w, h, this.pipeline.getCapabilities().dpr);
+            this.markRenderPass('ouroboros');
         }
 
         // Короткий 0.45-секундный импульс максимального сжатия в Точке Нуля (Акт C)
@@ -270,6 +294,7 @@ export class UniverseRenderer {
             );
             renderCurvedFieldSignals(ctx, cx, cy, w, h, simTimeSec, this.backgroundFields.signals);
             ctx.restore();
+            this.markRenderPass('dust-signals');
 
             renderZeroSilenceActC(ctx, cx, cy, minSide, simTimeSec);
             ctx.restore();
@@ -277,6 +302,7 @@ export class UniverseRenderer {
                 'canvas2d-render',
                 performance.now() - renderStartMs
             );
+            this.markRenderPass('phase-backdrop');
             return;
         }
 
@@ -308,6 +334,7 @@ export class UniverseRenderer {
 
         // 3. Редкие криволинейные сигналы с шумовым поворотом направления
         renderCurvedFieldSignals(ctx, cx, cy, w, h, simTimeSec, this.backgroundFields.signals);
+        this.markRenderPass('dust-signals');
 
         // 4. Нестабильные дышащие кольца светового эха RS Puppis (Фаза 01_VOID и переход в 02_GENESIS)
         if (phase === '01_VOID' || phase === '02_GENESIS') {
@@ -359,6 +386,7 @@ export class UniverseRenderer {
                 audioSnap
             );
         }
+        this.markRenderPass('phase-backdrop');
 
         // 7. Органическая мембрана BREACH LENS и глубинный эшелон Z4 («обратная сторона Вселенной»)
         renderBreachLensAndSubQuantumZ4(
@@ -373,6 +401,7 @@ export class UniverseRenderer {
             audioSnap,
             this.backgroundFields.nodes
         );
+        this.markRenderPass('breach');
 
         // 8. Отрисовка 3 классов кривых Безье графа NEXUS и комет синаптических импульсов
         if (state.layers.layer3_topologyGraph || state.layers.layer5_truthXRayMode) {
@@ -386,6 +415,7 @@ export class UniverseRenderer {
                 audioSnap
             );
         }
+        this.markRenderPass('topology');
 
         // 9. Отрисовка частиц, сом нейронов и боке переднего плана по эшелонам глубины Z0..Z3
         this.lensDispersion.render(ctx, particles, simTimeSec, state);
@@ -397,17 +427,20 @@ export class UniverseRenderer {
             state.layers.layer5_truthXRayMode,
             audioSnap
         );
+        this.markRenderPass('lens-particles');
 
         // Акцент использует только существующие координаты и не раскрывает скрытый граф.
         renderExplanationFocusPass(ctx, particles, edges, getVisualSignals(), sceneExplanationFocus.getSnapshot(),
             state.layers.layer3_topologyGraph || state.layers.layer5_truthXRayMode);
 
         ctx.restore();
+        this.markRenderPass('focus');
 
         // 10. Квантовый одометр на холсте (разлёт символов из Точки Нуля в Акте D)
         if (isOdometerStage) {
             renderCipherOdometerStage(ctx, w, h, state);
         }
+        this.markRenderPass('odometer');
 
         this.ouroboros.render(ctx, state, getVisualSignals(), w, h, this.pipeline.getCapabilities().dpr, particles);
 
@@ -416,6 +449,8 @@ export class UniverseRenderer {
             'canvas2d-render',
             performance.now() - renderStartMs
         );
+        // Здесь также учитывается существующий короткий bookkeeping реестра после рисования.
+        this.markRenderPass('ouroboros');
     }
     // --- КОНЕЦ ФУНКЦИИ renderFrame ---
 
@@ -465,8 +500,11 @@ export class UniverseRenderer {
         if (!this.isRunning) return;
         const profileStartMs = this.frameDiagnostics.enabled ? performance.now() : 0;
         const profileGapMs = Math.max(0, nowMs - this.lastFrameTimeMs);
+        if (this.renderPasses) {
+            for (const label of RENDER_PASS_LABELS) this.renderPasses[label] = 0;
+        }
         const profileWork: FrameWorkBreakdown | undefined = this.frameDiagnostics.enabled
-            ? { setupMs: 0, simulationMs: 0, uiMs: 0, renderMs: 0 } : undefined;
+            ? { setupMs: 0, simulationMs: 0, uiMs: 0, renderMs: 0, renderPasses: this.renderPasses! } : undefined;
         let profileMarkMs = profileStartMs;
 
         try {
@@ -577,18 +615,25 @@ export class UniverseRenderer {
                 });
             }
 
-            const visualTimings = publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState(), !!profileWork);
-            sceneExplanationFocus.advance(getVisualSignals());
-            if (profileWork) profileWork.visualSignals = visualTimings;
-            if (profileWork) {
-                const endMs = performance.now();
-                profileWork.uiMs = endMs - profileMarkMs;
-                profileMarkMs = endMs;
+            try {
+                const visualTimings = publishVisualSignals(universeStore.getState(), audioSnap, stressStore.getState(), !!profileWork, () => {
+                    sceneExplanationFocus.advance(getVisualSignals());
+                    const renderStartMs = profileWork ? performance.now() : 0;
+                    if (profileWork) this.renderPassMarkMs = renderStartMs;
+                    try {
+                        this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
+                        // Пыль окна — в том же Canvas; DOM применяется после всех текстовых измерений.
+                        renderExplanationAssemblyPass(this.pipeline.getContext(), this.getSimParticles(), nowMs);
+                        this.markRenderPass('explanation-assembly');
+                    } finally {
+                        if (profileWork) profileWork.renderMs = performance.now() - renderStartMs;
+                    }
+                });
+                if (profileWork) profileWork.visualSignals = visualTimings;
+            } finally {
+                // UI включает store, расчёты и конечную запись DOM; Canvas учитывается отдельно.
+                if (profileWork) profileWork.uiMs = Math.max(0, performance.now() - profileMarkMs - (profileWork.renderMs ?? 0));
             }
-            this.renderFrame(nextSimSec, universeStore.getState(), audioSnap);
-            // Пыль, собирающая окно путеводителя, рисуется в этом же кадре и Canvas, поверх всех фаз.
-            renderExplanationAssemblyPass(this.pipeline.getContext(), this.getSimParticles(), nowMs);
-            if (profileWork) profileWork.renderMs = performance.now() - profileMarkMs;
             this.consecutiveFrameErrors = 0;
         } catch (err: unknown) {
             this.consecutiveFrameErrors++;

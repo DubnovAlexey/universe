@@ -4,11 +4,11 @@
 // РАЗДЕЛЫ: 1. Оси/контракт; 2. Привязка и освобождение; 3. Движение общего кадра.
 // ФУНКЦИИ: easeC2, formatCssNumber, createAxis, constructor, mount, dispose,
 // setInteracting, updateReadTarget, setHeld, snapFront, publishAngle, publishShadow,
-// publishGithubAccent, updateSceneSpeed, update.
+// commitPose, publishPhaseEmphasis, publishGithubAccent, retryPaint, updateSceneSpeed, update.
 // Host сохраняет геометрию и доступность; rotate3d получает только вложенное тело.
 // Новых RAF и таймеров нет. Наведение, keyboard focus и текущая фаза задают читаемую грань.
 // ============================================================================
-import { subscribeVisualSignals, type VisualSignalSnapshot } from './visualSignals';
+import { subscribeVisualSignals, type VisualSignalFrame, type VisualSignalSnapshot } from './visualSignals';
 
 // НАЧАЛО РАЗДЕЛА 1. ОСИ И КОНТРАКТ
 export interface ButtonMotionBinding {
@@ -22,6 +22,7 @@ const SHADOW_PROPERTIES = [
 const BUTTON_PROPERTIES = ['--button-axis-x', '--button-axis-y', '--button-axis-z', '--button-spin-angle', '--button-back-label-turn', ...SHADOW_PROPERTIES] as const;
 const GITHUB_INK_PROPERTY = '--github-ink-color';
 type ButtonProperty = typeof BUTTON_PROPERTIES[number] | typeof GITHUB_INK_PROPERTY;
+type ButtonPaint = 'angle' | 'shadow' | 'accent' | 'phase';
 interface ButtonPose {
     readonly element: HTMLElement;
     readonly direction: 1 | -1;
@@ -33,6 +34,9 @@ interface ButtonPose {
     readonly phaseId: string | undefined;
     readonly githubAccent: boolean;
     cleanup: () => void;
+    active: boolean;
+    readonly failedPaints: Set<ButtonPaint>;
+    phaseEmphasis: boolean;
     hovered: boolean;
     keyboardFocused: boolean;
     held: boolean;
@@ -126,7 +130,8 @@ export class ButtonMotionController {
                 originalPhaseEmphasis: element.dataset.buttonPhaseEmphasis,
                 phaseId: element.dataset.phaseId,
                 githubAccent,
-                cleanup: () => {}, hovered: false, keyboardFocused: element.matches(':focus-visible'),
+                cleanup: () => {}, active: true, failedPaints: new Set(), phaseEmphasis: false,
+                hovered: false, keyboardFocused: element.matches(':focus-visible'),
                 held: false,
                 angle: 0, alignFrom: 0, alignTarget: 0,
                 alignElapsedSec: 0, releaseElapsedSec: 0, lastAngle: '',
@@ -182,6 +187,7 @@ export class ButtonMotionController {
         this.unsubscribe?.();
         this.unsubscribe = null;
         this.buttons.forEach((pose) => {
+            pose.active = false;
             pose.cleanup();
             pose.originalStyles.forEach(({ property, value, priority }) => {
                 if (value) pose.element.style.setProperty(property, value, priority);
@@ -206,25 +212,19 @@ export class ButtonMotionController {
 
     // НАЧАЛО ФУНКЦИИ updateReadTarget
     /** В шкале фаз читается одна кнопка; наведение и keyboard focus временно важнее текущей фазы. */
-    private updateReadTarget(): void {
+    private updateReadTarget(frame?: VisualSignalFrame): void {
         const phaseTarget = this.buttons.find((pose) => pose.phaseId && pose.hovered) ??
             this.buttons.find((pose) => pose.phaseId && pose.keyboardFocused) ??
             this.buttons.find((pose) => pose.phaseId === this.currentPhase);
         this.buttons.forEach((pose) => {
-            if (pose.phaseId) {
-                if (pose === phaseTarget) {
-                    if (pose.element.dataset.buttonPhaseEmphasis !== '1') pose.element.dataset.buttonPhaseEmphasis = '1';
-                } else if (pose.element.dataset.buttonPhaseEmphasis !== undefined) {
-                    delete pose.element.dataset.buttonPhaseEmphasis;
-                }
-            }
-            this.setHeld(pose, pose.phaseId ? pose === phaseTarget : pose.hovered || pose.keyboardFocused);
+            if (pose.phaseId) this.publishPhaseEmphasis(pose, pose === phaseTarget, frame);
+            this.setHeld(pose, pose.phaseId ? pose === phaseTarget : pose.hovered || pose.keyboardFocused, frame);
         });
     }
     // КОНЕЦ ФУНКЦИИ updateReadTarget
 
     // НАЧАЛО ФУНКЦИИ setHeld
-    private setHeld(pose: ButtonPose, held: boolean): void {
+    private setHeld(pose: ButtonPose, held: boolean, frame?: VisualSignalFrame): void {
         if (pose.held === held) return;
         pose.held = held;
         if (held) {
@@ -233,7 +233,7 @@ export class ButtonMotionController {
             pose.alignElapsedSec = 0;
             // Явный выбор в паузе открывает читаемую грань только этого тела,
             // не продвигая часы и не сдвигая остальные тела.
-            if (this.paused || this.reducedMotion) this.snapFront(pose);
+            if (this.paused || this.reducedMotion) this.snapFront(pose, frame);
         } else {
             // Отпускание не меняет угол: тело разгоняется от своей текущей позы.
             pose.releaseElapsedSec = 0;
@@ -244,33 +244,37 @@ export class ButtonMotionController {
 
     // НАЧАЛО РАЗДЕЛА 3. ДВИЖЕНИЕ ОБЩЕГО КАДРА
     // НАЧАЛО ФУНКЦИИ snapFront
-    private snapFront(pose: ButtonPose): void {
+    private snapFront(pose: ButtonPose, frame?: VisualSignalFrame): void {
         pose.angle = Math.round(pose.angle / 360) * 360;
         pose.alignFrom = pose.angle;
         pose.alignTarget = pose.angle;
         pose.alignElapsedSec = ALIGN_DURATION_SEC;
         pose.releaseElapsedSec = 0;
-        this.publishAngle(pose);
-        this.publishShadow(pose, true);
+        this.publishAngle(pose, frame);
+        this.publishShadow(pose, true, frame);
     }
     // КОНЕЦ ФУНКЦИИ snapFront
 
     // НАЧАЛО ФУНКЦИИ publishAngle
-    private publishAngle(pose: ButtonPose): void {
+    private publishAngle(pose: ButtonPose, frame?: VisualSignalFrame): void {
+        const angle = pose.angle;
         const value = formatCssNumber(pose.angle, 'deg');
         if (pose.lastAngle === value) return;
-        pose.element.style.setProperty('--button-spin-angle', value);
-        pose.lastAngle = value;
+        this.commitPose(pose, 'angle', () => {
+            if (pose.angle !== angle || pose.lastAngle === value) return;
+            pose.element.style.setProperty('--button-spin-angle', value);
+            pose.lastAngle = value;
+        }, frame);
     }
     // КОНЕЦ ФУНКЦИИ publishAngle
 
     // НАЧАЛО ФУНКЦИИ publishShadow
     /** Проекция собственной оси задаёт отдельную тень; фильтр применяется только к её слою. */
-    private publishShadow(pose: ButtonPose, force = false): void {
+    private publishShadow(pose: ButtonPose, force = false, frame?: VisualSignalFrame): void {
         if (pose.lastShadowAngle === pose.angle || (!force && pose.shadowElapsedSec < SHADOW_INTERVAL_SEC)) return;
         pose.shadowElapsedSec = 0;
-        pose.lastShadowAngle = pose.angle;
-        const radians = (pose.angle % 360) * Math.PI / 180;
+        const angle = pose.angle;
+        const radians = (angle % 360) * Math.PI / 180;
         const c = Math.cos(radians);
         const s = Math.sin(radians);
         const u = 1 - c;
@@ -288,16 +292,49 @@ export class ButtonMotionController {
             formatCssNumber(0.22 + projectionX * 0.78),
             formatCssNumber(0.24 + projectionY * 0.76),
         ];
-        values.forEach((value, index) => {
-            if (value !== pose.lastShadowValues[index]) pose.element.style.setProperty(SHADOW_PROPERTIES[index], value);
-        });
-        pose.lastShadowValues = values;
+        this.commitPose(pose, 'shadow', () => {
+            if (pose.angle !== angle) return;
+            values.forEach((value, index) => {
+                if (value !== pose.lastShadowValues[index]) pose.element.style.setProperty(SHADOW_PROPERTIES[index], value);
+            });
+            pose.lastShadowAngle = angle;
+            pose.lastShadowValues = values;
+        }, frame);
     }
     // КОНЕЦ ФУНКЦИИ publishShadow
 
+    // НАЧАЛО ФУНКЦИИ commitPose
+    /** Модель уже рассчитана; только DOM-покраска ждёт завершения общих измерений. */
+    private commitPose(pose: ButtonPose, paint: ButtonPaint, apply: () => void, frame?: VisualSignalFrame): void {
+        const commit = (): void => {
+            if (!pose.active) return;
+            try { apply(); }
+            catch (error) { pose.failedPaints.add(paint); throw error; }
+        };
+        if (!frame) { commit(); return; }
+        try { frame.write(commit); }
+        catch (error) { pose.failedPaints.add(paint); throw error; }
+    }
+    // КОНЕЦ ФУНКЦИИ commitPose
+
+    // НАЧАЛО ФУНКЦИИ publishPhaseEmphasis
+    private publishPhaseEmphasis(pose: ButtonPose, emphasized: boolean, frame?: VisualSignalFrame): void {
+        pose.phaseEmphasis = emphasized;
+        this.commitPose(pose, 'phase', () => {
+            // Явное взаимодействие до flush важнее уже подготовленного фазового маркера.
+            if (pose.phaseEmphasis !== emphasized) return;
+            if (emphasized) {
+                if (pose.element.dataset.buttonPhaseEmphasis !== '1') pose.element.dataset.buttonPhaseEmphasis = '1';
+            } else if (pose.element.dataset.buttonPhaseEmphasis !== undefined) {
+                delete pose.element.dataset.buttonPhaseEmphasis;
+            }
+        }, frame);
+    }
+    // КОНЕЦ ФУНКЦИИ publishPhaseEmphasis
+
     // НАЧАЛО ФУНКЦИИ publishGithubAccent
     /** Более яркий раскалённый металл: янтарь, коралл, розовый свет и холодный отблеск. */
-    private publishGithubAccent(pose: ButtonPose): void {
+    private publishGithubAccent(pose: ButtonPose, frame?: VisualSignalFrame): void {
         if (!pose.githubAccent) return;
         const phase = pose.accentElapsedSec / GITHUB_ACCENT_PERIOD_SEC * GITHUB_HEAT_COLORS.length;
         const index = Math.floor(phase) % GITHUB_HEAT_COLORS.length;
@@ -309,10 +346,29 @@ export class ButtonMotionController {
         const b = Math.round(from[2] + (to[2] - from[2]) * mix);
         const color = `rgb(${r} ${g} ${b})`;
         if (color === pose.lastAccentColor) return;
-        pose.element.style.setProperty(GITHUB_INK_PROPERTY, color);
-        pose.lastAccentColor = color;
+        const elapsedSec = pose.accentElapsedSec;
+        this.commitPose(pose, 'accent', () => {
+            if (pose.accentElapsedSec !== elapsedSec || pose.lastAccentColor === color) return;
+            pose.element.style.setProperty(GITHUB_INK_PROPERTY, color);
+            pose.lastAccentColor = color;
+        }, frame);
     }
     // КОНЕЦ ФУНКЦИИ publishGithubAccent
+
+    // НАЧАЛО ФУНКЦИИ retryPaint
+    /** Ошибка DOM не отмечает покраску завершённой; повтор не двигает часы даже на паузе. */
+    private retryPaint(frame?: VisualSignalFrame): void {
+        this.buttons.forEach((pose) => {
+            if (!pose.failedPaints.size) return;
+            const failed = new Set(pose.failedPaints);
+            pose.failedPaints.clear();
+            if (failed.has('angle')) this.publishAngle(pose, frame);
+            if (failed.has('shadow')) this.publishShadow(pose, true, frame);
+            if (failed.has('accent')) this.publishGithubAccent(pose, frame);
+            if (failed.has('phase') && pose.phaseId) this.publishPhaseEmphasis(pose, pose.phaseEmphasis, frame);
+        });
+    }
+    // КОНЕЦ ФУНКЦИИ retryPaint
 
     // НАЧАЛО ФУНКЦИИ updateSceneSpeed
     /** Изображение сцены и звук меняют только скорость; знак и накопленный угол сохраняются. */
@@ -326,14 +382,15 @@ export class ButtonMotionController {
     // КОНЕЦ ФУНКЦИИ updateSceneSpeed
 
     // НАЧАЛО ФУНКЦИИ update
-    private update = (signals: Readonly<VisualSignalSnapshot>): void => {
+    private update = (signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame): void => {
         this.paused = signals.isPaused;
+        this.retryPaint(frame);
         if (this.currentPhase !== signals.phase) {
             this.currentPhase = signals.phase;
-            this.updateReadTarget();
+            this.updateReadTarget(frame);
         }
         if (signals.reducedMotion) {
-            if (!this.reducedMotion) this.buttons.forEach((pose) => this.snapFront(pose));
+            if (!this.reducedMotion) this.buttons.forEach((pose) => this.snapFront(pose, frame));
             this.reducedMotion = true;
             return;
         }
@@ -351,7 +408,7 @@ export class ButtonMotionController {
         this.buttons.forEach((pose) => {
             if (pose.githubAccent) {
                 pose.accentElapsedSec = (pose.accentElapsedSec + dt) % GITHUB_ACCENT_PERIOD_SEC;
-                this.publishGithubAccent(pose);
+                this.publishGithubAccent(pose, frame);
             }
             pose.shadowElapsedSec = Math.min(SHADOW_INTERVAL_SEC, pose.shadowElapsedSec + dt);
             let alignedNow = false;
@@ -367,8 +424,8 @@ export class ButtonMotionController {
                 const acceleration = easeC2(pose.releaseElapsedSec / RELEASE_DURATION_SEC);
                 pose.angle += pose.direction * pose.baseSpeed * this.sceneSpeedFactor * acceleration * dt;
             }
-            this.publishAngle(pose);
-            this.publishShadow(pose, alignedNow);
+            this.publishAngle(pose, frame);
+            this.publishShadow(pose, alignedNow, frame);
         });
     };
     // КОНЕЦ ФУНКЦИИ update

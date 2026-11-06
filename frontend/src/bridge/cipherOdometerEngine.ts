@@ -14,7 +14,7 @@ import { DeterministicPRNG } from '../core/prng';
 import { getLocale, translateUi, type Locale } from '../core/locale';
 import { smootherstep, universeStore } from '../store/universeState';
 import { getVisualSignals } from '../core/visualSignals';
-import { GLYPH_WAITING_SPACE, formatOrderedGlyphText, getOrderedGlyphState, getRenderableGlyphPool, isMutableGlyph, splitGlyphText } from '../core/glyphGrammar';
+import { GLYPH_WAITING_SPACE, formatOrderedGlyphText, getCanonicalGlyphText, getOrderedGlyphState, getRenderableGlyphPool, isMutableGlyph } from '../core/glyphGrammar';
 
 export const CANONICAL_FINALE_LINES: readonly [string, string, string, string, string] = [
     'DUBNOV ALEXEY',
@@ -348,7 +348,7 @@ export class CipherOdometerEngine {
 
         for (let lineIdx = 0; lineIdx < CANONICAL_FINALE_LINES.length; lineIdx++) {
             const lineStr = getFinaleLines()[lineIdx];
-            const lineCharacters = splitGlyphText(lineStr);
+            const lineCharacters = getCanonicalGlyphText(lineStr);
             const len = lineCharacters.length;
             const typo = this.getLineTypography(lineIdx, len, viewportWidth);
             const lineWidth = len * typo.stepWidthPx;

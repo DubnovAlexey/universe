@@ -1,13 +1,14 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/visualSignals.test.ts
 // НАЗНАЧЕНИЕ: Проверить общий снимок, Unicode-пулы и жизненный цикл Roll/Dwell.
-// РАЗДЕЛЫ: 1. Минимальный DOM-контракт; 2. Проверки реальных core-модулей.
-// ФУНКЦИИ: runVisualSignalChecks; HoverElement предоставляет EventTarget/атрибуты.
+// РАЗДЕЛЫ: 1. Минимальный DOM-контракт; 2. Frame read/write contract; 3. Проверки core.
+// ФУНКЦИИ: runFrameWriteChecks, runVisualSignalChecks; HoverElement предоставляет EventTarget/атрибуты.
 // ============================================================================
 import { universeStore } from '../store/universeState';
 import { stressStore } from '../store/stressState';
 import { audioSync } from '../utils/audioSync';
-import { createVisualSignals, publishVisualSignals } from '../core/visualSignals';
+import { createVisualSignals, getVisualSignals, publishVisualSignals, subscribeVisualSignals,
+    type VisualSignalFrame, type VisualSignalListener } from '../core/visualSignals';
 import { GLYPH_FAMILIES, GLYPH_WAITING_SPACE, filterGlyphPool, getGlyphFontEpoch, getGlyphProfile,
     getOrderedGlyphState, getRenderableGlyphPool, formatOrderedGlyphText, invalidateGlyphFontCache, scrambleCanonicalText, splitGlyphText } from '../core/glyphGrammar';
 import { calmGlyphHover, fitGlyphInk } from '../core/glyphHover';
@@ -21,11 +22,14 @@ class HoverElement extends EventTarget {
     public className = '';
     public parentElement: HoverElement | null = null;
     public children: HoverElement[] = [];
+    public geometryWidth = 120;
+    public geometryHeight = 24;
+    public slotWidth = 13;
     public ownerDocument = { createElement: (tagName: string): HoverElement => new HoverElement(tagName, this.access) };
-    public get offsetWidth(): number { this.access?.push('read'); return 120; }
-    public get offsetHeight(): number { this.access?.push('read'); return 24; }
-    public get clientWidth(): number { this.access?.push('read'); return 13; }
-    public get clientHeight(): number { this.access?.push('read'); return 24; }
+    public get offsetWidth(): number { this.access?.push('read'); return this.geometryWidth; }
+    public get offsetHeight(): number { this.access?.push('read'); return this.geometryHeight; }
+    public get clientWidth(): number { this.access?.push('read'); return this.slotWidth; }
+    public get clientHeight(): number { this.access?.push('read'); return this.geometryHeight; }
     private text = '';
     public isConnected = true;
     public readonly styleValues = new Map<string, string>();
@@ -90,7 +94,136 @@ function visibleSymbols(track: HoverElement): HoverElement[] {
 }
 // КОНЕЦ ФУНКЦИИ visibleSymbols
 
-// НАЧАЛО РАЗДЕЛА 2. ПРОВЕРКИ CORE
+// НАЧАЛО РАЗДЕЛА 2. FRAME READ/WRITE CONTRACT
+function runFrameWriteChecks(state: Parameters<typeof publishVisualSignals>[0],
+    audio: Parameters<typeof publishVisualSignals>[1], stress: Parameters<typeof publishVisualSignals>[2]):
+    { passed: boolean; description: string }[] {
+    const checks: { passed: boolean; description: string }[] = [];
+    const releases: (() => void)[] = [];
+    const listen = (listener: VisualSignalListener, label = 'queue-test'): (() => void) => {
+        const release = subscribeVisualSignals(listener, label); releases.push(release); return release;
+    };
+    const clear = (): void => { while (releases.length) releases.pop()!(); };
+    const publish = (profile = false): Record<string, number> | undefined => publishVisualSignals(state, audio, stress, profile);
+    const events: string[] = [];
+    try {
+        let firstSnapshot: unknown;
+        listen(snapshot => { firstSnapshot = snapshot; events.push('legacy-write'); });
+        listen(snapshot => { events.push(snapshot === firstSnapshot && Object.isFrozen(snapshot) ? 'legacy-read' : 'wrong-snapshot'); });
+        const unprofiled = publish();
+        checks.push({ passed: events.join(',') === 'legacy-write,legacy-read' && unprofiled === undefined,
+            description: 'Legacy single-argument listeners retain immediate registration order and one immutable snapshot' });
+        clear(); events.length = 0;
+
+        listen((_snapshot, frame) => { events.push('read-A'); frame!.write(() => events.push('write-A1')); frame!.write(() => events.push('write-A2')); });
+        listen((_snapshot, frame) => { events.push('read-B'); frame!.write(() => events.push('write-B')); });
+        publish();
+        checks.push({ passed: events.join(',') === 'read-A,read-B,write-A1,write-A2,write-B',
+            description: 'Opted-in consumers prepare reads in registration order before one same-publish FIFO write flush' });
+        clear(); events.length = 0;
+
+        let removeSkipped = (): void => {};
+        listen(() => { events.push('first'); removeSkipped(); listen(() => events.push('added')); });
+        removeSkipped = listen(() => events.push('removed-before-visit'));
+        publish();
+        checks.push({ passed: events.join(',') === 'first,added',
+            description: 'Live Map semantics skip a deleted pending listener and visit a newly appended listener in the same publish' });
+        clear(); events.length = 0;
+
+        const removeOwner = listen((_snapshot, frame) => { frame!.write(() => events.push('disposed-write')); });
+        listen(() => removeOwner());
+        publish();
+        checks.push({ passed: events.length === 0,
+            description: 'Disposal during preparation cancels already queued writes belonging to that exact subscription' });
+        clear(); events.length = 0;
+
+        let calls = 0, replaced = false;
+        const sameCallback: VisualSignalListener = (_snapshot, frame) => {
+            const call = ++calls; frame!.write(() => events.push('write-' + call));
+        };
+        const oldRelease = listen(sameCallback, 'old');
+        listen(() => { if (!replaced) { replaced = true; oldRelease(); listen(sameCallback, 'new'); oldRelease(); } });
+        publish();
+        checks.push({ passed: calls === 2 && events.join(',') === 'write-2',
+            description: 'A remounted callback has a fresh identity: old jobs and old unsubscribe cannot affect its new subscription' });
+        clear(); events.length = 0;
+
+        const callbackError = new Error('prepare failure'), commitError = new Error('commit failure');
+        let caught: unknown;
+        listen((_snapshot, frame) => { frame!.write(() => { events.push('valid-before'); throw commitError; }); });
+        listen((_snapshot, frame) => { frame!.write(() => events.push('from-failing-prepare')); throw callbackError; });
+        listen(() => events.push('unvisited'));
+        try { publish(); } catch (error) { caught = error; }
+        checks.push({ passed: caught === callbackError && events.join(',') === 'valid-before,from-failing-prepare',
+            description: 'Preparation failure stops later callbacks, flushes prepared jobs and rethrows the first error after cleanup' });
+        clear(); events.length = 0; caught = undefined;
+
+        listen((_snapshot, frame) => { frame!.write(() => { events.push('failing-write'); throw commitError; }); frame!.write(() => events.push('next-write')); });
+        listen((_snapshot, frame) => frame!.write(() => events.push('other-owner-write')));
+        try { publish(); } catch (error) { caught = error; }
+        checks.push({ passed: caught === commitError && events.join(',') === 'failing-write,next-write,other-owner-write',
+            description: 'A commit failure still completes other prepared valid writes and propagates its error without carrying jobs forward' });
+        clear(); events.length = 0;
+
+        let staleFrame: VisualSignalFrame | undefined, staleCalls = 0;
+        listen((_snapshot, frame) => {
+            staleFrame ??= frame;
+            if (++staleCalls > 1) staleFrame!.write(() => events.push('stale-during-next-publish'));
+            const call = staleCalls;
+            frame!.write(() => { events.push('active-' + call); frame!.write(() => events.push('recursive-write')); });
+        });
+        publish(); staleFrame!.write(() => events.push('late-write')); publish();
+        checks.push({ passed: events.join(',') === 'active-1,active-2',
+            description: 'Captured contexts are closed after their own callback and cannot enqueue during flush or leak writes into a later publish' });
+        clear(); events.length = 0;
+
+        listen((_snapshot, frame) => { frame!.write(() => events.push('outer-write'));
+            publishVisualSignals({ ...state, seed: state.seed + 1 }, audio, stress); });
+        try { publish(); } catch (error) { caught = error; }
+        const keptOuterSnapshot = getVisualSignals().seed === state.seed;
+        clear(); publish();
+        checks.push({ passed: caught instanceof Error && caught.message.includes('Reentrant') && keptOuterSnapshot &&
+            events.join(',') === 'outer-write',
+            description: 'Reentrant publication is rejected before replacing the current snapshot, flushes outer jobs and leaves the next frame usable' });
+
+        clear(); events.length = 0;
+        listen((_snapshot, frame) => { events.push('measure'); frame!.write(() => events.push('DOM')); });
+        publishVisualSignals(state, audio, stress, false, () => events.push('Canvas'));
+        checks.push({ passed: events.join(',') === 'measure,Canvas,DOM',
+            description: 'Optional Canvas work completes after model reads and before DOM commits within the same synchronous publish' });
+        clear(); events.length = 0;
+        const canvasError = new Error('canvas failure');
+        caught = undefined;
+        listen((_snapshot, frame) => frame!.write(() => events.push('committed-after-Canvas-error')));
+        try { publishVisualSignals(state, audio, stress, false, () => { throw canvasError; }); } catch (error) { caught = error; }
+        clear(); publish();
+        checks.push({ passed: caught === canvasError && events.join(',') === 'committed-after-Canvas-error',
+            description: 'A Canvas exception still flushes prepared DOM, propagates the first error and leaves the next frame usable' });
+        clear(); events.length = 0;
+        listen(() => { throw callbackError; });
+        try { publishVisualSignals(state, audio, stress, false, () => events.push('unwanted-Canvas')); } catch { /* Expected prepare failure. */ }
+        checks.push({ passed: events.length === 0,
+            description: 'Failed model preparation skips the Canvas callback while preserving normal failure cleanup' });
+        clear();
+        const savedPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+        let clock = 0;
+        try {
+            Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => clock } });
+            listen((_snapshot, frame) => { clock += 2; frame!.write(() => { clock += 7; }); }, 'owner-A');
+            listen((_snapshot, frame) => { clock += 3; frame!.write(() => { clock += 5; }); }, 'owner-B');
+            const timings = publishVisualSignals(state, audio, stress, true, () => { clock += 11; });
+            checks.push({ passed: timings?.['owner-A'] === 9 && timings?.['owner-B'] === 8 && clock === 28,
+                description: 'Profiling attributes compute plus commit to each owner and excludes the intervening Canvas work from consumer labels' });
+        } finally {
+            if (savedPerformance) Object.defineProperty(globalThis, 'performance', savedPerformance);
+            else Reflect.deleteProperty(globalThis, 'performance');
+        }
+    } finally { clear(); }
+    return checks;
+}
+// КОНЕЦ РАЗДЕЛА 2
+
+// НАЧАЛО РАЗДЕЛА 3. ПРОВЕРКИ CORE
 // НАЧАЛО ФУНКЦИИ runVisualSignalChecks
 export function runVisualSignalChecks(): { passed: boolean; description: string }[] {
     const checks: { passed: boolean; description: string }[] = [];
@@ -100,6 +233,7 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         reducedMotion: false, isTabHidden: false,
         telemetry: { ...original.telemetry, frameTimeMs: 50, simulationTimeSec: 0, phaseProgress: 0.5, kuramotoOrderR: 0.8 } };
     const stress = { ...stressStore.getState(), globalStress: 2 };
+    checks.push(...runFrameWriteChecks(state, audio, stress));
     const snapshot = createVisualSignals(state, audio, stress);
     const silent = createVisualSignals(state, { ...audio, isPlaying: false }, stress);
     checks.push({ passed: Object.isFrozen(snapshot) && snapshot.low === 1 && snapshot.mid === 0 && snapshot.high === 0 &&
@@ -431,6 +565,73 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
         checks.push({ passed: onlyReads && firstCardWrite > 0 && !hoverAccess.slice(firstCardWrite).includes('read') &&
             quantum.every(cell => cell.ink.textContent === '∇') && lines.every(line => calmGlyphHover.getVisualText(line) === '∑∇ℏ∮'),
             description: 'The first visible assembly batches all four prewarmed static lines and all 25 quantum cells before any ink writes, preserving complete glyphs without inter-line layout flushes' });
+
+        const cachedMock = new HoverElement('p', hoverAccess);
+        const cachedLine = cachedMock as unknown as HTMLElement;
+        calmGlyphHover.setCanonical(cachedLine, 'ABCD');
+        calmGlyphHover.setVisualText(cachedLine, '∑∇ℏ∮');
+        const cachedCells = descendants(cachedMock, 'glyph-fitted-cell');
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(cachedLine, '∮ℏ∇∑', undefined, false);
+        const noGeometryForChangedGlyphs = !hoverAccess.includes('read');
+        const beforeResize = descendants(cachedMock, 'glyph-reel-ink')[0]!.styleValues.get('transform');
+        checks.push({ passed: noGeometryForChangedGlyphs && calmGlyphHover.getVisualText(cachedLine) === '∮ℏ∇∑' &&
+            descendants(cachedMock, 'glyph-fitted-cell').every((cell, index) => cell === cachedCells[index]),
+            description: 'Explicit stable-layout callers change real fitted glyphs without new DOM geometry or computed-style reads and retain canonical cells' });
+        cachedMock.geometryWidth = 240;
+        descendants(cachedMock, 'glyph-reel-window').forEach(window => { window.slotWidth = 26; });
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(cachedLine, '∮ℏ∇∑', undefined, true);
+        const afterResize = descendants(cachedMock, 'glyph-reel-ink')[0]!.styleValues.get('transform');
+        checks.push({ passed: hoverAccess.includes('read') && beforeResize !== afterResize,
+            description: 'Explicit resize invalidation remeasures canonical slots and refits unchanged glyph ink to the new dimensions' });
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(cachedLine, '∑∇ℏ∮');
+        checks.push({ passed: hoverAccess.includes('read'),
+            description: 'Default setVisualText callers keep their original fresh-geometry behavior without implicit caching' });
+        invalidateGlyphFontCache();
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(cachedLine, '∮ℏ∇∑', undefined, false);
+        checks.push({ passed: hoverAccess.includes('read') && calmGlyphHover.getVisualText(cachedLine) === '∮ℏ∇∑',
+            description: 'A font epoch change forces real geometry and glyph refitting even when the caller reports a stable layout' });
+        const coldMock = new HoverElement('p', hoverAccess);
+        const coldLine = coldMock as unknown as HTMLElement;
+        calmGlyphHover.setCanonical(coldLine, 'ABCD');
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(coldLine, '∮ℏ∇∑', undefined, false);
+        const coldMeasured = hoverAccess.includes('read');
+        calmGlyphHover.setCanonical(coldLine, 'EFGH');
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(coldLine, '∑∇ℏ∮', undefined, false);
+        const changedCanonMeasured = hoverAccess.includes('read');
+        coldMock.replaceChildren();
+        hoverAccess.length = 0;
+        calmGlyphHover.setVisualText(coldLine, '∮ℏ∇∑', undefined, false);
+        checks.push({ passed: coldMeasured && changedCanonMeasured && hoverAccess.includes('read') &&
+            calmGlyphHover.getVisualText(coldLine) === '∮ℏ∇∑',
+            description: 'Cold lines, canonical replacements and detached visual wrappers always prepare fresh measured cells despite stable-layout opt-in' });
+
+        let crossFrames = 0, crossOrdered = true, cardStep = 0;
+        const releaseCard = subscribeVisualSignals((_snapshot, frame) => {
+            const cardWrites: (() => void)[] = [];
+            const glyphs = ++cardStep % 2 ? '∮ℏ∇∑' : '∑∇ℏ∮';
+            lines.forEach(line => calmGlyphHover.setVisualText(line, glyphs, cardWrites));
+            updateFinaleQuantumCells(quantum, ['∇', '∮'], cardStep, false, cardWrites);
+            const commit = (): void => cardWrites.forEach(apply => apply());
+            if (frame) frame.write(commit); else commit();
+        }, 'test-finale-fitting');
+        try {
+            for (let frame = 0; frame < 14; frame++) {
+                hoverAccess.length = 0;
+                publishVisualSignals(state, audio, stress);
+                const firstWrite = hoverAccess.indexOf('write');
+                if (firstWrite > 0) crossFrames++;
+                crossOrdered &&= firstWrite < 0 || !hoverAccess.slice(firstWrite).includes('read');
+            }
+        } finally { releaseCard(); }
+        checks.push({ passed: crossOrdered && crossFrames === 14 && calmGlyphHover.isActive(batchedHover) &&
+            quantum.every(cell => cell.ink.textContent === '∇' || cell.ink.textContent === '∮'),
+            description: 'Real hover reels and finale line/quantum fitting prepare all consumer geometry before their shared DOM flush in the same frame' });
     } finally {
         calmGlyphHover.stop(batchedHover);
         if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
@@ -578,4 +779,4 @@ export function runVisualSignalChecks(): { passed: boolean; description: string 
     return checks;
 }
 // КОНЕЦ ФУНКЦИИ runVisualSignalChecks
-// КОНЕЦ РАЗДЕЛА 2
+// КОНЕЦ РАЗДЕЛА 3

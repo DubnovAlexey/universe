@@ -2,7 +2,7 @@
 // ФАЙЛ: frontend/src/tests/rendererLifecycle.test.ts
 // НАЗНАЧЕНИЕ: Проверить часы настоящего RAF-цикла и срок жизни текстуры дизеринга.
 // РАЗДЕЛЫ: 1. Изоляция объектов; 2. Управляемый RAF; 3. Restart/пауза/видимость;
-//          4. Страничная текстура и восстановление окружения.
+//          4. Страничная текстура; 5. Часы сюжета; 6. Ограниченные profile-only интервалы проходов.
 // ФУНКЦИИ: restoreDescriptors, restartSnapshot, runRendererLifecycleChecks,
 //          setTransform, createPattern, createImageData, putImageData, pumpFrames.
 // ============================================================================
@@ -13,10 +13,11 @@ import { stressStore } from '../store/stressState';
 import { resourceLedger } from '../core/resourceLedger';
 import { qualityGovernor } from '../core/qualityGovernor';
 import { integrationRegistry } from '../core/integrationRegistry';
-import { publishVisualSignals } from '../core/visualSignals';
+import { publishVisualSignals, subscribeVisualSignals } from '../core/visualSignals';
 import { audioSync, type AudioModulationSnapshot } from '../utils/audioSync';
 import { wasmPhysicsBridge } from '../bridge/wasmBridge';
 import { nexusGraphEngine } from '../bridge/simulationWorker';
+import type { FrameDiagnostics } from '../core/frameDiagnostics';
 
 // НАЧАЛО РАЗДЕЛА 1. ИЗОЛЯЦИЯ НАСТОЯЩИХ ОБЪЕКТОВ
 // НАЧАЛО ФУНКЦИИ restoreDescriptors
@@ -72,9 +73,13 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
     const pending = new Map<number, FrameRequestCallback>();
     let rafId = 0;
     let nowMs = 1000;
+    let clockReads = 0;
+    let clockStep = 0;
     let drawCalls = 0;
     let renderer: UniverseRenderer | undefined;
     let pipeline: RenderPipeline | undefined;
+    let profiledRenderer: UniverseRenderer | undefined;
+    let profiledPipeline: RenderPipeline | undefined;
 
     // НАЧАЛО РАЗДЕЛА 2. УПРАВЛЯЕМЫЙ RAF И МИНИМАЛЬНЫЙ CANVAS
     const pattern = {} as CanvasPattern;
@@ -96,7 +101,8 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
         putImageData(): void {},
         // КОНЕЦ ФУНКЦИИ putImageData
     };
-    const canvas = { width: 0, height: 0, style: { width: '', height: '' }, getContext: () => context };
+    const canvas = { width: 0, height: 0, dataset: {} as Record<string, string>,
+        style: { width: '', height: '' }, getContext: () => context };
     // НАЧАЛО ФУНКЦИИ pumpFrames
     const pumpFrames = (count: number): void => {
         for (let frame = 0; frame < count; frame++) {
@@ -123,7 +129,7 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
                 location: { search: '?wasm=0' } } },
             document: { configurable: true, value: { createElement: () => ({ getContext: () => tileContext }) } },
             navigator: { configurable: true, value: {} },
-            performance: { configurable: true, value: { now: () => nowMs } },
+            performance: { configurable: true, value: { now: () => { clockReads++; return nowMs + clockReads * clockStep; } } },
             requestAnimationFrame: { configurable: true, value: (callback: FrameRequestCallback): number => {
                 pending.set(++rafId, callback);
                 return rafId;
@@ -134,7 +140,12 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
         renderer = new UniverseRenderer(canvas as unknown as HTMLCanvasElement);
         // Проверяется реальный loop; только дорогая отрисовка пикселей заменена счётчиком.
         const probe = renderer as unknown as { renderFrame: () => void; pipeline: RenderPipeline };
-        Object.defineProperty(renderer, 'renderFrame', { configurable: true, value: (): void => { drawCalls++; } });
+        const frameOrder: string[] = [];
+        let tracingOrder = false;
+        Object.defineProperty(renderer, 'renderFrame', { configurable: true, value: (): void => {
+            drawCalls++;
+            if (tracingOrder) frameOrder.push('Canvas');
+        } });
         pipeline = probe.pipeline;
         universeStore.toggleAutoCycle();
 
@@ -156,6 +167,15 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
         renderer.start();
         renderer.start();
         const singleRaf = pending.size === 1;
+        const releaseOrderProbe = subscribeVisualSignals((_signals, frame) => {
+            frameOrder.push('measure');
+            frame!.write(() => frameOrder.push('DOM'));
+        }, 'renderer-order-probe');
+        tracingOrder = true;
+        try { pumpFrames(1); }
+        finally { tracingOrder = false; releaseOrderProbe(); }
+        check(frameOrder.join(',') === 'measure,Canvas,DOM' && pending.size === 1,
+            'The real renderer loop draws Canvas after shared model reads and before DOM writes without adding or postponing a RAF');
         for (const mode of ['pause', 'hidden'] as const) {
             universeStore.setPhase('05_SINGULARITY');
             universeStore.triggerUniverseRestart();
@@ -225,7 +245,57 @@ export function runRendererLifecycleChecks(check: (passed: boolean, description:
             universeStore.getState().lastRendererError === null && pending.size === 0,
             'At 10 FPS the default clock still clamps each frame to 50 ms, while ?clock=story keeps the story on real time with bounded physics substeps');
         // КОНЕЦ РАЗДЕЛА 5
+
+        // НАЧАЛО РАЗДЕЛА 6. PROFILE-ONLY ИНТЕРВАЛЫ ПРОХОДОВ
+        const inactiveProbe = renderer as unknown as { renderPasses: Record<string, number> | null;
+            markRenderPass(label: string): void };
+        const beforeDisabledMarks = clockReads;
+        inactiveProbe.markRenderPass('base');
+        inactiveProbe.markRenderPass('explanation-assembly');
+        check(inactiveProbe.renderPasses === null && clockReads === beforeDisabledMarks &&
+            !('frameProfile' in canvas.dataset) && pending.size === 0,
+            'Normal viewing owns no pass collection and pass markers neither read extra clocks nor publish profile labels or schedule work');
+
+        (globalThis as unknown as { window: { location: { search: string } } }).window.location.search = '?wasm=0&profile=1';
+        clockStep = 0.01;
+        const profileCanvas = { ...canvas, dataset: {} as Record<string, string> };
+        profiledRenderer = new UniverseRenderer(profileCanvas as unknown as HTMLCanvasElement);
+        const activeProbe = profiledRenderer as unknown as { renderFrame(): void; pipeline: RenderPipeline;
+            renderPasses: Record<string, number>; frameDiagnostics: FrameDiagnostics };
+        profiledPipeline = activeProbe.pipeline;
+        let profileDraws = 0;
+        Object.defineProperty(profiledRenderer, 'renderFrame', { configurable: true, value: (): void => { profileDraws++; } });
+        const passMap = activeProbe.renderPasses;
+        passMap.base = 777;
+        profiledRenderer.start();
+        pumpFrames(1);
+        const expectedLabels = ['base', 'dust-signals', 'phase-backdrop', 'breach', 'topology',
+            'lens-particles', 'focus', 'odometer', 'ouroboros', 'explanation-assembly'];
+        const firstPublication = JSON.parse(profileCanvas.dataset.frameProfile!);
+        const firstPasses = firstPublication.topCPUFrames[0].work.renderPasses as Record<string, number>;
+        const firstSum = Object.values(firstPasses).reduce((sum, value) => sum + value, 0);
+        check(Object.keys(passMap).join('|') === expectedLabels.join('|') &&
+            expectedLabels.every(label => Number.isFinite(passMap[label]) && passMap[label]! >= 0) &&
+            passMap.base === 0 && firstPasses.base === 0 && firstPasses['explanation-assembly']! > 0 &&
+            firstSum <= firstPublication.topCPUFrames[0].work.renderMs + 1e-6 &&
+            profileDraws === 1 && pending.size === 1,
+            'The real profiled RAF publishes ten finite pass slots, resets stale values and includes assembly within the same callback render budget with one RAF');
+        passMap['dust-signals'] = 999;
+        pumpFrames(2);
+        const laterProfile = activeProbe.frameDiagnostics.snapshot();
+        check(activeProbe.renderPasses === passMap && passMap['dust-signals'] === 0 && profileDraws === 3 &&
+            firstPasses['dust-signals'] === 0 &&
+            laterProfile.topCPUFrames.every(frame => frame.work?.renderPasses &&
+                Object.values(frame.work.renderPasses).reduce((sum, value) => sum + value, 0) <= frame.work.renderMs + 1e-6) &&
+            pending.size === 1 && universeStore.getState().lastRendererError === null,
+            'Pass timing reuses one numeric map, clears every callback and leaves retained diagnostics independent of later frames without another scheduler');
+        profiledRenderer.stop();
+        profiledPipeline.dispose();
+        check(pending.size === 0, 'Stopping a profiled renderer cancels its existing RAF without leaving a diagnostic callback');
+        // КОНЕЦ РАЗДЕЛА 6
     } finally {
+        profiledRenderer?.stop();
+        profiledPipeline?.dispose();
         renderer?.stop();
         pipeline?.dispose();
         for (const { target, descriptors } of savedSingletons) restoreDescriptors(target, descriptors);

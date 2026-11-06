@@ -19,7 +19,7 @@
 // ============================================================================
 
 import { universeStore, type UniverseState } from '../store/universeState';
-import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } from '../core/visualSignals';
+import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot, type VisualSignalFrame } from '../core/visualSignals';
 import { pickGlyph } from '../core/glyphGrammar';
 import {
     rememberLocaleAttributes, rememberLocaleElementText, rememberLocaleTextNode, translateHudText,
@@ -376,7 +376,7 @@ export class TelemetryWaterfallAnimator {
     // --- КОНЕЦ ФУНКЦИИ releaseCascade (TelemetryWaterfallAnimator) ---
 
     // --- НАЧАЛО ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
-    private tick = (signals: Readonly<VisualSignalSnapshot>): void => {
+    private tick = (signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame): void => {
         if (signals.isPaused || signals.reducedMotion) return;
 
         const visible: [CascadeId, WaterfallCascadeBinding][] = [];
@@ -403,7 +403,10 @@ export class TelemetryWaterfallAnimator {
         this.breathMusicPulse += (signals.pulse - this.breathMusicPulse) * breathBlend;
         this.breathMusicLow += (signals.low - this.breathMusicLow) * breathBlend;
         this.stepDroplets(dt, timeSec, visible.map(([id]) => id), signals);
-        this.updateLiveDomElements(timeSec, visible);
+        // Модель остаётся доступной следующим подписчикам сразу. DOM меняется после их измерений
+        // в том же кадре; прямые вызовы без frame сохраняют синхронный контракт.
+        const commit = (): void => this.updateLiveDomElements(timeSec, visible);
+        if (frame) frame.write(commit); else commit();
     };
     // --- КОНЕЦ ФУНКЦИИ tick (TelemetryWaterfallAnimator) ---
 
@@ -494,6 +497,8 @@ export class TelemetryWaterfallAnimator {
         visible: readonly [CascadeId, WaterfallCascadeBinding][]
     ): void {
         visible.forEach(([id, binding]) => {
+            // Каскад мог быть снят другим подписчиком до общей фазы записи.
+            if (this.cascades.get(id) !== binding) return;
             binding.contours.forEach((path) => {
                 path.setAttribute('d', buildLivingBreachContourPath(
                     binding.contourWidth, binding.contourHeight, timeSec, (id - 2) * 1.25, this.smoothedMusicLow

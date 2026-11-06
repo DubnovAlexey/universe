@@ -1,11 +1,13 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/glyphFontBudget.test.ts
-// НАЗНАЧЕНИЕ: Ограничить синхронные проверки шрифта на общем кадре без потери словаря.
-// РАЗДЕЛЫ: 1. Растровая модель шрифта; 2. Бюджет, кеш и смена поколения.
+// НАЗНАЧЕНИЕ: Ограничить проверки шрифта и повторную сегментацию неизменного канона.
+// РАЗДЕЛЫ: 1. Растровая модель шрифта; 2. Бюджет, кеш и смена поколения; 3. Графемы канона.
 // ФУНКЦИИ: runGlyphFontBudgetChecks.
 // ============================================================================
 import {
-    GLYPH_FAMILIES, getGlyphFontEpoch, getGlyphProfile, getRenderableGlyphPool, invalidateGlyphFontCache,
+    CANONICAL_GLYPH_CACHE_LIMIT, CANONICAL_GLYPH_CACHE_MAX_LENGTH,
+    GLYPH_FAMILIES, getCanonicalGlyphText, getGlyphFontEpoch, getGlyphProfile, getRenderableGlyphPool,
+    invalidateGlyphFontCache, splitGlyphText,
 } from '../core/glyphGrammar';
 import { publishVisualSignals } from '../core/visualSignals';
 import { universeStore } from '../store/universeState';
@@ -106,5 +108,61 @@ export function runGlyphFontBudgetChecks(check: (passed: boolean, description: s
         publishVisualSignals(state, audio, stress);
     }
     // КОНЕЦ РАЗДЕЛА 2
+
+    // НАЧАЛО РАЗДЕЛА 3. ГРАФЕМЫ КАНОНА
+    const unicodeCanon = 'Canonical cache / שָׁלוֹם · A\u0301 · 𓂀 · 👩🏽‍🚀 · 🇮🇱';
+    const canonical = getCanonicalGlyphText(unicodeCanon);
+    check(Object.isFrozen(canonical) && !Reflect.set(canonical, '0', '!') &&
+        canonical === getCanonicalGlyphText(unicodeCanon) &&
+        canonical.join('') === unicodeCanon && canonical.includes('שָׁ') && canonical.includes('A\u0301') &&
+        canonical.includes('👩🏽‍🚀') && canonical.includes('🇮🇱'),
+    'Canonical segmentation reuses one frozen snapshot without splitting Hebrew marks, combining letters, emoji or flags');
+
+    const dynamic = splitGlyphText(unicodeCanon);
+    dynamic[0] = '!';
+    check(splitGlyphText(unicodeCanon) !== dynamic && getCanonicalGlyphText(unicodeCanon) === canonical &&
+        canonical.join('') === unicodeCanon,
+    'Dynamic segmentation stays fresh and mutable without changing cached canonical graphemes');
+    check(getCanonicalGlyphText('Canonical exact / é').join('') === 'Canonical exact / é' &&
+        getCanonicalGlyphText('Canonical exact / e\u0301').join('') === 'Canonical exact / e\u0301' &&
+        getCanonicalGlyphText('Canonical exact / é') !== getCanonicalGlyphText('Canonical exact / e\u0301'),
+    'Cache keys preserve exact text rather than normalizing visually equivalent spellings');
+
+    const oldestText = 'Canonical FIFO oldest';
+    const oldest = getCanonicalGlyphText(oldestText);
+    for (let index = 0; index < CANONICAL_GLYPH_CACHE_LIMIT; index++) {
+        getCanonicalGlyphText('Canonical FIFO entry ' + index);
+    }
+    const newest = getCanonicalGlyphText('Canonical FIFO entry ' + (CANONICAL_GLYPH_CACHE_LIMIT - 1));
+    check(getCanonicalGlyphText(oldestText) !== oldest &&
+        newest === getCanonicalGlyphText('Canonical FIFO entry ' + (CANONICAL_GLYPH_CACHE_LIMIT - 1)),
+    'The bounded canonical cache evicts the oldest entry while retaining a recent snapshot');
+    const longText = 'X'.repeat(CANONICAL_GLYPH_CACHE_MAX_LENGTH + 1);
+    const longSnapshot = getCanonicalGlyphText(longText);
+    check(Object.isFrozen(longSnapshot) && longSnapshot.join('') === longText &&
+        longSnapshot !== getCanonicalGlyphText(longText) &&
+        newest === getCanonicalGlyphText('Canonical FIFO entry ' + (CANONICAL_GLYPH_CACHE_LIMIT - 1)),
+    'Long canonical strings keep exact frozen graphemes but bypass retained storage without evicting useful labels');
+    invalidateGlyphFontCache();
+    check(newest === getCanonicalGlyphText('Canonical FIFO entry ' + (CANONICAL_GLYPH_CACHE_LIMIT - 1)),
+    'A font generation change does not repeat language segmentation of unchanged canonical text');
+
+    const originalSegment = Intl.Segmenter.prototype.segment;
+    let segmentationCalls = 0;
+    try {
+        Intl.Segmenter.prototype.segment = function (this: Intl.Segmenter, text: string) {
+            segmentationCalls++;
+            return originalSegment.call(this, text);
+        };
+        const countedCanon = 'Canonical operation budget / שָׁ𓂀👩🏽‍🚀';
+        getCanonicalGlyphText(countedCanon);
+        for (let repeat = 0; repeat < 20; repeat++) getCanonicalGlyphText(countedCanon);
+        splitGlyphText(countedCanon);
+        check(segmentationCalls === 2,
+        'Repeated canonical reads skip the real Segmenter while a dynamic split still performs its own segmentation');
+    } finally {
+        Intl.Segmenter.prototype.segment = originalSegment;
+    }
+    // КОНЕЦ РАЗДЕЛА 3
 }
 // КОНЕЦ ФУНКЦИИ runGlyphFontBudgetChecks

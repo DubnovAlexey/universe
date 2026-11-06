@@ -7,9 +7,9 @@
 // getVisualText, isActive, createReels, updateReels, start, stop, stopAll, update.
 // ============================================================================
 
-import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot } from './visualSignals';
+import { getVisualSignals, subscribeVisualSignals, type VisualSignalSnapshot, type VisualSignalFrame } from './visualSignals';
 import { GLYPH_FONT_STACK, GLYPH_WAITING_SPACE, getGlyphFontEpoch, getGlyphProfile, getOrderedGlyphState,
-    isMutableGlyph, pickGlyph, splitGlyphText } from './glyphGrammar';
+    getCanonicalGlyphText, isMutableGlyph, pickGlyph, splitGlyphText } from './glyphGrammar';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТЫ И МЕТРИКИ
 interface GlyphTextNodes { canonical: HTMLElement | null; visual: HTMLElement; }
@@ -19,6 +19,7 @@ interface FittedTextLine {
     readonly cells: { readonly node: HTMLElement; readonly ink: HTMLElement; glyph: string }[];
     text: string;
     fitKey: string;
+    fitEpoch: number;
 }
 interface GlyphReelCell {
     index: number;
@@ -269,14 +270,24 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ setCanonical
 
     // НАЧАЛО ФУНКЦИИ setVisualText
-    /** Внешняя сборка сохраняет метрики канона: широкие знаки вписываются в его ячейки. */
-    public setVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[]): void {
+    /** Внешняя сборка сохраняет метрики канона: широкие знаки вписываются в его ячейки.
+     * layoutStale=false — явный opt-in владельца layout/ResizeObserver; старые callers всегда измеряют.
+     * Новая строка и новое поколение шрифта не используют прежний размер даже при opt-in. */
+    public setVisualText(element: HTMLElement | null, text: string, writes?: (() => void)[], layoutStale = true): void {
         if (!element) return;
         const visual = this.ensureTextNodes(element).visual;
         const canonical = element.dataset.canonicalText ?? text;
-        const source = splitGlyphText(canonical);
+        if (text === canonical) {
+            this.fittedLines.delete(element);
+            if (visual.textContent !== text) {
+                const apply = (): void => { visual.textContent = text; };
+                if (writes) writes.push(apply); else apply();
+            }
+            return;
+        }
+        const source = getCanonicalGlyphText(canonical);
         const glyphs = splitGlyphText(text);
-        if (text === canonical || source.length !== glyphs.length) {
+        if (source.length !== glyphs.length) {
             this.fittedLines.delete(element);
             if (visual.textContent !== text) {
                 const apply = (): void => { visual.textContent = text; };
@@ -301,13 +312,16 @@ class CalmGlyphHover {
                 return { node, ink, glyph: '' };
             });
             visual.replaceChildren(...cells.map((cell) => cell.node));
-            line = { canonical, visual, cells, text, fitKey: '' };
+            line = { canonical, visual, cells, text, fitKey: '', fitEpoch: -1 };
             this.fittedLines.set(element, line);
         }
         // Появление шрифта и новая ширина строки обновляют fit даже при том же наборе знаков.
-        const fitKey = `${getGlyphFontEpoch()}:${element.offsetWidth}:${element.offsetHeight}`;
+        const fontEpoch = getGlyphFontEpoch();
+        const reuseGeometry = !layoutStale && line.fitKey !== '' && line.fitEpoch === fontEpoch;
+        const fitKey = reuseGeometry ? line.fitKey : `${fontEpoch}:${element.offsetWidth}:${element.offsetHeight}`;
         const layoutChanged = fitKey !== line.fitKey;
         line.fitKey = fitKey;
+        line.fitEpoch = fontEpoch;
         line.text = text;
         const updates: { cell: FittedTextLine['cells'][number]; glyph: string; state: string; fit?: GlyphInkFit; canonical: string }[] = [];
         line.cells.forEach((cell, index) => {
@@ -350,7 +364,7 @@ class CalmGlyphHover {
     // НАЧАЛО РАЗДЕЛА 3. НЕПОДВИЖНЫЕ ЯЧЕЙКИ И ПЕРЕЛИСТЫВАНИЕ СЛЕВА НАПРАВО
     // НАЧАЛО ФУНКЦИИ createReels
     private createReels(element: HTMLElement, canonical: string): GlyphReelCell[] {
-        const characters = splitGlyphText(canonical);
+        const characters = getCanonicalGlyphText(canonical);
         const nodes: HTMLElement[] = [];
         const cells: GlyphReelCell[] = [];
         const document = element.ownerDocument;
@@ -389,7 +403,7 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ createReels
 
     // НАЧАЛО ФУНКЦИИ updateReels
-    private updateReels(session: HoverSession, signals: Readonly<VisualSignalSnapshot>, element: HTMLElement): void {
+    private updateReels(session: HoverSession, signals: Readonly<VisualSignalSnapshot>, element: HTMLElement, frame?: VisualSignalFrame): void {
         const characters: string[] = [];
         const writes: (() => void)[] = [];
         const layoutKey = `${element.offsetWidth}:${element.offsetHeight}`;
@@ -463,8 +477,12 @@ class CalmGlyphHover {
             }
             characters[cell.index] = progress > 0.5 ? to : from;
         }
-        // Ни одна следующая ячейка не измеряется после изменения текста/поворота предыдущей.
-        writes.forEach((write) => write());
+        // Все активные строки сначала измеряются. Записи общего кадра не попадают
+        // между метриками соседних сессий; pointer-start вне кадра остаётся синхронным.
+        const commit = (): void => {
+            if (this.sessions.get(element) === session) writes.forEach((write) => write());
+        };
+        if (frame) frame.write(commit); else commit();
         session.logicalText = characters.join('');
     }
     // КОНЕЦ ФУНКЦИИ updateReels
@@ -494,7 +512,7 @@ class CalmGlyphHover {
         this.updateReels(this.sessions.get(element)!, signals, element);
         element.dataset.glyphActive = '1';
         element.dataset.scrambling = '1';
-        if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot) => this.update(snapshot), 'glyph-reels');
+        if (!this.unsubscribe) this.unsubscribe = subscribeVisualSignals((snapshot, frame) => this.update(snapshot, frame), 'glyph-reels');
     }
     // КОНЕЦ ФУНКЦИИ start
 
@@ -517,17 +535,21 @@ class CalmGlyphHover {
     // КОНЕЦ ФУНКЦИИ stopAll
 
     // НАЧАЛО ФУНКЦИИ update
-    private update(signals: Readonly<VisualSignalSnapshot>): void {
+    private update(signals: Readonly<VisualSignalSnapshot>, frame?: VisualSignalFrame): void {
         this.sessions.forEach((session, element) => {
             if (!element.isConnected || signals.isPaused || signals.reducedMotion) { this.stop(element); return; }
             session.elapsedMs += signals.frameDtSec * 1000;
             const rollDuration = (session.rollMs + REEL_HOLD_MS) * (REEL_TURNS - 1) + session.rollMs;
             const duration = session.delayMs + session.waveMs + rollDuration + session.dwellMs;
             if (session.elapsedMs >= duration) { this.stop(element); return; }
-            this.updateReels(session, signals, element);
+            this.updateReels(session, signals, element, frame);
             const depth = Math.sin(Math.min(1, Math.max(0, session.elapsedMs - session.delayMs) / (duration - session.delayMs)) * Math.PI);
-            element.style.setProperty('--glyph-depth-shift', (-0.65 * depth).toFixed(2) + 'px');
-            element.style.setProperty('--glyph-depth-glow', (0.3 + depth * 0.3 + signals.pulse * 0.1).toFixed(3));
+            const commit = (): void => {
+                if (this.sessions.get(element) !== session) return;
+                element.style.setProperty('--glyph-depth-shift', (-0.65 * depth).toFixed(2) + 'px');
+                element.style.setProperty('--glyph-depth-glow', (0.3 + depth * 0.3 + signals.pulse * 0.1).toFixed(3));
+            };
+            if (frame) frame.write(commit); else commit();
         });
     }
     // КОНЕЦ ФУНКЦИИ update

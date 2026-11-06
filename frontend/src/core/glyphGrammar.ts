@@ -4,7 +4,7 @@
 // РАЗДЕЛЫ: 1. Семейства/профили; 2. Проверка шрифтов; 3. Детерминированный выбор.
 // ФУНКЦИИ: getGlyphProfile, filterGlyphPool, supportsGlyph, getRenderableGlyphPool,
 // pickGlyph, isMutableGlyph, scrambleCanonicalText, prepareGlyphFonts,
-// invalidateGlyphFontCache, getGlyphFontEpoch, splitGlyphText, getOrderedGlyphState,
+// invalidateGlyphFontCache, getGlyphFontEpoch, splitGlyphText, getCanonicalGlyphText, getOrderedGlyphState,
 // formatOrderedGlyphText. Все пулы — полные code points; канон делится на графемы.
 // ============================================================================
 import type { PhaseId } from './contracts';
@@ -183,6 +183,10 @@ export function getRenderableGlyphPool(phase: PhaseId): readonly string[] {
 // НАЧАЛО РАЗДЕЛА 3. ВЫБОР И ВОССТАНОВЛЕНИЕ
 const textSegmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
 export const GLYPH_WAITING_SPACE = '\u00A0';
+/** Кеш только канона: динамические строки перебора продолжают использовать splitGlyphText. */
+export const CANONICAL_GLYPH_CACHE_LIMIT = 128;
+export const CANONICAL_GLYPH_CACHE_MAX_LENGTH = 2048;
+const canonicalGlyphCache = new Map<string, readonly string[]>();
 
 // НАЧАЛО ФУНКЦИИ splitGlyphText
 /** Не разделяет составные emoji, диакритику и символы за пределами BMP. */
@@ -190,6 +194,22 @@ export function splitGlyphText(text: string): string[] {
     return Array.from(textSegmenter.segment(text), (part) => part.segment);
 }
 // КОНЕЦ ФУНКЦИИ splitGlyphText
+
+// НАЧАЛО ФУНКЦИИ getCanonicalGlyphText
+/** Неизменный канон сегментируется один раз; FIFO и предел длины ограничивают удерживаемую память. */
+export function getCanonicalGlyphText(text: string): readonly string[] {
+    const cached = canonicalGlyphCache.get(text);
+    if (cached) return cached;
+    const glyphs = Object.freeze(splitGlyphText(text));
+    if (text.length <= CANONICAL_GLYPH_CACHE_MAX_LENGTH) {
+        if (canonicalGlyphCache.size >= CANONICAL_GLYPH_CACHE_LIMIT) {
+            canonicalGlyphCache.delete(canonicalGlyphCache.keys().next().value!);
+        }
+        canonicalGlyphCache.set(text, glyphs);
+    }
+    return glyphs;
+}
+// КОНЕЦ ФУНКЦИИ getCanonicalGlyphText
 
 // НАЧАЛО ФУНКЦИИ getOrderedGlyphState
 /** Один фронт: слева закреплённый текст, затем барабаны, справа пустые окна. */
@@ -209,7 +229,7 @@ export function getOrderedGlyphState(index: number, count: number, progress: num
 // НАЧАЛО ФУНКЦИИ formatOrderedGlyphText
 /** Общая сборка статических строк DOM/Canvas; бесконечная строка сюда не входит. */
 export function formatOrderedGlyphText(canonical: string, progress: number, step: number, glyphPool: readonly string[], offset = 0): string {
-    const characters = splitGlyphText(canonical);
+    const characters = getCanonicalGlyphText(canonical);
     return characters.map((character, index) => {
         const cell = getOrderedGlyphState(index, characters.length, progress);
         if (cell.state === 'waiting') return GLYPH_WAITING_SPACE;
