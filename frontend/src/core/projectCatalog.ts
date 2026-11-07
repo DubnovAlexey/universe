@@ -2,10 +2,10 @@
 // ФАЙЛ: frontend/src/core/projectCatalog.ts
 // НАЗНАЧЕНИЕ: Каталог проектов портфолио, которые летают в сцене планетами (ветка site).
 // РАЗДЕЛЫ: 1. Контракт; 2. Каталог; 3. Адреса, имена и значки.
-// ФУНКЦИИ: projectUrl, projectIconUrl, projectName, projectInitials.
+// ФУНКЦИИ: projectUrl, projectRepoUrl, projectIconUrl, projectName.
 // Каждый проект — самостоятельный сайт на GitHub Pages (https://dubnovalexey.github.io/<id>/). UNIVERSE его не
-// копирует: просмотрщик открывает живую страницу, а значок планеты — фавикон этой же страницы. Когда Алексей
-// добавит проекту фавикон, достаточно вписать путь в icon; пока его нет, на планете — инициалы проекта.
+// копирует: просмотрщик открывает живую страницу и ссылку на её код, а значок планеты — фавикон этой же страницы.
+// Когда Алексей добавит проекту фавикон, достаточно вписать путь в icon; пока его нет, планета без рисунка.
 // ============================================================================
 import type { Locale } from './locale';
 
@@ -13,7 +13,7 @@ import type { Locale } from './locale';
 /** flagship — крупные планеты-флагманы, showcase — витрина, mini — мини-проекты и учебный путь. */
 export type PlanetTier = 'flagship' | 'showcase' | 'mini';
 
-/** Значок планеты: путь к фавикону внутри сайта проекта или символ-эмодзи; null — инициалы. */
+/** Значок планеты: путь к фавикону внутри сайта проекта или символ-эмодзи; null — своего значка пока нет. */
 export type PlanetIcon = { readonly path: string } | { readonly emoji: string } | null;
 
 export interface PortfolioProject {
@@ -27,6 +27,7 @@ export interface PortfolioProject {
 }
 
 export const PROJECT_SITE_ORIGIN = 'https://dubnovalexey.github.io';
+export const PROJECT_REPO_ORIGIN = 'https://github.com/DubnovAlexey';
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. КАТАЛОГ
@@ -85,6 +86,13 @@ export function projectUrl(project: Pick<PortfolioProject, 'id'>): string {
 }
 // КОНЕЦ ФУНКЦИИ projectUrl
 
+// НАЧАЛО ФУНКЦИИ projectRepoUrl
+/** Репозиторий проекта на GitHub — посмотреть код, а не только сам проект. */
+export function projectRepoUrl(project: Pick<PortfolioProject, 'id'>): string {
+    return `${PROJECT_REPO_ORIGIN}/${encodeURIComponent(project.id)}`;
+}
+// КОНЕЦ ФУНКЦИИ projectRepoUrl
+
 // НАЧАЛО ФУНКЦИИ projectIconUrl
 /** Фавикон с сайта проекта; null — у проекта нет своего файла-значка. */
 export function projectIconUrl(project: Pick<PortfolioProject, 'id' | 'icon'>): string | null {
@@ -100,13 +108,4 @@ export function projectName(project: Pick<PortfolioProject, 'name'>, locale: Loc
 }
 // КОНЕЦ ФУНКЦИИ projectName
 
-// НАЧАЛО ФУНКЦИИ projectInitials
-/** Временный значок: первые буквы двух первых слов имени (скобки и знаки не считаются). */
-export function projectInitials(name: string): string {
-    const words = name.replace(/[()«»"'.,:;!?–—-]/g, ' ').split(/\s+/).filter(Boolean);
-    const letters = words.slice(0, 2).map((word) => Array.from(word)[0] ?? '');
-    const initials = letters.join('').toUpperCase();
-    return initials || '•';
-}
-// КОНЕЦ ФУНКЦИИ projectInitials
 // КОНЕЦ РАЗДЕЛА 3

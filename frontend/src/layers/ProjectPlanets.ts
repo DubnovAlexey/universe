@@ -1,26 +1,31 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/ProjectPlanets.ts
-// НАЗНАЧЕНИЕ: Планеты-проекты, которые всё время летают по сцене вокруг Уробороса (ветка site).
-// РАЗДЕЛЫ: 1. Настройки; 2. Разметка планеты; 3. Наведение, касание и нажатие; 4. Полёт на кадре; 5. Язык и освобождение.
+// НАЗНАЧЕНИЕ: Планеты-проекты, которые летают по сцене после первого просмотра UNIVERSE (ветка site).
+// РАЗДЕЛЫ: 1. Настройки; 2. Разметка планеты; 3. Наведение, касание и нажатие; 4. Пробуждение и полёт на кадре;
+//          5. Язык и освобождение.
 // ФУНКЦИИ: mountProjectPlanets.
-// Каждая планета — кнопка: у неё свой цвет, при наведении (или фокусе с клавиатуры) она останавливается, растёт,
-// на ней проступает фавикон проекта, а по кругу над ней — название. Нажатие открывает проект (onOpen).
-// На телефоне наведения нет: первое касание показывает планету крупно с названием, второе открывает.
-// Полёт: положение считается в core/planetOrbits.ts на собственных часах планеты и пишется только в transform
+// Сначала посетитель смотрит сам UNIVERSE: планет нет. Они появляются вместе с визиткой первого цикла — собранными
+// в кольцо вокруг Уробороса — и дальше не пропадают: после перезапуска разлетаются по экрану, в фазах 01–04 держатся
+// ближе к краям, чтобы не закрывать рисунок по центру, а к концу пятой фазы снова стягиваются к Уроборосу.
+// В покое планета приглушена под общий тон сцены, её фавикон виден как чёрно-белый рисунок; при наведении (или фокусе
+// с клавиатуры) «пелена спадает»: планета останавливается, растёт, проступают её настоящий цвет, фавикон и название
+// по кругу. Нажатие открывает проект (onOpen). На телефоне первое касание показывает планету, второе открывает.
+// Полёт считается в core/planetOrbits.ts на собственных часах планеты и пишется только в transform и opacity
 // в общем кадре сцены (subscribeVisualSignals), поэтому DOM не перестраивается и сцена не дёргается.
-// Остановленная планета держит свои часы и потом летит дальше с того же места, без скачка.
+// ?planets=1 в адресе будит планеты сразу — чтобы посмотреть их без ожидания финала.
 // ============================================================================
 import { getLocale, subscribeLocale, translateUi, type Locale } from '../core/locale';
-import { createPlanetOrbits, planetPose, PLANET_HOVER_PX, PLANET_SIZE_PX, type PlanetOrbit } from '../core/planetOrbits';
 import {
-    PORTFOLIO_PROJECTS, projectIconUrl, projectInitials, projectName, type PortfolioProject,
-} from '../core/projectCatalog';
+    createPlanetOrbits, easePlanetSpread, planetPose, planetSpreadTarget, PLANET_HOVER_PX, PLANET_SIZE_PX, type PlanetOrbit,
+} from '../core/planetOrbits';
+import { PORTFOLIO_PROJECTS, projectIconUrl, projectName, type PortfolioProject } from '../core/projectCatalog';
 import { subscribeVisualSignals } from '../core/visualSignals';
+import { universeStore } from '../store/universeState';
 
 // НАЧАЛО РАЗДЕЛА 1. НАСТРОЙКИ
 /** Мышь ушла — планета ждёт столько, прежде чем полететь: дрожание руки не дёргает её. */
 const HOVER_RELEASE_MS = 250;
-/** Касание на телефоне: столько планета показывает название и ждёт второго касания. */
+/** Касание на телефоне: столько планета показывает себя и ждёт второго касания. */
 const TOUCH_PREVIEW_MS = 4000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let ringSerial = 0;
@@ -30,7 +35,6 @@ interface PlanetRuntime {
     readonly orbit: PlanetOrbit;
     readonly el: HTMLButtonElement;
     readonly ringText: SVGTextPathElement;
-    readonly face: HTMLElement;
     /** Собственные часы полёта, с. */
     time: number;
     hovered: boolean;
@@ -43,22 +47,17 @@ interface PlanetRuntime {
 
 // НАЧАЛО РАЗДЕЛА 2. РАЗМЕТКА ПЛАНЕТЫ
 // НАЧАЛО ФУНКЦИИ fillFace
-/** Лицо планеты: фавикон с сайта проекта, его эмодзи или временные инициалы. */
-function fillFace(face: HTMLElement, project: PortfolioProject, locale: Locale): void {
+/** Лицо планеты: фавикон с сайта проекта или его эмодзи; своего значка нет — планета без рисунка. */
+function fillFace(face: HTMLElement, project: PortfolioProject): void {
     face.textContent = '';
     const url = projectIconUrl(project);
-    const showInitials = (): void => {
-        face.textContent = projectInitials(projectName(project, locale));
-        face.dataset.kind = 'initials';
-    };
     if (url) {
         const img = document.createElement('img');
         img.alt = '';
         img.decoding = 'async';
-        img.loading = 'lazy';
         img.draggable = false;
         img.referrerPolicy = 'no-referrer';
-        img.addEventListener('error', showInitials, { once: true });
+        img.addEventListener('error', () => { img.remove(); face.dataset.kind = 'none'; }, { once: true });
         img.src = url;
         face.dataset.kind = 'image';
         face.append(img);
@@ -66,7 +65,7 @@ function fillFace(face: HTMLElement, project: PortfolioProject, locale: Locale):
         face.textContent = project.icon.emoji;
         face.dataset.kind = 'emoji';
     } else {
-        showInitials();
+        face.dataset.kind = 'none';
     }
 }
 // КОНЕЦ ФУНКЦИИ fillFace
@@ -111,10 +110,16 @@ export function mountProjectPlanets(
     const locale = getLocale();
     const orbits = createPlanetOrbits(projects.length);
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const wakeEarly = new URLSearchParams(window.location?.search ?? '').get('planets') === '1';
     let width = window.innerWidth;
     let height = window.innerHeight;
+    let awake = false;
+    let spread = 0;
     const cleanups: (() => void)[] = [];
     root.setAttribute('aria-label', translateUi('Проекты портфолио', locale));
+    // До пробуждения планет не видно, и Tab их не находит
+    root.inert = true;
+    root.setAttribute('aria-hidden', 'true');
 
     const planets: PlanetRuntime[] = projects.map((project, index) => {
         const el = document.createElement('button');
@@ -127,20 +132,20 @@ export function mountProjectPlanets(
         el.style.setProperty('--planet-hover', `${PLANET_HOVER_PX}px`);
         // Планета нарисована в размере наведения и в покое уменьшена: при наведении она растёт до 1:1 — фавикон чёткий.
         el.style.setProperty('--planet-shrink', (PLANET_SIZE_PX[project.tier] / PLANET_HOVER_PX).toFixed(3));
-        el.style.setProperty('--planet-arrive-delay', `${(index * 0.09).toFixed(2)}s`);
+        el.style.setProperty('--planet-arrive-delay', `${(index * 0.12).toFixed(2)}s`);
         const body = document.createElement('span');
         body.className = 'project-planet__body';
         body.setAttribute('aria-hidden', 'true');
         const face = document.createElement('span');
         face.className = 'project-planet__face';
-        fillFace(face, project, locale);
+        fillFace(face, project);
         body.append(face);
         const ring = createRing();
         ring.text.textContent = projectName(project, locale);
         el.append(body, ring.svg);
         root.append(el);
         return {
-            project, orbit: orbits[index], el, ringText: ring.text, face,
+            project, orbit: orbits[index], el, ringText: ring.text,
             time: 0, hovered: false, focused: false, previewUntil: 0, releaseTimer: 0, lastPointer: 'mouse',
         };
     });
@@ -207,10 +212,18 @@ export function mountProjectPlanets(
     }
     // КОНЕЦ РАЗДЕЛА 3
 
-    // НАЧАЛО РАЗДЕЛА 4. ПОЛЁТ НА КАДРЕ
+    // НАЧАЛО РАЗДЕЛА 4. ПРОБУЖДЕНИЕ И ПОЛЁТ НА КАДРЕ
     const onResize = (): void => { width = window.innerWidth; height = window.innerHeight; };
     window.addEventListener('resize', onResize);
     cleanups.push(() => window.removeEventListener('resize', onResize));
+
+    const wake = (initialSpread: number): void => {
+        awake = true;
+        spread = initialSpread;
+        root.inert = false;
+        root.removeAttribute('aria-hidden');
+        root.classList.add('is-awake');
+    };
 
     const place = (dtSec: number, frozen: boolean): void => {
         const now = performance.now();
@@ -218,18 +231,27 @@ export function mountProjectPlanets(
         for (const planet of planets) {
             const held = isHeld(planet, now);
             if (!frozen && !held) planet.time += dtSec;
-            const pose = planetPose(planet.orbit, planet.time, width, height);
+            const pose = planetPose(planet.orbit, planet.time, width, height, spread);
             const scale = held ? 1 : pose.scale;
             planet.el.style.transform =
                 `translate3d(${(pose.x - half).toFixed(1)}px, ${(pose.y - half).toFixed(1)}px, 0) scale(${scale.toFixed(3)})`;
             planet.el.style.opacity = held ? '1' : pose.opacity.toFixed(2);
         }
     };
-    place(0, true);
 
     const unsubscribeFrame = subscribeVisualSignals((signals, frame) => {
+        const state = universeStore.getState();
+        if (!awake) {
+            if (!wakeEarly && !state.finaleReachedOnce) return;
+            // Первый раз — вместе с визиткой: кольцом вокруг Уробороса; по ссылке ?planets=1 — сразу по своей фазе.
+            wake(state.finaleReachedOnce ? 0 : planetSpreadTarget(state.currentPhase, state.singularityAct, signals.phaseProgress));
+        }
         const dt = Number.isFinite(signals.frameDtSec) ? Math.min(0.1, Math.max(0, signals.frameDtSec)) : 0;
-        const frozen = signals.isPaused || signals.reducedMotion || Boolean(reducedMotion?.matches);
+        const still = Boolean(reducedMotion?.matches) || signals.reducedMotion;
+        const frozen = signals.isPaused || still;
+        const target = planetSpreadTarget(state.currentPhase, state.singularityAct, signals.phaseProgress);
+        if (still) spread = target;
+        else if (!signals.isPaused) spread = easePlanetSpread(spread, target, dt);
         if (frame) frame.write(() => place(dt, frozen));
         else place(dt, frozen);
     }, 'project-planets');
@@ -242,13 +264,13 @@ export function mountProjectPlanets(
         for (const planet of planets) {
             planet.el.setAttribute('aria-label', label(planet.project, nextLocale));
             planet.ringText.textContent = projectName(planet.project, nextLocale);
-            if (planet.face.dataset.kind === 'initials') fillFace(planet.face, planet.project, nextLocale);
         }
     }));
 
     return () => {
         for (const cleanup of cleanups.splice(0)) cleanup();
         for (const planet of planets) planet.el.remove();
+        root.classList.remove('is-awake');
     };
     // КОНЕЦ РАЗДЕЛА 5
 }

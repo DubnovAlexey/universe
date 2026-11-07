@@ -103,6 +103,7 @@ const ui: readonly (readonly [string, ...Words])[] = [
     ['Проекты портфолио','Проекты портфолио','Portfolio projects','פרויקטים בתיק העבודות','Proyectos del portafolio'],
     ['открыть проект','открыть проект','open the project','פתיחת הפרויקט','abrir el proyecto'],
     ['Открыть отдельно ↗','Открыть отдельно ↗','Open in a new tab ↗','פתיחה בלשונית חדשה ↗','Abrir en otra pestaña ↗'],
+    ['Код на GitHub ↗','Код на GitHub ↗','Code on GitHub ↗','הקוד ב-GitHub ↗','Código en GitHub ↗'],
     ['Загружаю проект…','Загружаю проект…','Loading the project…','טוען את הפרויקט…','Cargando el proyecto…'],
     ['Проект долго не отвечает. Его можно открыть отдельно.','Проект долго не отвечает. Его можно открыть отдельно.',
         'The project is taking long to answer. You can open it in a new tab.',

@@ -5,6 +5,8 @@
  * Положение планеты пишет layers/ProjectPlanets.ts (transform и opacity на кнопке); здесь — только её вид.
  * Шар нарисован в размере наведения и в покое уменьшен (--planet-shrink): при наведении он растёт до 1:1,
  * поэтому фавикон на нём чёткий. Свечение нарисовано один раз; при наведении меняется лишь его непрозрачность.
+ * В покое планета приглушена под общий тон сцены (почти без цвета, чуть темнее), фавикон на ней — чёрно-белый
+ * рисунок. Наведение снимает эту «пелену»: проступают настоящие цвета планеты и фавикона.
  * ============================================================================ */
 
 /* НАЧАЛО РАЗДЕЛА 1. СЛОЙ ПЛАНЕТ */
@@ -16,6 +18,9 @@
     overflow: hidden;
     pointer-events: none;
 }
+
+/* Планеты появляются вместе с визиткой первого цикла (ProjectPlanets.ts добавляет is-awake) */
+.project-planets:not(.is-awake) { visibility: hidden; }
 /* КОНЕЦ РАЗДЕЛА 1 */
 
 /* НАЧАЛО РАЗДЕЛА 2. ПЛАНЕТА */
@@ -57,8 +62,13 @@
         0 0 14px 2px color-mix(in srgb, var(--planet-color) 55%, transparent),
         inset -5px -7px 12px rgba(2, 3, 8, 0.55);
     scale: var(--planet-shrink);
-    transition: scale 0.38s cubic-bezier(0.2, 0.8, 0.3, 1);
-    animation: project-planet-arrive 1.8s var(--planet-arrive-delay) ease-out both;
+    /* «Пелена»: почти без цвета и чуть темнее — планета держится в тоне сцены, но немного выделяется */
+    filter: saturate(0.16) brightness(0.74);
+    transition: scale 0.38s cubic-bezier(0.2, 0.8, 0.3, 1), filter 0.45s ease;
+}
+
+.project-planets.is-awake .project-planet__body {
+    animation: project-planet-arrive 2.4s var(--planet-arrive-delay) ease-out both;
 }
 
 /* Мягкий ореол вокруг шара — как у светящихся частиц сцены */
@@ -69,12 +79,12 @@
     z-index: -1;
     border-radius: 50%;
     background: radial-gradient(closest-side, color-mix(in srgb, var(--planet-color) 42%, transparent), transparent);
-    opacity: 0.6;
+    opacity: 0.3;
     transition: opacity 0.38s ease;
     pointer-events: none;
 }
 
-/* Лицо планеты — фавикон проекта (или эмодзи, или временные инициалы); видно при наведении */
+/* Лицо планеты — фавикон проекта или его эмодзи; в покое виден сквозь «пелену», при наведении — в настоящих цветах */
 .project-planet__face {
     position: absolute;
     inset: 0;
@@ -86,7 +96,7 @@
     font: 700 19px/1 var(--font-mono), monospace;
     letter-spacing: 0.02em;
     text-shadow: 0 1px 3px rgba(2, 3, 8, 0.85);
-    opacity: 0;
+    opacity: 0.7;
     transition: opacity 0.3s ease;
 }
 
@@ -126,7 +136,7 @@
 }
 
 /* Наведение, фокус или первое касание: планета стоит, растёт, показывает фавикон и название */
-.project-planet.is-held .project-planet__body { scale: 1; }
+.project-planet.is-held .project-planet__body { scale: 1; filter: none; }
 .project-planet.is-held .project-planet__body::before { opacity: 1; }
 .project-planet.is-held .project-planet__face,
 .project-planet.is-held .project-planet__ring { opacity: 1; }
@@ -270,13 +280,16 @@ body.project-viewer-open #layer5-finale-root { visibility: hidden; }
 
 /* НАЧАЛО РАЗДЕЛА 4. ТЕЛЕФОНЫ И REDUCED MOTION */
 @media (max-width: 560px) {
-    .project-viewer__bar { gap: 0.5rem; }
+    /* Название — отдельной строкой, три кнопки под ним */
+    .project-viewer__bar { flex-wrap: wrap; gap: 0.5rem; }
+    .project-viewer__title { flex-basis: calc(100% - 1.5rem); }
     .project-viewer__external,
     .project-viewer__close { padding: 0.5rem 0.6rem; font-size: 0.72rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .project-planet__body { animation: none; transition: none; }
+    .project-planet__body,
+    .project-planets.is-awake .project-planet__body { animation: none; transition: none; }
     .project-planet__body::before,
     .project-planet__face,
     .project-planet__ring { transition: none; }

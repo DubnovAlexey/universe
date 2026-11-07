@@ -4,13 +4,13 @@
 // РАЗДЕЛЫ: 1. Контракт и тексты; 2. Разметка; 3. Открытие и закрытие; 4. Язык и освобождение.
 // ФУНКЦИИ: mountProjectViewer, open, close, dispose.
 // Проект открывается живой страницей своего сайта в iframe внутри модального <dialog>: браузер сам держит фокус
-// внутри окна, делает сцену под ним недоступной и закрывает окно по Escape. На время просмотра сцена UNIVERSE
+// внутри окна, делает сцену под ним недоступной и закрывает окно по Escape. Сверху — ссылка на код проекта на GitHub. На время просмотра сцена UNIVERSE
 // стоит (hooks.onCover): не считает физику, не рисует кадры и молчит. Закрытие удаляет iframe целиком —
 // вместе с ним гаснут звук, таймеры и потоки проекта, — затем сцена продолжает с того же места, а фокус
 // возвращается на планету, с которой проект открыли.
 // ============================================================================
 import { getLocale, subscribeLocale, translateUi } from '../core/locale';
-import { projectName, projectUrl, type PortfolioProject } from '../core/projectCatalog';
+import { projectName, projectRepoUrl, projectUrl, type PortfolioProject } from '../core/projectCatalog';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И ТЕКСТЫ
 export interface ProjectViewerHooks {
@@ -54,12 +54,15 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
     dot.setAttribute('aria-hidden', 'true');
     const title = element('h2', 'project-viewer__title');
     title.id = 'project-viewer-title';
+    const code = element('a', 'project-viewer__external project-viewer__code', translateUi('Код на GitHub ↗'));
+    code.target = '_blank';
+    code.rel = 'noopener noreferrer';
     const external = element('a', 'project-viewer__external', translateUi('Открыть отдельно ↗'));
     external.target = '_blank';
     external.rel = 'noopener noreferrer';
     const closeButton = element('button', 'project-viewer__close', translateUi('Закрыть ×'));
     closeButton.type = 'button';
-    bar.append(dot, title, external, closeButton);
+    bar.append(dot, title, code, external, closeButton);
     const stage = element('div', 'project-viewer__stage');
     const status = element('p', 'project-viewer__status');
     status.setAttribute('role', 'status');
@@ -116,6 +119,7 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
         dialog.style.setProperty('--planet-color', project.color);
         title.textContent = name;
         external.href = url;
+        code.href = projectRepoUrl(project);
         const frame = element('iframe', 'project-viewer__frame');
         frame.title = name;
         frame.allow = 'autoplay; fullscreen; clipboard-write';
@@ -153,6 +157,7 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
     // НАЧАЛО РАЗДЕЛА 4. ЯЗЫК И ОСВОБОЖДЕНИЕ
     const unsubscribeLocale = subscribeLocale((locale) => {
         external.textContent = translateUi('Открыть отдельно ↗', locale);
+        code.textContent = translateUi('Код на GitHub ↗', locale);
         closeButton.textContent = translateUi('Закрыть ×', locale);
         if (statusText) status.textContent = translateUi(statusText, locale);
         if (current) {
