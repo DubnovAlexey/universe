@@ -254,11 +254,18 @@ export function runExplanationDialogChecks(check: (passed: boolean, description:
         dispatch(window, 'keydown', { key: 'p', code: 'KeyP', target: trigger });
         const previousLayer = universeStore.getState().layers.layer2_metricsHud;
         dispatch(window, 'keydown', { key: '2', code: 'Digit2', target: trigger });
+        // Линза сцены открыта: первое Escape снаружи принадлежит ей, панель остаётся
+        const realStressState = stressStore.getState.bind(stressStore);
+        Object.defineProperty(stressStore, 'getState', { configurable: true, value: () => ({ ...realStressState(), isBreaching: true }) });
+        const lensEscape = dispatch(window, 'keydown', { key: 'Escape', code: 'Escape', target: trigger });
+        Reflect.deleteProperty(stressStore, 'getState');
+        const lensKeepsPanel = dialog.open && !lensEscape.defaultPrevented;
         const outsideEscape = dispatch(window, 'keydown', { key: 'Escape', code: 'Escape', target: trigger });
-        check(sceneKeys === 4 && userPaused && !universeStore.getState().isPaused && dialog.open && !outsideEscape.defaultPrevented &&
-            universeStore.getState().layers.layer2_metricsHud !== previousLayer,
-        'Outside controls retain the real pause and layer shortcuts while an outside Escape leaves the explanation open');
+        check(sceneKeys === 5 && userPaused && !universeStore.getState().isPaused && lensKeepsPanel && !dialog.open &&
+            outsideEscape.defaultPrevented && universeStore.getState().layers.layer2_metricsHud !== previousLayer,
+        'Outside controls keep the real pause and layer shortcuts; an outside Escape closes the explanation unless the scene lens is open');
         releaseShortcuts(); releaseShortcuts = undefined;
+        binding.open('plummer', trigger as unknown as HTMLElement);
 
         const escape = dispatch(window, 'keydown', { key: 'Escape', code: 'Escape', target: title });
         check(escape.defaultPrevented && !dialog.open && !universeStore.getState().isPaused && document.activeElement === trigger &&

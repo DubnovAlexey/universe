@@ -24,6 +24,7 @@ import { startExplanationTextReveal } from './explanationTextReveal';
 import { playExplanationTrail } from './explanationTrail';
 import { explanationAssembly } from '../core/explanationAssembly';
 import { SOUNDTRACKS } from '../utils/audioSync';
+import { stressStore } from '../store/stressState';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И DOM-УЗЛЫ
 export interface ExplanationDialogBinding {
@@ -500,10 +501,20 @@ export function mountExplanationDialog(): ExplanationDialogBinding {
     // --- КОНЕЦ ФУНКЦИИ handleClick ---
 
     // --- НАЧАЛО ФУНКЦИИ guardKeyboard ---
-    /** Клавиши внутри панели управляют чтением; снаружи команды сцены остаются доступными. */
+    /** Клавиши внутри панели управляют чтением; снаружи команды сцены остаются доступными.
+     *  Escape закрывает панель, где бы ни был фокус (например, после нажатия кнопки языка), кроме двух случаев:
+     *  открыта линза сцены — первое нажатие закрывает её; поверх открыто другое окно (проект) — Escape принадлежит ему. */
     function guardKeyboard(event: KeyboardEvent): void {
         const target = event.target instanceof Element ? event.target : null;
-        if (!dialog.open || !target || !dialog.contains(target)) return;
+        if (!dialog.open || !target) return;
+        if (!dialog.contains(target)) {
+            if (event.type !== 'keydown' || event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+            if (typeof target.closest === 'function' && target.closest('dialog[open]')) return;
+            if (stressStore.getState().isBreaching) return;
+            event.preventDefault();
+            close();
+            return;
+        }
         if (event.type === 'keydown' && event.key === 'Escape') {
             event.preventDefault();
             close();
