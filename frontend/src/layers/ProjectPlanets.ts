@@ -42,6 +42,8 @@ interface PlanetRuntime {
     previewUntil: number;
     releaseTimer: number;
     lastPointer: string;
+    /** Проект открыли мышью или пальцем: фокус, который вернётся после закрытия, планету не держит. */
+    ignoreReturnFocus: boolean;
 }
 // КОНЕЦ РАЗДЕЛА 1
 
@@ -147,6 +149,7 @@ export function mountProjectPlanets(
         return {
             project, orbit: orbits[index], el, ringText: ring.text,
             time: 0, hovered: false, focused: false, previewUntil: 0, releaseTimer: 0, lastPointer: 'mouse',
+            ignoreReturnFocus: false,
         };
     });
 
@@ -174,9 +177,16 @@ export function mountProjectPlanets(
             }, HOVER_RELEASE_MS);
         };
         const onDown = (event: PointerEvent): void => { planet.lastPointer = event.pointerType || 'mouse'; };
-        const onFocus = (): void => { planet.focused = true; syncHeldClass(planet); };
+        // Держит планету только фокус с клавиатуры (Tab). Если проект открыли мышью или пальцем, фокус, который
+        // просмотрщик вернёт планете после закрытия (кнопкой или Escape), её не держит: она уходит под пелену и летит.
+        const onFocus = (): void => {
+            const returning = planet.ignoreReturnFocus;
+            planet.ignoreReturnFocus = false;
+            planet.focused = !returning && typeof el.matches === 'function' && el.matches(':focus-visible');
+            syncHeldClass(planet);
+        };
         const onBlur = (): void => { planet.focused = false; syncHeldClass(planet); };
-        const onClick = (): void => {
+        const onClick = (event: MouseEvent): void => {
             const now = performance.now();
             if (planet.lastPointer === 'touch' && planet.previewUntil <= now) {
                 // Первое касание: показать планету крупно с названием и подождать второго.
@@ -189,6 +199,12 @@ export function mountProjectPlanets(
                 window.setTimeout(() => syncHeldClass(planet), TOUCH_PREVIEW_MS + 20);
                 return;
             }
+            // Проект накроет планету: наведение и показ снимаются сразу, после закрытия она не «зависает».
+            // detail > 0 — нажатие мышью или пальцем; Enter и пробел на кнопке дают detail = 0.
+            window.clearTimeout(planet.releaseTimer);
+            planet.ignoreReturnFocus = event.detail > 0;
+            planet.focused = false;
+            planet.hovered = false;
             planet.previewUntil = 0;
             planet.lastPointer = 'mouse';
             syncHeldClass(planet);
