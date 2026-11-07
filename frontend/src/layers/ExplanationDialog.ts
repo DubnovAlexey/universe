@@ -23,7 +23,7 @@ import { mountExplanationButtonMotion, type ExplanationButtonMotionBinding } fro
 import { startExplanationTextReveal } from './explanationTextReveal';
 import { playExplanationTrail } from './explanationTrail';
 import { explanationAssembly } from '../core/explanationAssembly';
-import { SOUNDTRACK_CREDIT } from '../utils/audioSync';
+import { SOUNDTRACKS } from '../utils/audioSync';
 
 // НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И DOM-УЗЛЫ
 export interface ExplanationDialogBinding {
@@ -55,15 +55,18 @@ function renderSoundtrackCredit(): HTMLDetailsElement {
     const details = element('details', 'explanation-soundtrack');
     details.append(element('summary', '', translateUi('О музыке')));
     const list = element('dl', '');
-    const entries = [
-        ['Композиция', SOUNDTRACK_CREDIT.title],
-        ['Исполнитель', SOUNDTRACK_CREDIT.artist],
-        ['Альбом', SOUNDTRACK_CREDIT.album],
-    ] as const;
-    for (const [label, value] of entries) {
-        const field = element('dd', '', value);
-        field.dir = 'ltr';
-        list.append(element('dt', '', translateUi(label)), field);
+    for (const [index, track] of SOUNDTRACKS.entries()) {
+        const entries = [
+            ['Композиция', `${index + 1}. ${track.title}`],
+            ['Исполнитель', track.artist],
+            ['Альбом', track.album],
+        ] as const;
+        for (const [label, value] of entries) {
+            if (!value) continue;
+            const field = element('dd', '', value);
+            field.dir = 'ltr';
+            list.append(element('dt', '', translateUi(label)), field);
+        }
     }
     details.append(list);
     return details;

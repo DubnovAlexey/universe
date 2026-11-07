@@ -72,7 +72,7 @@ UNIVERSE — интерактивная аудиовизуальная инст�
     │   │   ├── verify-pages-artifact.mjs      # Статическая проверка Pages-артефакта
     │   │   └── verify-repository.mjs          # Отслеживаемые исходники и npm entry scripts
     │   ├── public/
-    │   │   ├── audio/cosmic_ambient.mp3       # Мастер-трек космического эмбиента (старт с 2.6 с)
+    │   │   ├── audio/                         # Четыре композиции последовательного плейлиста
     │   │   ├── audio/AUDIO_LICENSE.md         # Документация использования аудиопотока
     │   │   ├── fonts/LICENSE.txt             # Исходные лицензии OFL локальных шрифтов Noto
     │   │   ├── wasm/physics_engine.wasm       # Raw WASM ABI v1 без imports; default async, ?wasm=0 принуждает TS
@@ -326,11 +326,11 @@ UNIVERSE — интерактивная аудиовизуальная инст�
 * `engine/renderer.ts` подключает CSS и сохраняет публичные экспорты с автозапуском; `engine/bootstrap.ts` владеет активным экземпляром и привязкой управления. DOM-функции HUD находятся в `engine/hud/hudDomOrchestrator.ts`.
 
 ### 8.2. Аудио-конвейер и мгновенное снятие слушателей (`frontend/src/utils/audioSync.ts`)
-* Файл: `frontend/public/audio/cosmic_ambient.mp3` (`~16.46 МБ`).
-* `SOUNDTRACK_CREDIT` хранит название Photosynthesis, исполнителя Carbon Based Lifeforms и альбом World of Sleepers. Общая тема путеводителя показывает их в закрытом по умолчанию блоке «О музыке» с переводимыми подписями полей; условия использования остаются в `AUDIO_LICENSE.md`.
+* Плейлист `SOUNDTRACKS`: Photosynthesis (Carbon Based Lifeforms), Down On Me (Melokind), `2_5415626372078905996.mp3` без подтверждённых метаданных и Cosmophobia (Zero Cult). Все исходные файлы сохранены в `frontend/public/audio/`.
+* `SOUNDTRACKS` задаёт порядок и сведения всех четырёх композиций; совместимый `SOUNDTRACK_CREDIT` сохраняет сведения первой. Общая тема путеводителя перечисляет плейлист в закрытом по умолчанию блоке «О музыке». Условия использования — в `AUDIO_LICENSE.md`.
 * При старте вызывается `configureIosAudioSession()` (`navigator.audioSession.type = 'playback'`).
 * На мобильных user agent (`iPhone`, `iPad`, `iPod`, `Android`, `Mobile`) MP3 воспроизводится через `<audio>` без `MediaElementAudioSourceNode` и `AnalyserNode`; модуляцию ведёт синхронная LFO-огибающая. Этот режим сохраняет звук при ограничениях мобильного аудиотракта. На остальных устройствах при доступности используется анализ звука.
-* При старте `trySilentAutoplayWithoutWarning()` сразу запрашивает воспроизведение `<audio>` без создания `AudioContext`. Браузер может отклонить запрос по своей autoplay policy; тогда доступен запуск первым жестом пользователя. Наличие или отсутствие сообщения в консоли зависит от браузера.
+* До первого пользовательского жеста источник не назначается (`preload=none`). Жест запускает плейлист с обработкой play Promise; ended переключает трек и повторяет круг. Старт 2.6 с сохранён только у прежней Photosynthesis. Полный круг media errors возвращает AWAITING_GESTURE; повторная AUDIO-команда явно перезапускает попытку.
 * Как только промис `audioEl.play()` разрешается или срабатывает событие `'playing'`, немедленно вызывается `this.removeUnlockListenersFn?.()`, отключающая все глобальные слушатели разблокировки.
 
 ### 8.3. Книга учёта ресурсов `ResourceLedger` (`frontend/src/core/resourceLedger.ts`)
@@ -476,7 +476,7 @@ GPU-проход проверяет компиляцию WGSL, реальную 
 | `canvas2d-render` | `Canvas2D` | `frontend/src/engine/UniverseRenderer.ts` | `READY` | На каждом кадре в `UniverseRenderer.renderFrame()`; рисунок формируют модули `engine/passes/`. |
 | `pyodide-graph` | `Python` | `backend/core/graph_logic.py` | `FALLBACK` | Остаётся в `FALLBACK` при работе локального TS-движка графа. |
 | `server-ws` | `Python` | `backend/api/transport.py` | `INACTIVE` | Офлайн HTTP/Binary инструмент и подготовленный `PythonSocketClient`; текущие HTTP и WebSocket протоколы не образуют рабочее браузерное подключение. |
-| `web-audio` | `WebAudio` | `frontend/src/utils/audioSync.ts` | `LOADING` | Переходит в `READY` при старте `cosmic_ambient.mp3` (`updateRealtimeModulation`). |
+| `web-audio` | `WebAudio` | `frontend/src/utils/audioSync.ts` | `LOADING` | Переходит в `READY` при старте текущего трека плейлиста (`updateRealtimeModulation`). |
 | `worker-physics` | `TypeScript` | `frontend/src/bridge/nexusGraphWorker.ts` | `LOADING` → `READY` / `FALLBACK` | Web Worker пересборки графа `NEXUS`; шаг — время `buildDeterministicGraph` внутри потока. Без Worker, при ошибке или молчании дольше 2 с — `FALLBACK` и синхронная сборка. |
 
 **Где модуль работает и как это читает посетитель (BUG-08).** Таблица показывала `FALLBACK` у `pyodide-graph` и `INACTIVE` у `server-ws`, хотя в статической сборке на Pages их нет по замыслу. Посетитель решал, что «половина системы не работает». У каждой записи теперь есть `availability`: `runtime` (работает в браузере), `ci-only` (паритет Python проверяется в CI: `test:python`, `verify:python`) или `local-only` (Python-сервер есть только при локальном запуске). Внутреннее состояние модулей прежнее; `getModuleDisplayStatus()` меняет только подпись в LAYER_04:

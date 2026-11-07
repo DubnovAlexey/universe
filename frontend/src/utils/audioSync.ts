@@ -1,15 +1,15 @@
 // noinspection JSUnusedGlobalSymbols,SpellCheckingInspection
 // ============================================================================
 // ФАЙЛ: frontend/src/utils/audioSync.ts
-// НАЗНАЧЕНИЕ: Непрерывный аудио-движок синхронизации cosmic_ambient.mp3 с
+// НАЗНАЧЕНИЕ: Непрерывный аудио-движок последовательного плейлиста с
 //             поддержкой мобильных браузеров iOS Safari / Android (UNIVERSE v2.5)
 // ============================================================================
 // ОГЛАВЛЕНИЕ ФУНКЦИЙ И РАЗДЕЛОВ:
 //   1. Зависимости, константы и контракты данных.
-//   2. Функции модуля: smoothAudioEnvelope.
+//   2. Функции модуля: smoothAudioEnvelope; SOUNDTRACKS — порядок и справочные сведения.
 //   3. AudioSyncEngine: constructor, configureIosAudioSession, resolveAudioUrl, prepareAudioElement,
 //      bindAutoStartListeners, removeUnlockListeners, onFirstUserGesture, isExplicitAudioCommand,
-//      ensureAnalyserGraph, startPlayback, setEnabled, isEnabled, toggleMute, triggerShockwavePulse,
+//      advanceTrack, ensureAnalyserGraph, startPlayback, setEnabled, isEnabled, toggleMute, triggerShockwavePulse,
 //      toggleFromUserCommand, transitionToPhase, updateRealtimeModulation, getSnapshot.
 // ============================================================================
 
@@ -22,7 +22,15 @@ import {
     universeStore,
 } from '../store/universeState';
 
-/** Справочные данные фонограммы; отображаются только в раскрываемой справке. */
+/** Порядок воспроизведения; известные сведения взяты из ID3, numeric-файл не получает выдуманных авторов. */
+export const SOUNDTRACKS = Object.freeze([
+    Object.freeze({ file: 'cosmic_ambient.mp3', title: 'Photosynthesis', artist: 'Carbon Based Lifeforms', album: 'World of Sleepers', startOffsetSec: 2.6 }),
+    Object.freeze({ file: '12 - Down On Me - Melokind (320).mp3', title: 'Down On Me', artist: 'Melokind', album: 'Voices', startOffsetSec: 0 }),
+    Object.freeze({ file: '2_5415626372078905996.mp3', title: '2_5415626372078905996.mp3', artist: '', album: '', startOffsetSec: 0 }),
+    Object.freeze({ file: 'Zero Cult - Cosmophobia.mp3', title: 'Cosmophobia', artist: 'Zero Cult', album: '', startOffsetSec: 0 }),
+]);
+
+/** Совместимый справочный контракт прежней первой фонограммы. */
 export const SOUNDTRACK_CREDIT = Object.freeze({
     title: 'Photosynthesis',
     artist: 'Carbon Based Lifeforms',
@@ -89,6 +97,10 @@ export class AudioSyncEngine {
     private isPlayingMp3 = false;
     private playbackPending = false;
     private playbackAttempt = 0;
+    private playlistIndex = 0;
+    private consecutiveTrackFailures = 0;
+    private playlistExhausted = false;
+    private hasPlaybackGesture = false;
     private unlockBound = false;
     private removeUnlockListenersFn: (() => void) | null = null;
     private isMobileWebKit = false;
@@ -96,7 +108,6 @@ export class AudioSyncEngine {
     private currentAct = '';
     private sceneTransitionAccent = 0;
 
-    private readonly INTRO_SKIP_OFFSET_SEC = 2.6;
     private readonly TARGET_VOLUME = 0.85;
 
     private smoothedRmsDb = -60.0;
@@ -155,7 +166,7 @@ export class AudioSyncEngine {
         const rawBase =
             (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
         const normalizedBase = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
-        return `${normalizedBase}audio/cosmic_ambient.mp3`;
+        return `${normalizedBase}audio/${encodeURIComponent(SOUNDTRACKS[this.playlistIndex].file)}`;
     }
     // --- КОНЕЦ ФУНКЦИИ resolveAudioUrl (AudioSyncEngine) ---
 
@@ -168,7 +179,7 @@ export class AudioSyncEngine {
             // Источник назначается только в пользовательском жесте: даже заблокированный
             // autoplay с src способен начать загрузку до отклонения play().
             const el = new Audio();
-            el.loop = true;
+            el.loop = false;
             el.preload = 'none';
             el.setAttribute('playsinline', 'true');
             el.setAttribute('webkit-playsinline', 'true');
@@ -181,11 +192,11 @@ export class AudioSyncEngine {
                     performance.now() - t0
                 );
                 if (
-                    el.duration > this.INTRO_SKIP_OFFSET_SEC + 4.0 &&
-                    el.currentTime < this.INTRO_SKIP_OFFSET_SEC
+                    el.duration > SOUNDTRACKS[this.playlistIndex].startOffsetSec + 4.0 &&
+                    el.currentTime < SOUNDTRACKS[this.playlistIndex].startOffsetSec
                 ) {
                     try {
-                        el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
+                        el.currentTime = SOUNDTRACKS[this.playlistIndex].startOffsetSec;
                     } catch {
                         // Ожидание буферизации
                     }
@@ -194,21 +205,21 @@ export class AudioSyncEngine {
 
             el.addEventListener('playing', () => {
                 if (!this.enabled) { el.pause(); return; }
+                if (el.paused) return;
                 this.isPlayingMp3 = true;
+                this.consecutiveTrackFailures = 0;
+                this.playlistExhausted = false;
                 this.playbackPending = false;
                 this.removeUnlockListenersFn?.();
                 integrationRegistry.updateModuleStatus('web-audio', 'ready');
                 universeStore.setAudioEnabled(true, 'PLAYING_MP3');
             });
 
-            el.addEventListener('timeupdate', () => {
-                if (el.duration > 12 && el.currentTime > el.duration - 0.28) {
-                    try {
-                        el.currentTime = this.INTRO_SKIP_OFFSET_SEC;
-                    } catch {
-                        // Штатный loop
-                    }
-                }
+            el.addEventListener('ended', () => {
+                if (el.ended && this.isPlayingMp3) this.advanceTrack(false);
+            });
+            el.addEventListener('error', () => {
+                this.advanceTrack(true);
             });
 
             this.audioEl = el;
@@ -218,6 +229,30 @@ export class AudioSyncEngine {
         }
     }
     // --- КОНЕЦ ФУНКЦИИ prepareAudioElement (AudioSyncEngine) ---
+
+    // НАЧАЛО ФУНКЦИИ advanceTrack
+    /** Один HTMLAudio/analyser сохраняет огибающие; полный круг ошибок ждёт следующего явного запуска. */
+    private advanceTrack(failed: boolean): void {
+        if (!this.audioEl || !this.enabled || !this.hasPlaybackGesture || this.playlistExhausted) return;
+        if (failed && ++this.consecutiveTrackFailures >= SOUNDTRACKS.length) {
+            this.playbackAttempt++;
+            this.playbackPending = false;
+            this.isPlayingMp3 = false;
+            this.playlistExhausted = true;
+            this.audioEl.pause();
+            integrationRegistry.updateModuleStatus('web-audio', 'fallback');
+            universeStore.setAudioEnabled(true, 'AWAITING_GESTURE');
+            return;
+        }
+        this.playbackAttempt++;
+        this.playbackPending = false;
+        this.isPlayingMp3 = false;
+        this.audioEl.pause();
+        this.playlistIndex = (this.playlistIndex + 1) % SOUNDTRACKS.length;
+        this.audioEl.src = this.resolveAudioUrl();
+        this.startPlayback(true, true);
+    }
+    // КОНЕЦ ФУНКЦИИ advanceTrack
 
     // --- НАЧАЛО ФУНКЦИИ bindAutoStartListeners (AudioSyncEngine) ---
     private bindAutoStartListeners(): void {
@@ -309,12 +344,20 @@ export class AudioSyncEngine {
     // --- КОНЕЦ ФУНКЦИИ ensureAnalyserGraph (AudioSyncEngine) ---
 
     // --- НАЧАЛО ФУНКЦИИ startPlayback (AudioSyncEngine) ---
-    public startPlayback(fromUserGesture = true): void {
+    public startPlayback(fromUserGesture = true, playlistTransition = false): void {
         this.configureIosAudioSession();
         if (!this.audioEl) {
             this.prepareAudioElement();
         }
         if (!this.audioEl || !this.enabled || !fromUserGesture || this.playbackPending) return;
+        if (!playlistTransition) {
+            this.hasPlaybackGesture = true;
+            this.consecutiveTrackFailures = 0;
+            if (this.playlistExhausted || this.audioEl.error) {
+                this.playlistExhausted = false;
+                this.audioEl.load();
+            }
+        }
 
         if (!this.isMobileWebKit) {
             this.ensureAnalyserGraph();
@@ -325,11 +368,11 @@ export class AudioSyncEngine {
 
         if (
             this.audioEl.readyState >= 1 &&
-            this.audioEl.duration > this.INTRO_SKIP_OFFSET_SEC + 4.0 &&
-            this.audioEl.currentTime < this.INTRO_SKIP_OFFSET_SEC
+            this.audioEl.duration > SOUNDTRACKS[this.playlistIndex].startOffsetSec + 4.0 &&
+            this.audioEl.currentTime < SOUNDTRACKS[this.playlistIndex].startOffsetSec
         ) {
             try {
-                this.audioEl.currentTime = this.INTRO_SKIP_OFFSET_SEC;
+                this.audioEl.currentTime = SOUNDTRACKS[this.playlistIndex].startOffsetSec;
             } catch {
                 // Продолжаем с текущей позиции
             }
@@ -363,6 +406,7 @@ export class AudioSyncEngine {
                         if (attempt !== this.playbackAttempt || !this.enabled) return;
                         this.playbackPending = false;
                         this.isPlayingMp3 = true;
+                        this.consecutiveTrackFailures = 0;
                         this.removeUnlockListenersFn?.();
                         integrationRegistry.updateModuleStatus('web-audio', 'ready');
                         universeStore.setAudioEnabled(true, 'PLAYING_MP3');
@@ -468,7 +512,7 @@ export class AudioSyncEngine {
         }
         this.currentPhase = nextPhase;
         this.currentAct = nextAct;
-        if (this.enabled && !this.isPlayingMp3 && this.ctx) {
+        if (this.enabled && !this.isPlayingMp3 && this.ctx && !this.playlistExhausted) {
             this.startPlayback(true);
         }
     }
