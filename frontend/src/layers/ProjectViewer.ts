@@ -1,0 +1,181 @@
+// ============================================================================
+// ФАЙЛ: frontend/src/layers/ProjectViewer.ts
+// НАЗНАЧЕНИЕ: Полноэкранный просмотрщик проекта портфолио (ветка site).
+// РАЗДЕЛЫ: 1. Контракт и тексты; 2. Разметка; 3. Открытие и закрытие; 4. Язык и освобождение.
+// ФУНКЦИИ: mountProjectViewer, open, close, dispose.
+// Проект открывается живой страницей своего сайта в iframe внутри модального <dialog>: браузер сам держит фокус
+// внутри окна, делает сцену под ним недоступной и закрывает окно по Escape. На время просмотра сцена UNIVERSE
+// стоит (hooks.onCover): не считает физику, не рисует кадры и молчит. Закрытие удаляет iframe целиком —
+// вместе с ним гаснут звук, таймеры и потоки проекта, — затем сцена продолжает с того же места, а фокус
+// возвращается на планету, с которой проект открыли.
+// ============================================================================
+import { getLocale, subscribeLocale, translateUi } from '../core/locale';
+import { projectName, projectUrl, type PortfolioProject } from '../core/projectCatalog';
+
+// НАЧАЛО РАЗДЕЛА 1. КОНТРАКТ И ТЕКСТЫ
+export interface ProjectViewerHooks {
+    /** true — проект накрыл сцену, false — сцена снова видна. */
+    readonly onCover: (covered: boolean) => void;
+}
+export interface ProjectViewerBinding {
+    open(project: PortfolioProject, opener?: HTMLElement | null): void;
+    close(): void;
+    isOpen(): boolean;
+    dispose(): void;
+}
+/** Сайты проектов на GitHub Pages обычно отвечают за 1–3 с; дольше — подсказываем открыть отдельно. */
+export const PROJECT_LOAD_TIMEOUT_MS = 15000;
+const TEXT_LOADING = 'Загружаю проект…';
+const TEXT_SLOW = 'Проект долго не отвечает. Его можно открыть отдельно.';
+// КОНЕЦ РАЗДЕЛА 1
+
+// НАЧАЛО РАЗДЕЛА 2. РАЗМЕТКА
+function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = ''): HTMLElementTagNameMap[K] {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text) node.textContent = text;
+    return node;
+}
+// КОНЕЦ РАЗДЕЛА 2
+
+// НАЧАЛО ФУНКЦИИ mountProjectViewer
+export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBinding {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+        return { open: () => {}, close: () => {}, isOpen: () => false, dispose: () => {} };
+    }
+
+    const dialog = element('dialog', 'project-viewer');
+    dialog.id = 'project-viewer';
+    // Клавиши сцены (пауза, звук, линза) не срабатывают, пока фокус внутри окна проекта.
+    dialog.dataset.uiPanel = 'true';
+    dialog.setAttribute('aria-labelledby', 'project-viewer-title');
+    const bar = element('header', 'project-viewer__bar');
+    const dot = element('span', 'project-viewer__dot');
+    dot.setAttribute('aria-hidden', 'true');
+    const title = element('h2', 'project-viewer__title');
+    title.id = 'project-viewer-title';
+    const external = element('a', 'project-viewer__external', translateUi('Открыть отдельно ↗'));
+    external.target = '_blank';
+    external.rel = 'noopener noreferrer';
+    const closeButton = element('button', 'project-viewer__close', translateUi('Закрыть ×'));
+    closeButton.type = 'button';
+    bar.append(dot, title, external, closeButton);
+    const stage = element('div', 'project-viewer__stage');
+    const status = element('p', 'project-viewer__status');
+    status.setAttribute('role', 'status');
+    stage.append(status);
+    dialog.append(bar, stage);
+    document.body.append(dialog);
+
+    let current: { project: PortfolioProject; opener: HTMLElement | null; frame: HTMLIFrameElement; timer: number } | null = null;
+    let statusText = '';
+
+    const setStatus = (text: string): void => {
+        statusText = text;
+        status.textContent = text ? translateUi(text) : '';
+        status.hidden = !text;
+    };
+
+    // НАЧАЛО РАЗДЕЛА 3. ОТКРЫТИЕ И ЗАКРЫТИЕ
+    // --- НАЧАЛО ФУНКЦИИ release ---
+    /** Снимает проект: iframe удаляется (звук и таймеры проекта гаснут вместе с ним), сцена продолжает. */
+    const release = (): void => {
+        const closing = current;
+        if (!closing) return;
+        current = null;
+        window.clearTimeout(closing.timer);
+        try { closing.frame.src = 'about:blank'; } catch { /* iframe уже отсоединён */ }
+        closing.frame.remove();
+        setStatus('');
+        document.body.classList.remove('project-viewer-open');
+        hooks.onCover(false);
+        if (closing.opener?.isConnected) closing.opener.focus({ preventScroll: true });
+    };
+    // --- КОНЕЦ ФУНКЦИИ release ---
+
+    // --- НАЧАЛО ФУНКЦИИ close ---
+    const close = (): void => {
+        if (!current) return;
+        if (dialog.open) dialog.close(); // событие close вызовет release
+        else release();
+    };
+    // --- КОНЕЦ ФУНКЦИИ close ---
+
+    // --- НАЧАЛО ФУНКЦИИ open ---
+    const open = (project: PortfolioProject, opener: HTMLElement | null = null): void => {
+        if (current) {
+            // Другой проект поверх открытого: меняем содержимое, сцена остаётся на паузе.
+            window.clearTimeout(current.timer);
+            current.frame.remove();
+        } else {
+            hooks.onCover(true);
+            document.body.classList.add('project-viewer-open');
+        }
+        const name = projectName(project, getLocale());
+        const url = projectUrl(project);
+        dialog.style.setProperty('--planet-color', project.color);
+        title.textContent = name;
+        external.href = url;
+        const frame = element('iframe', 'project-viewer__frame');
+        frame.title = name;
+        frame.allow = 'autoplay; fullscreen; clipboard-write';
+        frame.referrerPolicy = 'strict-origin-when-cross-origin';
+        frame.src = url;
+        setStatus(TEXT_LOADING);
+        const timer = window.setTimeout(() => {
+            if (current?.frame === frame) setStatus(TEXT_SLOW);
+        }, PROJECT_LOAD_TIMEOUT_MS);
+        frame.addEventListener('load', () => {
+            if (current?.frame !== frame || frame.src === 'about:blank') return;
+            window.clearTimeout(timer);
+            setStatus('');
+        });
+        stage.append(frame);
+        current = { project, opener: opener ?? current?.opener ?? null, frame, timer };
+        if (!dialog.open) {
+            if (typeof dialog.showModal === 'function') dialog.showModal();
+            else dialog.setAttribute('open', '');
+        }
+        closeButton.focus({ preventScroll: true });
+    };
+    // --- КОНЕЦ ФУНКЦИИ open ---
+
+    const handleCancel = (event: Event): void => {
+        // Escape: закрываем сами, чтобы порядок «iframe → сцена → фокус» был всегда одинаковым.
+        event.preventDefault();
+        close();
+    };
+    dialog.addEventListener('cancel', handleCancel);
+    dialog.addEventListener('close', release);
+    closeButton.addEventListener('click', close);
+    // КОНЕЦ РАЗДЕЛА 3
+
+    // НАЧАЛО РАЗДЕЛА 4. ЯЗЫК И ОСВОБОЖДЕНИЕ
+    const unsubscribeLocale = subscribeLocale((locale) => {
+        external.textContent = translateUi('Открыть отдельно ↗', locale);
+        closeButton.textContent = translateUi('Закрыть ×', locale);
+        if (statusText) status.textContent = translateUi(statusText, locale);
+        if (current) {
+            const name = projectName(current.project, locale);
+            title.textContent = name;
+            current.frame.title = name;
+        }
+    });
+
+    return {
+        open,
+        close,
+        isOpen: () => current !== null,
+        dispose: () => {
+            close();
+            release();
+            unsubscribeLocale();
+            dialog.removeEventListener('cancel', handleCancel);
+            dialog.removeEventListener('close', release);
+            closeButton.removeEventListener('click', close);
+            dialog.remove();
+        },
+    };
+    // КОНЕЦ РАЗДЕЛА 4
+}
+// КОНЕЦ ФУНКЦИИ mountProjectViewer

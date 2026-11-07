@@ -107,6 +107,9 @@ export class AudioSyncEngine {
     private currentPhase: PhaseId = '01_VOID';
     private currentAct = '';
     private sceneTransitionAccent = 0;
+    // Проект открыт поверх сцены (ветка site): музыка UNIVERSE молчит, выбор посетителя «звук вкл/выкл» не меняется.
+    private covered = false;
+    private resumeAfterCover = false;
 
     private readonly TARGET_VOLUME = 0.85;
 
@@ -204,7 +207,7 @@ export class AudioSyncEngine {
             });
 
             el.addEventListener('playing', () => {
-                if (!this.enabled) { el.pause(); return; }
+                if (!this.enabled || this.covered) { el.pause(); return; }
                 if (el.paused) return;
                 this.isPlayingMp3 = true;
                 this.consecutiveTrackFailures = 0;
@@ -350,6 +353,11 @@ export class AudioSyncEngine {
             this.prepareAudioElement();
         }
         if (!this.audioEl || !this.enabled || !fromUserGesture || this.playbackPending) return;
+        if (this.covered) {
+            // Жест пришёл, пока открыт проект: запоминаем намерение и включаем музыку после закрытия.
+            this.resumeAfterCover = true;
+            return;
+        }
         if (!playlistTransition) {
             this.hasPlaybackGesture = true;
             this.consecutiveTrackFailures = 0;
@@ -450,6 +458,34 @@ export class AudioSyncEngine {
         return this.enabled;
     }
     // --- КОНЕЦ ФУНКЦИИ setEnabled (AudioSyncEngine) ---
+
+    // --- НАЧАЛО ФУНКЦИИ setCovered (AudioSyncEngine) ---
+    /** Открытый проект накрывает сцену: музыка встаёт на паузу и после закрытия продолжает с того же места,
+     *  если играла (или её как раз запускали). Закрытие — жест пользователя, поэтому браузер разрешает звук. */
+    public setCovered(covered: boolean): void {
+        const next = Boolean(covered);
+        if (next === this.covered) return;
+        if (next) {
+            this.resumeAfterCover = this.enabled && (this.isPlayingMp3 || this.playbackPending);
+            this.covered = true;
+            this.playbackAttempt++;
+            this.playbackPending = false;
+            if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
+            this.isPlayingMp3 = false;
+            return;
+        }
+        this.covered = false;
+        const resume = this.resumeAfterCover;
+        this.resumeAfterCover = false;
+        if (resume && this.enabled) this.startPlayback(true);
+    }
+    // --- КОНЕЦ ФУНКЦИИ setCovered (AudioSyncEngine) ---
+
+    // --- НАЧАЛО ФУНКЦИИ isCovered (AudioSyncEngine) ---
+    public isCovered(): boolean {
+        return this.covered;
+    }
+    // --- КОНЕЦ ФУНКЦИИ isCovered (AudioSyncEngine) ---
 
     // --- НАЧАЛО ФУНКЦИИ isEnabled (AudioSyncEngine) ---
     public isEnabled(): boolean {

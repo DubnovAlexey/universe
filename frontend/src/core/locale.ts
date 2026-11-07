@@ -99,6 +99,15 @@ const ui: readonly (readonly [string, ...Words])[] = [
     ['Что означает fBm?','Что означает fBm?','What does fBm mean?','מה המשמעות של fBm?','¿Qué significa fBm?'],
     ['Что означает VERLET?','Что означает VERLET?','What does VERLET mean?','מה המשמעות של VERLET?','¿Qué significa VERLET?'],
     ['Что означает PLUMMER?','Что означает PLUMMER?','What does PLUMMER mean?','מה המשמעות של PLUMMER?','¿Qué significa PLUMMER?'],
+    // Ветка site: планеты-проекты и просмотрщик проекта
+    ['Проекты портфолио','Проекты портфолио','Portfolio projects','פרויקטים בתיק העבודות','Proyectos del portafolio'],
+    ['открыть проект','открыть проект','open the project','פתיחת הפרויקט','abrir el proyecto'],
+    ['Открыть отдельно ↗','Открыть отдельно ↗','Open in a new tab ↗','פתיחה בלשונית חדשה ↗','Abrir en otra pestaña ↗'],
+    ['Загружаю проект…','Загружаю проект…','Loading the project…','טוען את הפרויקט…','Cargando el proyecto…'],
+    ['Проект долго не отвечает. Его можно открыть отдельно.','Проект долго не отвечает. Его можно открыть отдельно.',
+        'The project is taking long to answer. You can open it in a new tab.',
+        'הפרויקט מגיב לאט. אפשר לפתוח אותו בלשונית חדשה.',
+        'El proyecto tarda en responder. Puedes abrirlo en otra pestaña.'],
 ];
 ui.forEach(([source, ...words]) => add(source, ...words));
 // КОНЕЦ РАЗДЕЛА 2

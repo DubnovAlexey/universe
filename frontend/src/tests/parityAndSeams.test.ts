@@ -75,6 +75,7 @@ import { runNodeCalloutChecks } from './nodeCallout.test';
 import { runNexusGraphWorkerChecks } from './nexusGraphWorker.test';
 import { runPointerControlChecks } from './pointerControls.test';
 import { runHudDomChecks } from './hudDom.test';
+import { runProjectPlanetChecks } from './projectPlanets.test';
 import nexusParity24 from './fixtures/nexusParity24.json';
 
 export interface VerificationSuiteResult {
@@ -1116,6 +1117,7 @@ function runUniverseVerificationChecks(): VerificationSuiteResult {
     runPointerControlChecks(check);
     runHudDomChecks(check);
     runAudioCommandChecks(check);
+    runProjectPlanetChecks(check);
     runGlyphFontBudgetChecks(check);
     setLocale('ru');
     runExplanationDialogChecks(check);

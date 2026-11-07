@@ -17,6 +17,8 @@ import { mountLayer3Topology } from '../layers/Layer3_Topology';
 import { mountLayer4Terminal } from '../layers/Layer4_Terminal';
 import { mountLayer5CipherFinale } from '../layers/Layer5_CipherFinale';
 import { mountExplanationDialog } from '../layers/ExplanationDialog';
+import { mountProjectViewer } from '../layers/ProjectViewer';
+import { mountProjectPlanets } from '../layers/ProjectPlanets';
 import { bindHudDockLayout, syncHudDomWithState } from './hud/hudDomOrchestrator';
 import { bindUniverseKeyboardShortcuts } from './hud/keyboardShortcuts';
 import { bindUniversePointerControls } from './hud/pointerControls';
@@ -80,6 +82,26 @@ export function bootstrapUniverseV2(): void {
     const unsubL5 = mountLayer5CipherFinale(document.getElementById('layer5-finale-root'));
     const explanations = mountExplanationDialog();
     resourceLedger.registerPageDisposable(explanations.dispose);
+
+    // 1а. Ветка site: планеты-проекты и полноэкранный просмотрщик. Пока проект открыт, сцена не видна —
+    // она стоит (физика, часы, кадры) и молчит, а после закрытия продолжает с того же места без догона времени.
+    const projectViewer = mountProjectViewer({
+        onCover: (covered) => {
+            universeStore.setSceneCovered(covered);
+            audioSync.setCovered(covered);
+            if (covered) {
+                calmGlyphHover.stopAll();
+                renderer.stop();
+            } else {
+                renderer.start();
+            }
+        },
+    });
+    resourceLedger.registerPageDisposable(projectViewer.dispose);
+    resourceLedger.registerPageDisposable(mountProjectPlanets(
+        document.getElementById('project-planets-root'),
+        (project, opener) => projectViewer.open(project, opener),
+    ));
 
     // 2. Подписываем обновление верхнего паспорта фазы и нижнего дока кнопок на UniverseStore
     const unsubHud = universeStore.subscribe((nextState: Readonly<UniverseState>) => {

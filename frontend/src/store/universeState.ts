@@ -8,7 +8,7 @@
 //   2. Функции модуля: smootherstep.
 //   3. UniverseStore: constructor, syncViewportLayoutMode, parseUrlParameters, formatTimestamp,
 //      startPhaseWatchdog, reportRendererError, getState, getSceneBuffer, getQualityGovernor, subscribe,
-//      notifyListeners, setFinaleCardHovered, captureOuroborosRelease, setPhase, togglePause, setTabHidden, toggleAutoCycle,
+//      notifyListeners, setFinaleCardHovered, captureOuroborosRelease, setPhase, togglePause, setTabHidden, setSceneCovered, toggleAutoCycle,
 //      setAudioEnabled, setAudioVolume, setInspectionLevel, toggleLayer, addTerminalLog, emitEvent,
 //      emitEventOnce, appendLogEvent, triggerUniverseRestart, completeRestartToVoid, updateTelemetry.
 // ============================================================================
@@ -241,6 +241,10 @@ class UniverseStore {
     private lastUiNotifyMs = 0;
     private lastTelemetryUpdateMs = 0;
     private watchdogWarned = false;
+    // Две независимые причины «сцену не видно»: скрытая вкладка и открытый поверх проект (ветка site).
+    // isTabHidden в состоянии — их объединение, поэтому все потребители паузы работают без изменений.
+    private documentHidden = false;
+    private sceneCovered = false;
     private isCompactMobileLayout = false;
     /** Выбор панелей посетителя отдельно для узкого (true) и широкого (false) режима: пересечение 920 px его не сбрасывает. */
     private readonly panelChoiceByLayout = new Map<boolean, { metrics: boolean; topology: boolean; terminal: boolean }>();
@@ -563,6 +567,22 @@ class UniverseStore {
 
     // --- НАЧАЛО ФУНКЦИИ setTabHidden (UniverseStore) ---
     public setTabHidden(hidden: boolean): void {
+        this.documentHidden = Boolean(hidden);
+        this.applySceneVisibility();
+    }
+    // --- КОНЕЦ ФУНКЦИИ setTabHidden (UniverseStore) ---
+
+    // --- НАЧАЛО ФУНКЦИИ setSceneCovered (UniverseStore) ---
+    /** Проект открыт на весь экран поверх сцены: она стоит, как на скрытой вкладке, и не догоняет время. */
+    public setSceneCovered(covered: boolean): void {
+        this.sceneCovered = Boolean(covered);
+        this.applySceneVisibility();
+    }
+    // --- КОНЕЦ ФУНКЦИИ setSceneCovered (UniverseStore) ---
+
+    // --- НАЧАЛО ФУНКЦИИ applySceneVisibility (UniverseStore) ---
+    private applySceneVisibility(): void {
+        const hidden = this.documentHidden || this.sceneCovered;
         this.state.isTabHidden = hidden;
         if (!hidden) {
             this.lastTelemetryUpdateMs =
@@ -570,7 +590,7 @@ class UniverseStore {
         }
         this.notifyListeners(true);
     }
-    // --- КОНЕЦ ФУНКЦИИ setTabHidden (UniverseStore) ---
+    // --- КОНЕЦ ФУНКЦИИ applySceneVisibility (UniverseStore) ---
 
     // --- НАЧАЛО ФУНКЦИИ toggleAutoCycle (UniverseStore) ---
     public toggleAutoCycle(): void {
