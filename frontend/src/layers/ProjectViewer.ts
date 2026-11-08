@@ -1,8 +1,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/layers/ProjectViewer.ts
 // НАЗНАЧЕНИЕ: Полноэкранный просмотрщик проекта портфолио (ветка site).
-// РАЗДЕЛЫ: 1. Контракт и тексты; 2. Разметка; 3. Открытие и закрытие; 4. Язык и освобождение.
-// ФУНКЦИИ: mountProjectViewer, open, close, dispose.
+// РАЗДЕЛЫ: 1. Контракт, тексты и холст; 2. Разметка; 3. Открытие и закрытие; 4. Язык и освобождение.
+// ФУНКЦИИ: isProjectDocumentReady, pageCanvasColor, mountProjectViewer, watchCanvas, open, close, dispose.
 // Проект открывается живой страницей своего сайта в iframe внутри модального <dialog>: браузер сам держит фокус
 // внутри окна, делает сцену под ним недоступной и закрывает окно по Escape. Сверху — ссылка на код проекта на GitHub. На время просмотра сцена UNIVERSE
 // стоит (hooks.onCover): не считает физику, не рисует кадры и молчит. Закрытие удаляет iframe целиком —
@@ -27,6 +27,39 @@ export interface ProjectViewerBinding {
 export const PROJECT_LOAD_TIMEOUT_MS = 15000;
 const TEXT_LOADING = 'Загружаю проект…';
 const TEXT_SLOW = 'Проект долго не отвечает. Его можно открыть отдельно.';
+/** Холст обычной вкладки браузера: белый при светлой схеме страницы, #121212 при тёмной (так рисует Chrome). */
+export const PAGE_CANVAS_LIGHT = '#ffffff';
+export const PAGE_CANVAS_DARK = '#121212';
+/** Как часто проверять, появился ли документ проекта: событие load ждёт все картинки и приходит поздно. */
+const CANVAS_POLL_MS = 50;
+
+/** Минимум документа, нужный для выбора холста: так функции проверяются и без браузера. */
+export interface CanvasProbeDocument {
+    readonly URL: string;
+    readonly body: object | null;
+    readonly documentElement: Element | null;
+    readonly defaultView: { getComputedStyle(element: Element): { readonly colorScheme: string } } | null;
+}
+
+/** Документ проекта уже появился: это не пустой about:blank до перехода, и у него есть body. */
+export function isProjectDocumentReady(doc: CanvasProbeDocument | null): boolean {
+    return doc !== null && doc.URL !== 'about:blank' && doc.body !== null;
+}
+
+// --- НАЧАЛО ФУНКЦИИ pageCanvasColor ---
+/**
+ * Цвет холста под страницей проекта — тот же, что браузер кладёт в отдельной вкладке. Страница без своего фона
+ * в обычной вкладке лежит на белом холсте, а на тёмном — только если сама просит тёмную схему. В окне просмотра
+ * под iframe тёмная сцена: без холста тёмный текст такой страницы стал бы нечитаемым (Cosmo Market, 08.11).
+ * null — документ не виден (другой адрес при локальной разработке): тогда, как во вкладке, холст светлый.
+ */
+export function pageCanvasColor(doc: CanvasProbeDocument | null, prefersDark: boolean): string {
+    const root = doc?.documentElement ?? null;
+    const scheme = root && doc?.defaultView ? doc.defaultView.getComputedStyle(root).colorScheme || '' : '';
+    const dark = /\bdark\b/.test(scheme) && (!/\blight\b/.test(scheme) || prefersDark);
+    return dark ? PAGE_CANVAS_DARK : PAGE_CANVAS_LIGHT;
+}
+// --- КОНЕЦ ФУНКЦИИ pageCanvasColor ---
 // КОНЕЦ РАЗДЕЛА 1
 
 // НАЧАЛО РАЗДЕЛА 2. РАЗМЕТКА
@@ -72,12 +105,36 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
 
     let current: { project: PortfolioProject; opener: HTMLElement | null; frame: HTMLIFrameElement; timer: number } | null = null;
     let statusText = '';
+    let canvasTimer = 0;
 
     const setStatus = (text: string): void => {
         statusText = text;
         status.textContent = text ? translateUi(text) : '';
         status.hidden = !text;
     };
+
+    /** Документ проекта (сайт того же адреса) или null, если он с другого адреса и браузер его не показывает. */
+    const readFrameDocument = (frame: HTMLIFrameElement): Document | null => {
+        try { return frame.contentDocument; } catch { return null; }
+    };
+    const paintCanvas = (frame: HTMLIFrameElement, doc: Document | null): void => {
+        const prefersDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        frame.style.backgroundColor = pageCanvasColor(doc, prefersDark);
+    };
+
+    // --- НАЧАЛО ФУНКЦИИ watchCanvas ---
+    /** Ждёт, пока появится документ проекта, и сразу подкладывает под него холст обычной вкладки. */
+    const watchCanvas = (frame: HTMLIFrameElement): void => {
+        window.clearTimeout(canvasTimer);
+        if (current?.frame !== frame) return;
+        const doc = readFrameDocument(frame);
+        if (doc && isProjectDocumentReady(doc)) {
+            paintCanvas(frame, doc);
+            return;
+        }
+        canvasTimer = window.setTimeout(() => watchCanvas(frame), CANVAS_POLL_MS);
+    };
+    // --- КОНЕЦ ФУНКЦИИ watchCanvas ---
 
     // НАЧАЛО РАЗДЕЛА 3. ОТКРЫТИЕ И ЗАКРЫТИЕ
     // --- НАЧАЛО ФУНКЦИИ release ---
@@ -87,6 +144,7 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
         if (!closing) return;
         current = null;
         window.clearTimeout(closing.timer);
+        window.clearTimeout(canvasTimer);
         try { closing.frame.src = 'about:blank'; } catch { /* iframe уже отсоединён */ }
         closing.frame.remove();
         setStatus('');
@@ -132,10 +190,15 @@ export function mountProjectViewer(hooks: ProjectViewerHooks): ProjectViewerBind
         frame.addEventListener('load', () => {
             if (current?.frame !== frame || frame.src === 'about:blank') return;
             window.clearTimeout(timer);
+            window.clearTimeout(canvasTimer);
+            // Каждая загрузка внутри окна (и переход по страницам проекта) уточняет холст по готовой странице.
+            const doc = readFrameDocument(frame);
+            paintCanvas(frame, doc && isProjectDocumentReady(doc) ? doc : null);
             setStatus('');
         });
         stage.append(frame);
         current = { project, opener: opener ?? current?.opener ?? null, frame, timer };
+        watchCanvas(frame);
         if (!dialog.open) {
             if (typeof dialog.showModal === 'function') dialog.showModal();
             else dialog.setAttribute('open', '');

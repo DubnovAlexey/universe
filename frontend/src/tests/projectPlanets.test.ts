@@ -1,7 +1,8 @@
 // ============================================================================
 // ФАЙЛ: frontend/src/tests/projectPlanets.test.ts
-// НАЗНАЧЕНИЕ: Ветка site — каталог проектов, орбиты и разлёт планет по фазам, пауза сцены и музыки под проектом.
-// РАЗДЕЛЫ: 1. Каталог; 2. Орбиты и разлёт; 3. Пауза сцены; 4. Музыка под открытым проектом.
+// НАЗНАЧЕНИЕ: Ветка site — каталог проектов, орбиты и разлёт планет по фазам, пауза сцены и музыки под проектом,
+//             холст обычной вкладки под страницей проекта.
+// РАЗДЕЛЫ: 1. Каталог; 2. Орбиты и разлёт; 3. Пауза сцены; 4. Музыка под открытым проектом; 5. Холст под проектом.
 // ФУНКЦИИ: runProjectPlanetChecks.
 // ============================================================================
 import {
@@ -13,6 +14,7 @@ import {
 import { universeStore } from '../store/universeState';
 import { AudioSyncEngine } from '../utils/audioSync';
 import { integrationRegistry } from '../core/integrationRegistry';
+import { isProjectDocumentReady, PAGE_CANVAS_DARK, PAGE_CANVAS_LIGHT, pageCanvasColor } from '../layers/ProjectViewer';
 
 // Управляемый HTMLAudioElement: play() сразу «успешен», события вызываются вручную
 class CoverAudioFixture {
@@ -192,5 +194,20 @@ export function runProjectPlanetChecks(check: (passed: boolean, description: str
         CoverAudioFixture.instances.length = 0;
     }
     // КОНЕЦ РАЗДЕЛА 4
+
+    // НАЧАЛО РАЗДЕЛА 5. ХОЛСТ ПОД ПРОЕКТОМ
+    // Страница без своего фона (Cosmo Market, Game of Life, Shakshuka) в обычной вкладке лежит на белом холсте.
+    const page = (scheme: string, url = `${PROJECT_SITE_ORIGIN}/cosmo-market/`, body: object | null = {}) => ({
+        URL: url, body, documentElement: {} as Element,
+        defaultView: { getComputedStyle: () => ({ colorScheme: scheme }) },
+    });
+    check(pageCanvasColor(page('normal'), false) === PAGE_CANVAS_LIGHT && pageCanvasColor(page('normal'), true) === PAGE_CANVAS_LIGHT &&
+        pageCanvasColor(page('dark'), false) === PAGE_CANVAS_DARK && pageCanvasColor(page('light dark'), false) === PAGE_CANVAS_LIGHT &&
+        pageCanvasColor(page('light dark'), true) === PAGE_CANVAS_DARK && pageCanvasColor(null, true) === PAGE_CANVAS_LIGHT,
+    'A project page gets the canvas of a normal tab: white, dark only when the page itself asks for a dark scheme');
+    check(!isProjectDocumentReady(null) && !isProjectDocumentReady(page('normal', 'about:blank')) &&
+        !isProjectDocumentReady(page('normal', `${PROJECT_SITE_ORIGIN}/cosmo-market/`, null)) && isProjectDocumentReady(page('normal')),
+    'The canvas waits for the project document itself, not for the blank placeholder before navigation');
+    // КОНЕЦ РАЗДЕЛА 5
 }
 // КОНЕЦ ФУНКЦИИ runProjectPlanetChecks
