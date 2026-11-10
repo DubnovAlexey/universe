@@ -41,6 +41,9 @@ export const PORTFOLIO_PROJECTS: readonly PortfolioProject[] = Object.freeze([
         color: '#facc15', icon: { path: 'img/zoich.png' } },
     { id: 'Three-Pixels-to-Centaur', name: { ru: 'Три пикселя до Центавра', en: 'Three Pixels to Centauri' }, tier: 'showcase',
         color: '#c084fc', icon: { path: 'assets/images/favicon.webp' } },
+    // Props — учебная игра про пропсы React (пещеры вампира Графа Пропсулы); значок — вампир из коллекции Алексея.
+    { id: 'Props', name: { ru: 'Props — Пещеры Графа Пропсулы', en: 'Props — The Caves of Count Propsula' }, tier: 'showcase',
+        color: '#a3123a', icon: { path: 'favicon.webp' } },
     { id: 'Mars-project2', name: { ru: 'Новейшие марсианские хроники', en: 'The Newest Martian Chronicles' }, tier: 'showcase',
         color: '#f05a28', icon: null },
     { id: 'cosmo-market', name: { ru: 'Cosmo Market', en: 'Cosmo Market' }, tier: 'showcase',
