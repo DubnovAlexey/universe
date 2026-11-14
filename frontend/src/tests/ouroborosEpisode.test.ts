@@ -6,7 +6,7 @@
 // ============================================================================
 import { evaluateOuroborosEpisode, getOuroborosLayout } from '../core/ouroborosEpisode';
 import { fillOuroborosPoints } from '../core/ouroborosModel';
-import { UNIVERSE_PHASES, universeStore, type UniverseState } from '../store/universeState';
+import { getVisualTimeSec, UNIVERSE_PHASES, universeStore, type UniverseState } from '../store/universeState';
 
 // НАЧАЛО ФУНКЦИИ makeState
 function makeState(elapsed = 24.05, changes: Partial<UniverseState> = {}, time = 103.05): UniverseState {
@@ -120,6 +120,32 @@ export function runOuroborosEpisodeChecks(check: (passed: boolean, description: 
     }
     check(movingThroughRestart && noStall.getState().currentPhase === '01_VOID',
         'The visible head moves on every50ms step through restart and its VOID handoff instead of freezing for1.45 seconds');
+
+    // Restart 5→1 кадр за кадром, как рендерер: часы цикла обнуляются, а «зрительные часы» и дрейф камеры — нет.
+    const smooth = new Store(); smooth.setPhase('05_SINGULARITY');
+    const frame = (dt: number): void => {
+        const t = smooth.getState().telemetry;
+        smooth.updateTelemetry({ phaseElapsedSec: t.phaseElapsedSec + dt, simulationTimeSec: t.simulationTimeSec + dt, frameTimeMs: 16 });
+    };
+    frame(0.05); // первый кадр впервые считает дрейф (до него камера в нуле) — сравнение идёт с него
+    let lastVisual = getVisualTimeSec(smooth.getState());
+    let lastDrift = { ...smooth.getState().camera };
+    let worstClock = 0; let worstDrift = 0;
+    // До 3 секунд VOID второго цикла; предел кадров защищает от вечного цикла.
+    for (let n = 0; n < 800; n++) {
+        frame(0.05);
+        const state = smooth.getState();
+        const visual = getVisualTimeSec(state);
+        worstClock = Math.max(worstClock, Math.abs(visual - lastVisual - 0.05));
+        worstDrift = Math.max(worstDrift, Math.hypot(state.camera.driftX - lastDrift.driftX, state.camera.driftY - lastDrift.driftY));
+        lastVisual = visual; lastDrift = { ...state.camera };
+        if (state.cycleCount === 2 && state.telemetry.phaseElapsedSec >= 3) break;
+    }
+    const jumped = getVisualTimeSec(smooth.getState());
+    smooth.setPhase('03_EVOLUTION');
+    check(smooth.getState().cycleCount === 2 && smooth.getState().currentPhase === '03_EVOLUTION' &&
+        worstClock < 1e-9 && worstDrift < 0.2 && Math.abs(getVisualTimeSec(smooth.getState()) - jumped) < 1e-9,
+        'Restart 5→1 and a manual phase jump keep the visual clock and camera drift continuous (no one-frame jump on phones)');
 
     const restartingState = makeState(29.8, { singularityAct: 'RESTART_COLLAPSE', restartElapsedSec: 0.8,
         ouroborosRelease: { ageSec: 10.45, timeSec: 108 } });

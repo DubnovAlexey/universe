@@ -105,6 +105,8 @@ export interface UniverseState {
     finaleRiseElapsedSec: number | null;
     /** Снимок видимого эпизода при начале restart или входе в VOID; null исключает появление формы из ничего. */
     ouroborosRelease: { readonly ageSec: number; readonly timeSec: number } | null;
+    /** Сдвиг «зрительных часов»: simulationTimeSec + сдвиг не прыгает назад при restart 5→1 и ручной смене фазы. */
+    visualClockOffsetSec: number;
     timeScale: number;
     gravityMultiplier: number;
     audioEnabled: boolean;
@@ -228,6 +230,18 @@ export function smootherstep(edge0: number, edge1: number, x: number): number {
 }
 // --- КОНЕЦ ФУНКЦИИ smootherstep ---
 
+// --- НАЧАЛО ФУНКЦИИ getVisualTimeSec ---
+/**
+ * «Зрительные часы» для дрейфа камеры, шума фона и украшений. simulationTimeSec — место в цикле: restart 5→1
+ * обнуляет его, ручная смена фазы переставляет. Эти часы идут дальше без скачка, поэтому картинка не прыгает.
+ */
+export function getVisualTimeSec(state: Readonly<UniverseState>): number {
+    const sim = Number.isFinite(state.telemetry.simulationTimeSec) ? state.telemetry.simulationTimeSec : 0;
+    const offset = Number.isFinite(state.visualClockOffsetSec) ? state.visualClockOffsetSec : 0;
+    return sim + offset;
+}
+// --- КОНЕЦ ФУНКЦИИ getVisualTimeSec ---
+
 // ============================================================================
 // РАЗДЕЛ. КЛАСС UniverseStore
 // ============================================================================
@@ -277,6 +291,7 @@ class UniverseStore {
             finaleReachedOnce: false,
             finaleRiseElapsedSec: null,
             ouroborosRelease: null,
+            visualClockOffsetSec: 0,
             timeScale: 1.0,
             gravityMultiplier: 1.0,
             audioEnabled: true,
@@ -525,6 +540,7 @@ class UniverseStore {
         this.state.phaseMeta = meta;
         this.state.telemetry.phaseElapsedSec = 0;
         this.state.telemetry.phaseProgress = 0;
+        this.rebaseVisualClock(meta.startSec);
         this.state.telemetry.simulationTimeSec = meta.startSec;
         this.state.restartElapsedSec = 0;
         this.state.isFinaleCardHovered = false;
@@ -718,6 +734,16 @@ class UniverseStore {
     }
     // --- КОНЕЦ ФУНКЦИИ appendLogEvent (UniverseStore) ---
 
+    // --- НАЧАЛО ФУНКЦИИ rebaseVisualClock (UniverseStore) ---
+    /** Перед тем как переставить часы цикла, переносит разницу в сдвиг: getVisualTimeSec остаётся прежним. */
+    private rebaseVisualClock(nextSimulationSec: number): void {
+        const previous = this.state.telemetry.simulationTimeSec;
+        if (!Number.isFinite(previous) || !Number.isFinite(nextSimulationSec)) return;
+        const offset = Number.isFinite(this.state.visualClockOffsetSec) ? this.state.visualClockOffsetSec : 0;
+        this.state.visualClockOffsetSec = offset + previous - nextSimulationSec;
+    }
+    // --- КОНЕЦ ФУНКЦИИ rebaseVisualClock (UniverseStore) ---
+
     // --- НАЧАЛО ФУНКЦИИ triggerUniverseRestart (UniverseStore) ---
     public triggerUniverseRestart(): void {
         if (this.state.singularityAct === 'RESTART_COLLAPSE') return;
@@ -754,6 +780,7 @@ class UniverseStore {
         this.state.opticalWeights.logicConvergence = 0;
         this.state.telemetry.phaseElapsedSec = 0;
         this.state.telemetry.phaseProgress = 0;
+        this.rebaseVisualClock(0);
         this.state.telemetry.simulationTimeSec = 0;
         this.sceneBuffer.reset(this.state.seed);
         this.appendLogEvent(
@@ -808,8 +835,10 @@ class UniverseStore {
             this.state.phaseMeta.targetZoom +
             Math.sin(simSec * 0.42) * CAMERA_ZOOM_SWAY * smoothPhaseAlpha;
         this.state.camera.zoom += (targetZoom - this.state.camera.zoom) * 0.014;
-        this.state.camera.driftX = Math.sin(simSec * 0.14) * 10.5;
-        this.state.camera.driftY = Math.cos(simSec * 0.11) * CAMERA_DRIFT_Y_AMPLITUDE;
+        // Дрейф — на «зрительных часах»: иначе на restart 5→1 вся сцена сдвигалась за один кадр (≈4 px на телефоне).
+        const visualSec = getVisualTimeSec(this.state);
+        this.state.camera.driftX = Math.sin(visualSec * 0.14) * 10.5;
+        this.state.camera.driftY = Math.cos(visualSec * 0.11) * CAMERA_DRIFT_Y_AMPLITUDE;
 
         if (this.state.singularityAct === 'RESTART_COLLAPSE') {
             this.state.restartElapsedSec += dtSec;

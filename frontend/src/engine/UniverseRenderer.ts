@@ -568,10 +568,12 @@ export class UniverseRenderer {
                 const substeps = this.storyClock
                     ? Math.min(PHYSICS_MAX_SUBSTEPS, Math.ceil(simDtSec / PHYSICS_MAX_STEP_SEC - 1e-9)) : 1;
                 const stepSec = this.storyClock ? Math.min(PHYSICS_MAX_STEP_SEC, simDtSec / substeps) : simDtSec;
+                // Фон течёт по «зрительным часам»: шум не перескакивает на restart 5→1.
+                const visualOffsetSec = Number.isFinite(state.visualClockOffsetSec) ? state.visualClockOffsetSec : 0;
                 for (let substep = 1; substep <= substeps; substep++) {
                     const substepSimSec = substep === substeps ? nextSimSec : state.telemetry.simulationTimeSec + stepSec * substep;
                     stressStore.stepPhysics(stepSec);
-                    this.backgroundFields.step(stepSec, substepSimSec, state.seed);
+                    this.backgroundFields.step(stepSec, substepSimSec + visualOffsetSec, state.seed);
                     this.simulation.update(
                         stepSec,
                         state.currentPhase,

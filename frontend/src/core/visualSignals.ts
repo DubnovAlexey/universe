@@ -5,7 +5,7 @@
 // ФУНКЦИИ: createVisualSignals, runSignalWork, publishVisualSignals, getVisualSignals,
 // subscribeVisualSignals. Планировщики и анализаторы здесь не создаются.
 // ============================================================================
-import type { UniverseState, PhaseId } from '../store/universeState';
+import { getVisualTimeSec, type UniverseState, type PhaseId } from '../store/universeState';
 import type { AudioModulationSnapshot } from '../utils/audioSync';
 import type { StressStateData } from '../store/stressState';
 
@@ -61,7 +61,8 @@ export function createVisualSignals(
     const frameTimeMs = state.telemetry.frameTimeMs;
     return Object.freeze({
         tick: state.telemetry.tick,
-        simTimeSec: Number.isFinite(state.telemetry.simulationTimeSec) ? state.telemetry.simulationTimeSec : 0,
+        // Непрерывные часы: украшения (кнопки, водопад, преломление) не дёргаются на restart 5→1.
+        simTimeSec: getVisualTimeSec(state),
         frameDtSec: isPaused || !Number.isFinite(frameTimeMs) ? 0 : Math.max(0, Math.min(0.05, frameTimeMs / 1000)),
         phase: state.currentPhase, phaseProgress: unit(state.telemetry.phaseProgress),
         isPaused, reducedMotion: state.reducedMotion,
