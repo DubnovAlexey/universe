@@ -77,7 +77,8 @@ const ui: readonly (readonly [string, ...Words])[] = [
     ['Инженерный терминал и реестр полиглот-модулей','Инженерный терминал и реестр полиглот-модулей','Engineering terminal and module registry','מסוף הנדסי ומרשם מודולים','Terminal de ingeniería y registro de módulos'],
     ['Интерактивное космическое и нейронное полотно UNIVERSE','Интерактивное космическое и нейронное полотно UNIVERSE','UNIVERSE interactive cosmic and neural scene','הסצנה הקוסמית והעצבית של UNIVERSE','Escena cósmica y neuronal interactiva UNIVERSE'],
     ['Финальная визитка автора — Dubnov Alexey','Финальная визитка автора — Dubnov Alexey','Author card — Dubnov Alexey','כרטיס היוצר — Dubnov Alexey','Tarjeta del autor — Dubnov Alexey'],
-    ['Включить космическое звуковое сопровождение','Включить космическое звуковое сопровождение','Enable the cosmic soundtrack','הפעלת הפסקול הקוסמי','Activar la banda sonora cósmica'],
+    // 25.11: подпись для диктора начинается с видимых слов кнопки (WCAG 2.5.3 «Label in Name», axe label-content-name-mismatch)
+    ['Tap / click to engage audio — the cosmic soundtrack','Нажмите для включения звука — космическое звуковое сопровождение','Tap / click to engage audio — the cosmic soundtrack','לחיצה להפעלת שמע — הפסקול הקוסמי','Pulsa para activar el audio — la banda sonora cósmica'],
     ['LANGUAGE: RU / EN / HE / ES','ЯЗЫК: RU / EN / HE / ES','LANGUAGE: RU / EN / HE / ES','שפה: RU / EN / HE / ES','IDIOMA: RU / EN / HE / ES'],
     ['Каскад телеметрии Цифрового Водопада','Каскад телеметрии Цифрового Водопада','Digital Waterfall telemetry panels','לוחות הטלמטריה של המפל הדיגיטלי','Paneles de telemetría de la cascada digital'],
     ['Шкала 5 фаз эволюции Вселенной (108 секунд)','Шкала 5 фаз эволюции Вселенной (108 секунд)','Five phases of universe evolution (108 seconds)','חמשת שלבי התפתחות היקום (108 שניות)','Cinco fases de evolución del universo (108 segundos)'],

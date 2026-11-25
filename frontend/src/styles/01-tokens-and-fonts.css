@@ -120,8 +120,29 @@
     --solid-shift-y: 0%;
     --solid-shadow-lift: 0px;
     --solid-shadow-fade: 1;
-    --hud-bottom-inset: 4.5rem;
+    /* 25.11: стартовое значение — то, что потом вычислит bindHudDockLayout по высоте нижней панели (замер Chromium:
+       ≥1840 px — 79, 921–1839 — 122, 601–920 — ~221, ≤600 — ~261). Раньше стояло 4.5rem, и на телефоне кнопка
+       звука после расчёта «прыгала» вверх на 190 px (Lighthouse CLS 0,11). Значение из скрипта по-прежнему главнее. */
+    --hud-bottom-inset: 79px;
     --hud-top-inset: 3.6rem;
+}
+
+@media (max-width: 1839px) {
+    :root {
+        --hud-bottom-inset: 122px;
+    }
+}
+
+@media (max-width: 920px) {
+    :root {
+        --hud-bottom-inset: 221px;
+    }
+}
+
+@media (max-width: 600px) {
+    :root {
+        --hud-bottom-inset: 261px;
+    }
 }
 
 *,

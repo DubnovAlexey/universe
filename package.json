@@ -28,7 +28,7 @@
     "astro": "npm --prefix frontend run astro"
   },
   "dependencies": {
-    "astro": "7.4.2"
+    "astro": "7.4.13"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
